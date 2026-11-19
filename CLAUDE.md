@@ -5,7 +5,7 @@ themed as a blacksmith's forge (embers, sparks, hammer and anvil).
 Full spec: docs/SPEC.md. Progress: docs/PROGRESS.md.
 
 ## Stack
-Go 1.23+, Bubble Tea, Bubbles, Lip Gloss, Harmonica, Glamour, Huh, cobra,
+Go 1.26+, Charm v2 (charm.land/bubbletea/v2, bubbles/v2, lipgloss/v2), Harmonica, Glamour, Huh, cobra,
 modernc.org/sqlite, cli/go-gh/v2, fsnotify.
 
 ## Rules
