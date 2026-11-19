@@ -37,7 +37,14 @@ func newRootCmd(d deps) *cobra.Command {
 				return err
 			}
 			defer func() { _ = st.Close() }()
-			model, err := app.New(cfg, app.WithRecents(st.Cache()))
+			opts := []app.Option{app.WithStore(st.Cache())}
+			switch name, found, err := app.LoadActiveProject(cmd.Context(), st.Cache()); {
+			case err != nil:
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
+			case found:
+				opts = append(opts, app.WithActiveProject(name))
+			}
+			model, err := app.New(cfg, opts...)
 			if err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}

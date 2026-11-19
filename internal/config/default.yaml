@@ -68,6 +68,7 @@ keybinds:
   # goto_tab: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]  # nth key -> nth tab
   # refresh: ["r"]
   # palette: ["ctrl+k"]        # command palette; also works while typing
+  # projects: ["ctrl+p"]       # project switcher; also works while typing
   # Lists
   # up: ["k", "up"]
   # down: ["j", "down"]

@@ -73,6 +73,12 @@ func (p *CommandPalette) SetRows(rows []PaletteRow) {
 	p.rows, p.cursor, p.offset = rows, 0, 0
 }
 
+// SetCursor selects row i, clamped to the rows.
+func (p *CommandPalette) SetCursor(i int) {
+	p.cursor = min(max(i, 0), max(len(p.rows)-1, 0))
+	p.offset = 0
+}
+
 // Selected returns the index of the selected row, or -1 if there are none.
 func (p *CommandPalette) Selected() int {
 	if len(p.rows) == 0 {

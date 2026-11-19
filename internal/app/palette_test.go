@@ -165,7 +165,7 @@ func typeText(s string) []tea.KeyPressMsg {
 func runPalette(t *testing.T, model tea.Model, query string) (tea.Model, tea.Cmd) {
 	t.Helper()
 	model, _ = model.Update(ctrlK())
-	if !model.(Model).paletteOpen {
+	if model.(Model).overlay != overlayCommands {
 		t.Fatal("ctrl+k should open the palette")
 	}
 	for _, k := range typeText(query) {
@@ -266,8 +266,8 @@ func TestPaletteOverlay(t *testing.T) {
 		model, _ = model.Update(k)
 	}
 	m = model.(Model)
-	if !m.paletteOpen || m.active != 0 {
-		t.Fatalf("keys leaked out of the palette: open=%v active=%d", m.paletteOpen, m.active)
+	if m.overlay != overlayCommands || m.active != 0 {
+		t.Fatalf("keys leaked out of the palette: overlay=%v active=%d", m.overlay, m.active)
 	}
 	plain = ansi.Strip(m.render())
 	if !strings.Contains(plain, "› q2") || !strings.Contains(plain, "no matches") {
@@ -277,13 +277,13 @@ func TestPaletteOverlay(t *testing.T) {
 	// esc closes without running anything.
 	model, cmd := model.Update(esc)
 	m = model.(Model)
-	if m.paletteOpen || cmd != nil || m.active != 0 {
+	if m.overlay != overlayNone || cmd != nil || m.active != 0 {
 		t.Fatal("esc should only close the palette")
 	}
 	// ctrl+k toggles.
 	model, _ = model.Update(ctrlK())
 	model, _ = model.Update(ctrlK())
-	if model.(Model).paletteOpen {
+	if model.(Model).overlay != overlayNone {
 		t.Fatal("ctrl+k should close the palette")
 	}
 	// Enter with no results does nothing.
@@ -353,33 +353,59 @@ func TestPaletteEntityJump(t *testing.T) {
 	}
 }
 
-// fakeRecents is an in-memory RecentStore.
-type fakeRecents struct {
+// fakeStore is an in-memory KVStore.
+type fakeStore struct {
 	mu   sync.Mutex
-	val  []byte
-	puts int
+	vals map[string][]byte
+	puts map[string]int
 	err  error
 }
 
-func (f *fakeRecents) Get(_ context.Context, key string) (store.CacheEntry, error) {
+func newFakeStore(vals map[string]string) *fakeStore {
+	f := &fakeStore{vals: map[string][]byte{}, puts: map[string]int{}}
+	for k, v := range vals {
+		f.vals[k] = []byte(v)
+	}
+	return f
+}
+
+func (f *fakeStore) val(key string) []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.vals[key]
+}
+
+func (f *fakeStore) putCount(key string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.puts[key]
+}
+
+func (f *fakeStore) Get(_ context.Context, key string) (store.CacheEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
 		return store.CacheEntry{}, f.err
 	}
-	if f.val == nil {
+	v, ok := f.vals[key]
+	if !ok {
 		return store.CacheEntry{}, store.ErrNotFound
 	}
-	return store.CacheEntry{Key: key, Value: f.val}, nil
+	return store.CacheEntry{Key: key, Value: v}, nil
 }
 
-func (f *fakeRecents) Put(_ context.Context, key, kind, _ string, value []byte, ttl time.Duration) error {
+func (f *fakeStore) Put(_ context.Context, key, kind, _ string, value []byte, ttl time.Duration) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if key != recentKey || kind != recentKind || ttl != 0 {
+	if f.err != nil {
+		return f.err
+	}
+	wantKind := map[string]string{recentKey: recentKind, projectKey: projectKind}[key]
+	if wantKind == "" || kind != wantKind || ttl != 0 {
 		return errors.New("unexpected key, kind or ttl")
 	}
-	f.val, f.puts = value, f.puts+1
+	f.vals[key] = value
+	f.puts[key]++
 	return nil
 }
 
@@ -405,8 +431,8 @@ func drain(model tea.Model, cmd tea.Cmd) tea.Model {
 }
 
 func TestPaletteRecents(t *testing.T) {
-	fr := &fakeRecents{val: []byte(`["tab:Docs"]`)}
-	m, err := New(config.Default(), WithRecents(fr))
+	fr := newFakeStore(map[string]string{recentKey: `["tab:Docs"]`})
+	m, err := New(config.Default(), WithStore(fr))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,12 +445,12 @@ func TestPaletteRecents(t *testing.T) {
 
 	model, cmd := runPalette(t, model, "refresh")
 	model = drain(model, cmd)
-	if fr.puts != 1 {
-		t.Fatalf("puts = %d, want 1", fr.puts)
+	if n := fr.putCount(recentKey); n != 1 {
+		t.Fatalf("puts = %d, want 1", n)
 	}
 	var saved []string
-	if err := json.Unmarshal(fr.val, &saved); err != nil || !slices.Equal(saved, []string{"refresh", "tab:Docs"}) {
-		t.Fatalf("saved = %s (%v)", fr.val, err)
+	if err := json.Unmarshal(fr.val(recentKey), &saved); err != nil || !slices.Equal(saved, []string{"refresh", "tab:Docs"}) {
+		t.Fatalf("saved = %s (%v)", fr.val(recentKey), err)
 	}
 
 	// Reopening with an empty query lists recents first.
@@ -442,13 +468,13 @@ func TestPaletteRecents(t *testing.T) {
 }
 
 func TestLoadRecentsErrors(t *testing.T) {
-	if msg := loadRecents(&fakeRecents{})(); msg != nil {
+	if msg := loadRecents(newFakeStore(nil))(); msg != nil {
 		t.Fatalf("missing key should be silent, got %v", msg)
 	}
-	if _, ok := loadRecents(&fakeRecents{err: errors.New("disk on fire")})().(ui.ErrMsg); !ok {
+	if _, ok := loadRecents(&fakeStore{err: errors.New("disk on fire")})().(ui.ErrMsg); !ok {
 		t.Fatal("store error should become an ErrMsg")
 	}
-	if _, ok := loadRecents(&fakeRecents{val: []byte("{")})().(ui.ErrMsg); !ok {
+	if _, ok := loadRecents(newFakeStore(map[string]string{recentKey: "{"}))().(ui.ErrMsg); !ok {
 		t.Fatal("bad JSON should become an ErrMsg")
 	}
 	if loadRecents(nil) != nil || saveRecents(nil, nil) != nil {

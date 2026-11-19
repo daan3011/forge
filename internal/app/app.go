@@ -51,13 +51,25 @@ type Model struct {
 	help     ui.HelpView
 	helpOpen bool
 
-	palette     ui.CommandPalette
-	paletteOpen bool
-	items       []item // registry snapshot taken when the palette opened
-	shown       []item // ranked results
-	recent      []string
-	recents     RecentStore
+	palette ui.CommandPalette
+	overlay paletteMode
+	items   []item // registry snapshot taken when the palette opened
+	shown   []item // ranked results
+	recent  []string
+	store   KVStore
+
+	savedProject string // from WithActiveProject
+	hasSaved     bool
 }
+
+// paletteMode is which picker the palette overlay shows, if any.
+type paletteMode int
+
+const (
+	overlayNone     paletteMode = iota
+	overlayCommands             // ctrl+k: every action and entity
+	overlayProjects             // ctrl+p: the project switcher
+)
 
 // New returns the root model for the given config. It fails if the keybinds
 // overrides are invalid.
@@ -80,6 +92,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 	for _, o := range opts {
 		o(&m)
 	}
+	m.resolveProject()
 	return m, nil
 }
 
@@ -96,18 +109,39 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		now:     time.Now(),
 		clockOn: true, // Init starts the first tick
 	}
-	if len(cfg.Projects) > 0 {
-		m.project = &cfg.Projects[0]
+	m.resolveProject()
+	return m
+}
+
+// resolveProject picks the starting project: the saved one if it is still
+// configured, all projects if that was saved, otherwise the first project.
+// It tells every tab without refreshing them; Init loads their data.
+func (m *Model) resolveProject() {
+	m.project = nil
+	switch {
+	case m.hasSaved && m.savedProject == "":
+	case m.hasSaved && m.findProject(m.savedProject) != nil:
+		m.project = m.findProject(m.savedProject)
+	case len(m.cfg.Projects) > 0:
+		m.project = &m.cfg.Projects[0]
 	}
 	for _, t := range m.tabs {
 		t.SetProject(m.project)
 	}
-	return m
+}
+
+func (m Model) findProject(name string) *config.Project {
+	for i := range m.cfg.Projects {
+		if m.cfg.Projects[i].Name == name {
+			return &m.cfg.Projects[i]
+		}
+	}
+	return nil
 }
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.recents)}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.store)}
 	for _, t := range m.tabs {
 		cmds = append(cmds, t.Init())
 	}
@@ -170,15 +204,18 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if key.Matches(msg, g.Palette) {
-		if m.paletteOpen {
-			m.paletteOpen = false
+		if m.overlay == overlayCommands {
+			m.overlay = overlayNone
 		} else {
 			m.openPalette()
 		}
 		return m, nil
 	}
-	if m.paletteOpen {
+	if m.overlay != overlayNone {
 		return m.handlePaletteKey(msg)
+	}
+	if key.Matches(msg, g.Projects) {
+		return m.openProjects()
 	}
 	if m.helpOpen {
 		return m.handleHelpKey(msg)
@@ -211,13 +248,37 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Model) openPalette() {
 	m.helpOpen = false
 	m.items = m.paletteItems()
+	m.overlay = overlayCommands
 	m.palette.Reset()
 	m.rerank()
-	m.paletteOpen = true
+}
+
+// openProjects shows the project switcher with the current project
+// selected, or a hint when no projects are configured.
+func (m Model) openProjects() (Model, tea.Cmd) {
+	if len(m.cfg.Projects) == 0 {
+		return m, m.toast.Show("no projects configured — add some under projects: in your config", ui.ToastInfo)
+	}
+	m.helpOpen = false
+	m.items = m.projectItems()
+	m.overlay = overlayProjects
+	m.palette.Reset()
+	m.rerank()
+	for i, it := range m.shown {
+		if it.current {
+			m.palette.SetCursor(i)
+			break
+		}
+	}
+	return m, nil
 }
 
 func (m *Model) rerank() {
-	m.shown = rank(m.items, m.palette.Query(), m.recent)
+	var recent []string
+	if m.overlay == overlayCommands {
+		recent = m.recent
+	}
+	m.shown = rank(m.items, m.palette.Query(), recent)
 	rows := make([]ui.PaletteRow, len(m.shown))
 	for i, it := range m.shown {
 		rows[i] = ui.PaletteRow{Group: it.group, Title: it.title, Detail: it.detail, Hint: it.hint}
@@ -229,7 +290,7 @@ func (m Model) handlePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	in := m.keys.Input
 	switch {
 	case key.Matches(msg, in.Cancel):
-		m.paletteOpen = false
+		m.overlay = overlayNone
 		return m, nil
 	case key.Matches(msg, in.Accept):
 		i := m.palette.Selected()
@@ -237,10 +298,14 @@ func (m Model) handlePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		it := m.shown[i]
-		m.paletteOpen = false
+		mode := m.overlay
+		m.overlay = overlayNone
 		m.items, m.shown = nil, nil
-		m.recent = pushRecent(m.recent, it.id)
-		save := saveRecents(m.recents, m.recent)
+		var save tea.Cmd
+		if mode == overlayCommands {
+			m.recent = pushRecent(m.recent, it.id)
+			save = saveRecents(m.store, m.recent)
+		}
 		var cmd tea.Cmd
 		m, cmd = it.run(m)
 		return m, tea.Batch(cmd, save)
@@ -276,7 +341,7 @@ func (m *Model) openHelp() {
 // statusKeys are the status bar hints: the tab's own, plus help unless the
 // tab is taking text input (where ? would be typed).
 func (m Model) statusKeys(active tabs.Tab) []key.Binding {
-	if m.paletteOpen {
+	if m.overlay != overlayNone {
 		in := m.keys.Input
 		return []key.Binding{in.Next, in.Prev, in.Cancel, in.Accept}
 	}
@@ -383,7 +448,7 @@ func (m Model) render() string {
 	screen = ui.Box(screen, m.width, m.height)
 
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(screen)}
-	if m.paletteOpen {
+	if m.overlay != overlayNone {
 		if l := m.paletteLayer(); l != nil {
 			layers = append(layers, l)
 		}

@@ -27,7 +27,10 @@ type Tab interface {
 	// Refresh reloads the tab's data.
 	Refresh() tea.Cmd
 	SetSize(width, height int)
-	// SetProject filters the tab to a project; nil means all projects.
+	// SetProject filters the tab to a project; nil means all projects. Tabs
+	// filter by Repo (PRs, Pipelines, Sessions), PlaneProjectID (Plane) or
+	// DocsPath (Docs). The root model calls Refresh right after, so the tab
+	// only needs to remember the project.
 	SetProject(p *config.Project)
 }
 
