@@ -56,9 +56,32 @@ ui:
   theme:
     # ember: "#ff7a1a"
 
-# Override key bindings: action name -> list of keys.
+# Override key bindings: action name -> list of keys. An override replaces
+# the action's keys and its help text. Defaults:
 keybinds:
-  # quit: ["q", "ctrl+c"]
+  # Global
+  # quit: ["q"]
+  # force_quit: ["ctrl+c"]     # also works while typing in a filter
+  # help: ["?"]
+  # next_tab: ["tab"]
+  # prev_tab: ["shift+tab"]
+  # goto_tab: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]  # nth key -> nth tab
+  # refresh: ["r"]
+  # Lists
+  # up: ["k", "up"]
+  # down: ["j", "down"]
+  # top: ["g", "home"]
+  # bottom: ["G", "end"]
+  # page_down: ["ctrl+d"]
+  # page_up: ["ctrl+u"]
+  # filter: ["/"]
+  # grow_pane: [">"]
+  # shrink_pane: ["<"]
+  # Text inputs (filter)
+  # cancel: ["esc"]
+  # accept: ["enter"]
+  # delete_back: ["backspace"]
+  # clear_input: ["ctrl+u"]
 
 # Shell commands available in the palette, optionally bound to a key.
 # Placeholders: {pr}, {branch}, {repo}, {worktree}.

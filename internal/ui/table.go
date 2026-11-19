@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -24,8 +25,11 @@ type Column struct {
 // that don't fit are truncated with an ellipsis.
 type Table struct {
 	theme   *Theme
+	keys    *KeyMap
 	cols    []Column
 	rows    [][]string
+	visible [][]string // rows matching the filter
+	filter  string
 	cursor  int
 	offset  int
 	width   int
@@ -38,18 +42,49 @@ type Table struct {
 const colGap = 1
 
 // NewTable returns a table with the given columns.
-func NewTable(theme *Theme, cols []Column) Table {
-	return Table{theme: theme, cols: cols, focused: true}
+func NewTable(theme *Theme, keys *KeyMap, cols []Column) Table {
+	return Table{theme: theme, keys: keys, cols: cols, focused: true}
 }
 
 // SetRows replaces the rows, keeping the cursor in range.
 func (t *Table) SetRows(rows [][]string) {
 	t.rows = rows
-	t.clamp()
+	t.applyFilter()
 }
 
-// Rows returns the table rows.
+// Rows returns all table rows, ignoring the filter.
 func (t *Table) Rows() [][]string { return t.rows }
+
+// VisibleRows returns the rows that match the filter.
+func (t *Table) VisibleRows() [][]string { return t.visible }
+
+// SetFilter shows only rows with a cell containing q (case-insensitive).
+// An empty q shows every row.
+func (t *Table) SetFilter(q string) {
+	t.filter = q
+	t.applyFilter()
+}
+
+// Filter returns the current filter text.
+func (t *Table) Filter() string { return t.filter }
+
+func (t *Table) applyFilter() {
+	q := strings.ToLower(strings.TrimSpace(t.filter))
+	if q == "" {
+		t.visible = t.rows
+	} else {
+		t.visible = nil
+		for _, row := range t.rows {
+			for _, cell := range row {
+				if strings.Contains(strings.ToLower(cell), q) {
+					t.visible = append(t.visible, row)
+					break
+				}
+			}
+		}
+	}
+	t.clamp()
+}
 
 // SetSize sets the outer size of the table, header included.
 func (t *Table) SetSize(width, height int) {
@@ -61,7 +96,7 @@ func (t *Table) SetSize(width, height int) {
 // SetFocused controls whether the selected row is highlighted.
 func (t *Table) SetFocused(f bool) { t.focused = f }
 
-// Cursor returns the index of the selected row.
+// Cursor returns the index of the selected row among the visible rows.
 func (t *Table) Cursor() int { return t.cursor }
 
 // SetCursor moves the selection, clamped to the rows.
@@ -72,21 +107,33 @@ func (t *Table) SetCursor(i int) {
 
 // SelectedRow returns the selected row, or nil if the table is empty.
 func (t *Table) SelectedRow() []string {
-	if len(t.rows) == 0 {
+	if len(t.visible) == 0 {
 		return nil
 	}
-	return t.rows[t.cursor]
+	return t.visible[t.cursor]
 }
 
-// Update moves the cursor on Up/Down key presses.
+// Update moves the cursor on list movement keys.
 func (t *Table) Update(msg tea.Msg) tea.Cmd {
-	if msg, ok := msg.(tea.KeyPressMsg); ok {
-		switch {
-		case key.Matches(msg, Keys.Up):
-			t.SetCursor(t.cursor - 1)
-		case key.Matches(msg, Keys.Down):
-			t.SetCursor(t.cursor + 1)
-		}
+	kp, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return nil
+	}
+	l := t.keys.List
+	half := max(t.bodyHeight()/2, 1)
+	switch {
+	case key.Matches(kp, l.Up):
+		t.SetCursor(t.cursor - 1)
+	case key.Matches(kp, l.Down):
+		t.SetCursor(t.cursor + 1)
+	case key.Matches(kp, l.Top):
+		t.SetCursor(0)
+	case key.Matches(kp, l.Bottom):
+		t.SetCursor(len(t.visible) - 1)
+	case key.Matches(kp, l.PageDown):
+		t.SetCursor(t.cursor + half)
+	case key.Matches(kp, l.PageUp):
+		t.SetCursor(t.cursor - half)
 	}
 	return nil
 }
@@ -94,7 +141,7 @@ func (t *Table) Update(msg tea.Msg) tea.Cmd {
 func (t *Table) bodyHeight() int { return max(t.height-1, 0) }
 
 func (t *Table) clamp() {
-	t.cursor = min(max(t.cursor, 0), max(len(t.rows)-1, 0))
+	t.cursor = min(max(t.cursor, 0), max(len(t.visible)-1, 0))
 	h := t.bodyHeight()
 	if h == 0 {
 		t.offset = t.cursor
@@ -106,7 +153,7 @@ func (t *Table) clamp() {
 	if t.cursor >= t.offset+h {
 		t.offset = t.cursor - h + 1
 	}
-	t.offset = min(max(t.offset, 0), max(len(t.rows)-h, 0))
+	t.offset = min(max(t.offset, 0), max(len(t.visible)-h, 0))
 }
 
 // View renders the table at exactly its size.
@@ -121,16 +168,20 @@ func (t *Table) View() string {
 	}
 	lines = append(lines, t.theme.TableHeader.Render(t.renderCells(titles)))
 
-	if len(t.rows) == 0 {
-		lines = append(lines, t.theme.TableEmpty.Render(fit(EmptyText, t.width)))
+	if len(t.visible) == 0 {
+		empty := EmptyText
+		if len(t.rows) > 0 {
+			empty = "no matches for " + strconv.Quote(t.filter)
+		}
+		lines = append(lines, t.theme.TableEmpty.Render(fit(empty, t.width)))
 	}
-	end := min(t.offset+t.bodyHeight(), len(t.rows))
+	end := min(t.offset+t.bodyHeight(), len(t.visible))
 	for i := t.offset; i < end; i++ {
 		style := t.theme.TableRow
 		if i == t.cursor && t.focused {
 			style = t.theme.TableSelected
 		}
-		lines = append(lines, style.Render(t.renderCells(t.rows[i])))
+		lines = append(lines, style.Render(t.renderCells(t.visible[i])))
 	}
 	for len(lines) < t.height {
 		lines = append(lines, strings.Repeat(" ", t.width))

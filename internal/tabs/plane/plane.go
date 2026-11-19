@@ -7,8 +7,8 @@ import (
 )
 
 // New returns the Plane tab. It is a placeholder until P3.2.
-func New(theme *ui.Theme) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, tabkit.PlaceholderSpec{
+func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
+	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
 		Title:   "Plane",
 		Feature: "P3.2",
 		Blurb:   "Issues from your Plane workspace as a list or kanban board.",

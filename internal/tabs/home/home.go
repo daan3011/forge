@@ -7,8 +7,8 @@ import (
 )
 
 // New returns the Home tab. It is a placeholder until P6.1.
-func New(theme *ui.Theme) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, tabkit.PlaceholderSpec{
+func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
+	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
 		Title:   "Home",
 		Feature: "P6.1",
 		Blurb:   "Everything that needs you right now: reviews, failing CI, waiting agents, assigned issues.",

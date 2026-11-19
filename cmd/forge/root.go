@@ -31,7 +31,11 @@ func newRootCmd(d deps) *cobra.Command {
 			if created {
 				fmt.Fprintln(cmd.ErrOrStderr(), "created default config at", path)
 			}
-			_, err = tea.NewProgram(app.New(cfg), tea.WithContext(cmd.Context())).Run()
+			model, err := app.New(cfg)
+			if err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+			_, err = tea.NewProgram(model, tea.WithContext(cmd.Context())).Run()
 			return err
 		},
 	}

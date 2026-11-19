@@ -19,7 +19,7 @@ import (
 )
 
 func TestQuitFlow(t *testing.T) {
-	tm := teatest.NewTestModel(t, New(config.Default()), teatest.WithInitialTermSize(80, 24))
+	tm := teatest.NewTestModel(t, mustNew(t, config.Default()), teatest.WithInitialTermSize(80, 24))
 
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("forge"))
@@ -30,7 +30,7 @@ func TestQuitFlow(t *testing.T) {
 }
 
 func TestSwitchTabFlow(t *testing.T) {
-	tm := teatest.NewTestModel(t, New(config.Default()), teatest.WithInitialTermSize(80, 24))
+	tm := teatest.NewTestModel(t, mustNew(t, config.Default()), teatest.WithInitialTermSize(80, 24))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("forge"))
 	}, teatest.WithDuration(2*time.Second))
@@ -64,7 +64,7 @@ func TestQuitKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, cmd := New(config.Default()).Update(tt.msg)
+			_, cmd := mustNew(t, config.Default()).Update(tt.msg)
 			gotQuit := cmd != nil && isQuit(cmd())
 			if gotQuit != tt.quit {
 				t.Fatalf("quit = %v, want %v", gotQuit, tt.quit)
@@ -90,7 +90,7 @@ func TestTabSwitching(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := New(config.Default())
+			m := mustNew(t, config.Default())
 			m.active = tt.start
 			var model tea.Model = m
 			for _, k := range tt.keys {
@@ -110,6 +110,8 @@ type fakeTab struct {
 	keys   []string
 	proj   *config.Project
 	update time.Time
+
+	refreshes int
 }
 
 func (f *fakeTab) Init() tea.Cmd { return nil }
@@ -122,7 +124,8 @@ func (f *fakeTab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 func (f *fakeTab) View() string                 { return f.title }
 func (f *fakeTab) Title() string                { return f.title }
 func (f *fakeTab) ShortHelp() []key.Binding     { return nil }
-func (f *fakeTab) Refresh() tea.Cmd             { return nil }
+func (f *fakeTab) FullHelp() [][]key.Binding    { return nil }
+func (f *fakeTab) Refresh() tea.Cmd             { f.refreshes++; return nil }
 func (f *fakeTab) SetSize(w, h int)             { f.w, f.h = w, h }
 func (f *fakeTab) SetProject(p *config.Project) { f.proj = p }
 func (f *fakeTab) LastUpdated() time.Time       { return f.update }
@@ -131,7 +134,7 @@ func TestRouting(t *testing.T) {
 	cfg := config.Default()
 	cfg.Projects = []config.Project{{Name: "forge", Repo: "daan3011/forge"}}
 	a, b := &fakeTab{title: "A"}, &fakeTab{title: "B"}
-	var model tea.Model = newModel(cfg, ui.NewTheme(true, nil), []tabs.Tab{a, b})
+	var model tea.Model = newModel(cfg, ui.NewTheme(true, nil), ui.DefaultKeyMap(), []tabs.Tab{a, b})
 
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	for _, ft := range []*fakeTab{a, b} {
@@ -152,7 +155,7 @@ func TestRouting(t *testing.T) {
 }
 
 func TestErrorToast(t *testing.T) {
-	var model tea.Model = New(config.Default())
+	var model tea.Model = mustNew(t, config.Default())
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	model, cmd := model.Update(ui.ErrMsg{Err: errors.New("gh: rate limited")})
 	if cmd == nil {
@@ -166,7 +169,7 @@ func TestErrorToast(t *testing.T) {
 }
 
 func TestBackgroundSwitchesTheme(t *testing.T) {
-	m := New(config.Default())
+	m := mustNew(t, config.Default())
 	theme := m.theme
 	_, _ = m.Update(tea.BackgroundColorMsg{Color: lipgloss.Color("#ffffff")})
 	if theme.IsDark {
@@ -179,7 +182,7 @@ func TestBackgroundSwitchesTheme(t *testing.T) {
 func TestEveryTabFits(t *testing.T) {
 	sizes := [][2]int{{80, 24}, {120, 40}, {200, 50}}
 	for _, sz := range sizes {
-		var model tea.Model = New(config.Default())
+		var model tea.Model = mustNew(t, config.Default())
 		model, _ = model.Update(tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
 		n := len(model.(Model).tabs)
 		for i := range n {
@@ -195,7 +198,156 @@ func TestEveryTabFits(t *testing.T) {
 				}
 				assertScreen(t, view, sz[0], sz[1])
 			}
+			model, _ = model.Update(press("?"))
+			assertScreen(t, model.(Model).render(), sz[0], sz[1])
+			model, _ = model.Update(press("?"))
 		}
+	}
+}
+
+// TestRemapChangesBehaviourAndHelp is the P0.5 "done when": a keybinds
+// override changes what the key does and what the help says.
+func TestRemapChangesBehaviourAndHelp(t *testing.T) {
+	cfg := config.Default()
+	cfg.Keybinds = map[string][]string{"quit": {"x"}, "help": {"h"}}
+	var model tea.Model = mustNew(t, cfg)
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+
+	if _, cmd := model.Update(press("q")); cmd != nil && isQuit(cmd()) {
+		t.Fatal("q should no longer quit")
+	}
+	if _, cmd := model.Update(press("x")); cmd == nil || !isQuit(cmd()) {
+		t.Fatal("x should quit")
+	}
+
+	status := ansi.Strip(model.(Model).render())
+	if !strings.Contains(status, "h help") || strings.Contains(status, "? help") {
+		t.Fatalf("status bar should show the remapped help key:\n%s", status)
+	}
+
+	model, _ = model.Update(press("?"))
+	if model.(Model).helpOpen {
+		t.Fatal("? should no longer open help")
+	}
+	model, _ = model.Update(press("h"))
+	if !model.(Model).helpOpen {
+		t.Fatal("h should open help")
+	}
+	help := strings.Join(strings.Fields(ansi.Strip(model.(Model).render())), " ")
+	if !strings.Contains(help, "x quit") || strings.Contains(help, "q quit") {
+		t.Fatalf("help should list x for quit:\n%s", help)
+	}
+	if !strings.Contains(help, "h help") || !strings.Contains(help, "Home") {
+		t.Fatalf("help should list global and tab sections:\n%s", help)
+	}
+}
+
+func TestBadKeybindsFail(t *testing.T) {
+	cfg := config.Default()
+	cfg.Keybinds = map[string][]string{"launch": {"l"}}
+	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "keybinds.launch") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHelpOverlay(t *testing.T) {
+	var model tea.Model = mustNew(t, config.Default())
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model, _ = model.Update(press("2"))
+	model, _ = model.Update(press("?"))
+	m := model.(Model)
+	if !m.helpOpen {
+		t.Fatal("? should open help")
+	}
+	view := m.render()
+	assertScreen(t, view, 80, 24)
+	if !strings.Contains(ansi.Strip(view), "PRs") {
+		t.Fatal("help should show the active tab section")
+	}
+
+	// Keys don't reach tabs or switch tabs while help is open.
+	model, _ = model.Update(press("3"))
+	if model.(Model).active != 1 {
+		t.Fatal("tab switched under the help overlay")
+	}
+	for _, k := range []tea.KeyPressMsg{press("?"), {Code: tea.KeyEscape}, press("q")} {
+		if !model.(Model).helpOpen {
+			model, _ = model.Update(press("?"))
+		}
+		var cmd tea.Cmd
+		model, cmd = model.Update(k)
+		if model.(Model).helpOpen {
+			t.Fatalf("%s should close help", k.String())
+		}
+		if cmd != nil && isQuit(cmd()) {
+			t.Fatalf("%s should close help, not quit", k.String())
+		}
+	}
+
+	model, _ = model.Update(press("?"))
+	if _, cmd := model.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil || !isQuit(cmd()) {
+		t.Fatal("ctrl+c should quit from the help overlay")
+	}
+}
+
+func TestRefreshKey(t *testing.T) {
+	a := &fakeTab{title: "A"}
+	var model tea.Model = newModel(config.Default(), ui.NewTheme(true, nil), ui.DefaultKeyMap(), []tabs.Tab{a})
+	_, _ = model.Update(press("r"))
+	if a.refreshes != 1 {
+		t.Fatalf("refreshes = %d, want 1", a.refreshes)
+	}
+	if len(a.keys) != 0 {
+		t.Fatalf("r should not reach the tab: %v", a.keys)
+	}
+}
+
+func TestFilterFlow(t *testing.T) {
+	var model tea.Model = mustNew(t, config.Default())
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	model, _ = model.Update(press("2")) // PRs
+	model, _ = model.Update(press("/"))
+	for _, r := range "bump q" {
+		var cmd tea.Cmd
+		model, cmd = model.Update(press(string(r)))
+		if cmd != nil && isQuit(cmd()) {
+			t.Fatal("typing q into the filter quit forge")
+		}
+	}
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	view := ansi.Strip(model.(Model).render())
+	if !strings.Contains(view, "/ bump") || !strings.Contains(view, "Bump dependencies") || strings.Contains(view, "Add retry") {
+		t.Fatalf("filter not applied:\n%s", view)
+	}
+	if !strings.Contains(view, "esc cancel") {
+		t.Fatalf("status bar should show filter keys:\n%s", view)
+	}
+	assertScreen(t, model.(Model).render(), 120, 30)
+
+	// enter keeps the filter; global keys work again.
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model, _ = model.Update(press("3"))
+	model, _ = model.Update(press("2"))
+	if model.(Model).active != 1 {
+		t.Fatal("digits should switch tabs after enter")
+	}
+	view = ansi.Strip(model.(Model).render())
+	if strings.Contains(view, "Add retry") {
+		t.Fatal("enter should keep the filter")
+	}
+
+	// esc clears it.
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	view = ansi.Strip(model.(Model).render())
+	if !strings.Contains(view, "Add retry") || strings.Contains(view, "/ bump") {
+		t.Fatalf("esc should clear the filter:\n%s", view)
+	}
+
+	// ctrl+c quits even while typing.
+	model, _ = model.Update(press("/"))
+	if _, cmd := model.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil || !isQuit(cmd()) {
+		t.Fatal("ctrl+c should quit while filtering")
 	}
 }
 
@@ -210,6 +362,15 @@ func assertScreen(t *testing.T, s string, width, height int) {
 			t.Fatalf("%dx%d: line %d is %d wide: %q", width, height, i, w, l)
 		}
 	}
+}
+
+func mustNew(t *testing.T, cfg *config.Config) Model {
+	t.Helper()
+	m, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 func press(s string) tea.KeyPressMsg {
