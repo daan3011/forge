@@ -121,6 +121,14 @@ type Theme struct {
 
 	Toast      lipgloss.Style
 	ToastError lipgloss.Style
+
+	HelpTitle   lipgloss.Style
+	HelpSection lipgloss.Style
+	HelpKey     lipgloss.Style
+	HelpDesc    lipgloss.Style
+
+	FilterPrompt lipgloss.Style
+	FilterText   lipgloss.Style
 }
 
 // NewTheme builds the theme for a dark or light terminal, applying colour
@@ -165,6 +173,14 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 
 		Toast:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Highlight).Foreground(p.Text).Padding(0, 1),
 		ToastError: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Error).Foreground(p.Text).Padding(0, 1),
+
+		HelpTitle:   lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		HelpSection: lipgloss.NewStyle().Foreground(p.Highlight).Bold(true).Underline(true),
+		HelpKey:     lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		HelpDesc:    base,
+
+		FilterPrompt: lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		FilterText:   base,
 	}
 }
 

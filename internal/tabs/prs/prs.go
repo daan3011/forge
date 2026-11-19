@@ -7,8 +7,8 @@ import (
 )
 
 // New returns the PRs tab. It is a placeholder until P2.1.
-func New(theme *ui.Theme) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, tabkit.PlaceholderSpec{
+func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
+	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
 		Title:   "PRs",
 		Feature: "P2.1",
 		Blurb:   "Pull requests grouped by your configured sections, with CI and review status.",

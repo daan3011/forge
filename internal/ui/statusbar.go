@@ -21,6 +21,9 @@ type StatusInfo struct {
 	Message string    // latest info message
 	Updated time.Time // zero hides "updated Ns ago"
 	Now     time.Time
+	// Keys are the hints shown on the right, most important last: when space
+	// runs out they are dropped from the front.
+	Keys []key.Binding
 }
 
 // NewStatusBar returns a status bar.
@@ -42,12 +45,16 @@ func (s StatusBar) View(width int, info StatusInfo) string {
 
 	updated := ""
 	if !info.Updated.IsZero() {
-		updated = "updated " + FormatAgo(info.Now.Sub(info.Updated)) + " · "
+		updated = "updated " + FormatAgo(info.Now.Sub(info.Updated))
 	}
-	help := Keys.Help.Help()
-	rightView := t.StatusRight.Render(" "+updated) + t.StatusKey.Render(help.Key) + t.StatusRight.Render(" "+help.Desc+" ")
-
-	lw, rw := lipgloss.Width(left), lipgloss.Width(rightView)
+	lw := lipgloss.Width(left)
+	hints := info.Keys
+	rightView := s.right(updated, hints)
+	for len(hints) > 0 && lw+lipgloss.Width(rightView) > width {
+		hints = hints[1:]
+		rightView = s.right(updated, hints)
+	}
+	rw := lipgloss.Width(rightView)
 	if lw+rw > width {
 		rightView = ""
 		rw = 0
@@ -65,6 +72,27 @@ func (s StatusBar) View(width int, info StatusInfo) string {
 		}
 	}
 	return left + mid + rightView
+}
+
+// right renders "updated Ns ago · key desc · key desc ".
+func (s StatusBar) right(updated string, hints []key.Binding) string {
+	t := s.theme
+	var parts []string
+	if updated != "" {
+		parts = append(parts, t.StatusRight.Render(updated))
+	}
+	for _, h := range hints {
+		hp := h.Help()
+		if !h.Enabled() || hp.Key == "" {
+			continue
+		}
+		parts = append(parts, t.StatusKey.Render(hp.Key)+t.StatusRight.Render(" "+hp.Desc))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	sp := t.StatusRight.Render(" ")
+	return sp + strings.Join(parts, t.StatusRight.Render(" · ")) + sp
 }
 
 // FormatAgo formats a duration as a short "time ago" string.
@@ -88,7 +116,7 @@ func HelpLine(theme *Theme, bindings []key.Binding) string {
 	parts := make([]string, 0, len(bindings))
 	for _, b := range bindings {
 		h := b.Help()
-		if h.Key == "" {
+		if !b.Enabled() || h.Key == "" {
 			continue
 		}
 		parts = append(parts, theme.StatusKey.UnsetBackground().Render(h.Key)+" "+theme.Hint.Render(h.Desc))

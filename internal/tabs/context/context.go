@@ -7,8 +7,8 @@ import (
 )
 
 // New returns the Context tab. It is a placeholder until P5.1.
-func New(theme *ui.Theme) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, tabkit.PlaceholderSpec{
+func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
+	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
 		Title:   "Context",
 		Feature: "P5.1",
 		Blurb:   "CLAUDE.md files, context packs, cache controls and usage.",

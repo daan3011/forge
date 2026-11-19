@@ -117,3 +117,19 @@ func TestConfigEdit(t *testing.T) {
 		})
 	}
 }
+
+func TestBadKeybindsFailBeforeStart(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "forge", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("keybinds:\n  launch: [l]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := run(t, deps{})
+	if err == nil || !strings.Contains(err.Error(), "keybinds.launch: unknown action") || !strings.Contains(err.Error(), path) {
+		t.Fatalf("err = %v", err)
+	}
+}

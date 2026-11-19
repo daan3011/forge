@@ -7,8 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func rgb(c color.Color) [3]uint32 {
@@ -123,6 +125,12 @@ func TestFit(t *testing.T) {
 
 func keyMsg(s string) tea.KeyPressMsg {
 	switch s {
+	case "ctrl+d":
+		return tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}
+	case "ctrl+u":
+		return tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
 	case "down":
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "up":
@@ -132,7 +140,7 @@ func keyMsg(s string) tea.KeyPressMsg {
 }
 
 func TestTableCursorAndScroll(t *testing.T) {
-	tb := NewTable(NewTheme(true, nil), []Column{{Title: "N", Flex: true}})
+	tb := NewTable(NewTheme(true, nil), DefaultKeyMap(), []Column{{Title: "N", Flex: true}})
 	rows := make([][]string, 10)
 	for i := range rows {
 		rows[i] = []string{string(rune('a' + i))}
@@ -164,7 +172,7 @@ func TestTableCursorAndScroll(t *testing.T) {
 }
 
 func TestTableEmpty(t *testing.T) {
-	tb := NewTable(NewTheme(true, nil), []Column{{Title: "N", Flex: true}})
+	tb := NewTable(NewTheme(true, nil), DefaultKeyMap(), []Column{{Title: "N", Flex: true}})
 	tb.SetSize(30, 5)
 	if tb.SelectedRow() != nil {
 		t.Fatal("empty table should have no selection")
@@ -233,12 +241,14 @@ func TestFormatAgo(t *testing.T) {
 
 func TestStatusBarWidth(t *testing.T) {
 	sb := NewStatusBar(NewTheme(true, nil))
+	k := DefaultKeyMap()
 	now := time.Now()
 	for _, w := range []int{80, 120, 40} {
 		got := sb.View(w, StatusInfo{
 			Tab: "Pipelines", Project: "forge",
 			Message: strings.Repeat("a very long message ", 10),
 			Updated: now.Add(-42 * time.Second), Now: now,
+			Keys: []key.Binding{k.Global.Help},
 		})
 		if lipgloss.Width(got) != w {
 			t.Fatalf("width %d: got %d", w, lipgloss.Width(got))
@@ -287,20 +297,150 @@ func TestToast(t *testing.T) {
 	}
 }
 
-func TestTabIndex(t *testing.T) {
+func TestStatusBarHints(t *testing.T) {
+	sb := NewStatusBar(NewTheme(true, nil))
+	k := DefaultKeyMap()
+	hints := []key.Binding{k.Global.Refresh, k.List.Filter, k.List.Up, k.List.Down, k.Global.Help}
 	tests := []struct {
-		msg  tea.KeyPressMsg
-		want int
+		width      int
+		want, gone []string
 	}{
-		{keyMsg("1"), 0},
-		{keyMsg("9"), 8},
-		{keyMsg("0"), -1},
-		{keyMsg("j"), -1},
+		{200, []string{"r refresh", "/ filter", "k/↑ up", "j/↓ down", "? help"}, nil},
+		{60, []string{"? help"}, []string{"r refresh"}},
+		{14, nil, []string{"? help"}},
 	}
 	for _, tt := range tests {
-		if got := Keys.TabIndex(tt.msg); got != tt.want {
-			t.Fatalf("TabIndex(%q) = %d, want %d", tt.msg.String(), got, tt.want)
+		got := sb.View(tt.width, StatusInfo{Tab: "PRs", Message: "hi", Keys: hints})
+		if lipgloss.Width(got) != tt.width {
+			t.Fatalf("width %d: got %d", tt.width, lipgloss.Width(got))
 		}
+		plain := ansi.Strip(got)
+		for _, w := range tt.want {
+			if !strings.Contains(plain, w) {
+				t.Fatalf("width %d: missing %q in %q", tt.width, w, plain)
+			}
+		}
+		for _, g := range tt.gone {
+			if strings.Contains(plain, g) {
+				t.Fatalf("width %d: %q should be dropped from %q", tt.width, g, plain)
+			}
+		}
+	}
+}
+
+func TestTableJumps(t *testing.T) {
+	tb := NewTable(NewTheme(true, nil), DefaultKeyMap(), []Column{{Title: "N", Flex: true}})
+	rows := make([][]string, 20)
+	for i := range rows {
+		rows[i] = []string{string(rune('a' + i))}
+	}
+	tb.SetRows(rows)
+	tb.SetSize(10, 9) // 8 body rows, half page = 4
+
+	steps := []struct {
+		key  string
+		want int
+	}{
+		{"G", 19}, {"g", 0}, {"ctrl+d", 4}, {"ctrl+d", 8}, {"ctrl+u", 4}, {"ctrl+u", 0}, {"ctrl+u", 0},
+	}
+	for _, s := range steps {
+		tb.Update(keyMsg(s.key))
+		if tb.Cursor() != s.want {
+			t.Fatalf("after %s: cursor = %d, want %d", s.key, tb.Cursor(), s.want)
+		}
+		assertSize(t, tb.View(), 10, 9)
+	}
+}
+
+func TestTableFilter(t *testing.T) {
+	tb := NewTable(NewTheme(true, nil), DefaultKeyMap(), []Column{{Title: "#", Width: 3}, {Title: "Title", Flex: true}})
+	tb.SetRows([][]string{{"1", "Add retry"}, {"2", "Bump deps"}, {"3", "Bump go"}})
+	tb.SetSize(30, 5)
+	tb.Update(keyMsg("G"))
+
+	tb.SetFilter("BUMP")
+	if n := len(tb.VisibleRows()); n != 2 {
+		t.Fatalf("visible = %d, want 2", n)
+	}
+	if tb.SelectedRow()[1] != "Bump go" {
+		t.Fatalf("cursor not clamped into filtered rows: %v", tb.SelectedRow())
+	}
+	if len(tb.Rows()) != 3 {
+		t.Fatal("Rows should ignore the filter")
+	}
+
+	tb.SetFilter("nothing")
+	if tb.SelectedRow() != nil || !strings.Contains(tb.View(), "no matches") {
+		t.Fatalf("expected no matches:\n%s", tb.View())
+	}
+	assertSize(t, tb.View(), 30, 5)
+
+	tb.SetFilter("")
+	if len(tb.VisibleRows()) != 3 {
+		t.Fatal("empty filter should show every row")
+	}
+}
+
+func TestFilterInput(t *testing.T) {
+	f := NewFilter(NewTheme(true, nil), DefaultKeyMap())
+	if f.Update(keyMsg("a")) {
+		t.Fatal("inactive filter should ignore keys")
+	}
+	f.Start()
+	for _, k := range []string{"b", "u", "x", "backspace", "m"} {
+		f.Update(keyMsg(k))
+	}
+	if f.Value() != "bum" {
+		t.Fatalf("value = %q", f.Value())
+	}
+	if f.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}) {
+		t.Fatal("ctrl combos should not be typed")
+	}
+	assertSize(t, f.View(12), 12, 1)
+	f.Update(keyMsg("ctrl+u"))
+	if f.Value() != "" {
+		t.Fatalf("clear input left %q", f.Value())
+	}
+	f.Stop()
+	if f.Active() || f.Visible() {
+		t.Fatal("stopped empty filter should be hidden")
+	}
+}
+
+func TestHelpView(t *testing.T) {
+	k := DefaultKeyMap()
+	h := NewHelpView(NewTheme(true, nil), k)
+	h.SetContent([]HelpSection{
+		{Title: "Global", Groups: [][]key.Binding{k.GlobalHelp()}},
+		{Title: "PRs", Groups: [][]key.Binding{{k.List.Up, k.List.Down}, {k.List.Filter}}},
+	})
+	for _, sz := range [][2]int{{80, 24}, {200, 50}, {30, 8}} {
+		h.SetSize(sz[0], sz[1])
+		assertSize(t, h.View(), sz[0], sz[1])
+	}
+
+	h.SetSize(100, 40)
+	plain := strings.Join(strings.Fields(ansi.Strip(h.View())), " ")
+	for _, want := range []string{"Global", "PRs", "q quit", "1-9 go to tab", "k/↑ up", "/ filter", "esc close"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("help missing %q:\n%s", want, plain)
+		}
+	}
+
+	// Too small to fit: scrolling moves the content and stays in range.
+	h.SetSize(40, 6)
+	top := h.View()
+	h.Update(keyMsg("j"))
+	if h.View() == top {
+		t.Fatal("j should scroll the help")
+	}
+	for range 50 {
+		h.Update(keyMsg("j"))
+	}
+	assertSize(t, h.View(), 40, 6)
+	h.Update(keyMsg("g"))
+	if h.View() != top {
+		t.Fatal("g should scroll back to the top")
 	}
 }
 

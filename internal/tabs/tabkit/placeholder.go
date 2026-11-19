@@ -27,25 +27,32 @@ type PlaceholderSpec struct {
 type Placeholder struct {
 	spec    PlaceholderSpec
 	theme   *ui.Theme
+	keys    *ui.KeyMap
 	split   ui.SplitPane
 	table   ui.Table
+	filter  ui.Filter
 	project *config.Project
 	updated time.Time
 	now     func() time.Time
 }
 
-var _ tabs.Tab = (*Placeholder)(nil)
+var (
+	_ tabs.Tab           = (*Placeholder)(nil)
+	_ tabs.InputCapturer = (*Placeholder)(nil)
+)
 
 // NewPlaceholder returns a placeholder tab.
-func NewPlaceholder(theme *ui.Theme, spec PlaceholderSpec) *Placeholder {
-	t := ui.NewTable(theme, spec.Columns)
+func NewPlaceholder(theme *ui.Theme, keys *ui.KeyMap, spec PlaceholderSpec) *Placeholder {
+	t := ui.NewTable(theme, keys, spec.Columns)
 	t.SetRows(spec.Rows)
 	return &Placeholder{
-		spec:  spec,
-		theme: theme,
-		split: ui.NewSplitPane(theme),
-		table: t,
-		now:   time.Now,
+		spec:   spec,
+		theme:  theme,
+		keys:   keys,
+		split:  ui.NewSplitPane(theme),
+		table:  t,
+		filter: ui.NewFilter(theme, keys),
+		now:    time.Now,
 	}
 }
 
@@ -54,24 +61,67 @@ func (p *Placeholder) Init() tea.Cmd { return p.Refresh() }
 
 // Update implements tabs.Tab.
 func (p *Placeholder) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
-	if msg, ok := msg.(tea.KeyPressMsg); ok {
-		switch {
-		case key.Matches(msg, ui.Keys.GrowPane):
-			p.split.Grow()
-			p.resizeTable()
-		case key.Matches(msg, ui.Keys.ShrinkPane):
-			p.split.Shrink()
-			p.resizeTable()
-		default:
-			return p, p.table.Update(msg)
-		}
+	kp, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return p, nil
+	}
+	if p.filter.Active() {
+		p.updateFilter(kp)
+		return p, nil
+	}
+	l := p.keys.List
+	switch {
+	case key.Matches(kp, l.Filter):
+		p.filter.Start()
+		p.resizeTable()
+	case key.Matches(kp, p.keys.Input.Cancel) && p.filter.Value() != "":
+		p.clearFilter()
+	case key.Matches(kp, l.GrowPane):
+		p.split.Grow()
+		p.resizeTable()
+	case key.Matches(kp, l.ShrinkPane):
+		p.split.Shrink()
+		p.resizeTable()
+	default:
+		return p, p.table.Update(kp)
 	}
 	return p, nil
 }
 
+func (p *Placeholder) updateFilter(msg tea.KeyPressMsg) {
+	in := p.keys.Input
+	switch {
+	case key.Matches(msg, in.Accept):
+		p.filter.Stop()
+		if p.filter.Value() == "" {
+			p.resizeTable()
+		}
+	case key.Matches(msg, in.Cancel):
+		p.clearFilter()
+	default:
+		if p.filter.Update(msg) {
+			p.table.SetFilter(p.filter.Value())
+		}
+	}
+}
+
+func (p *Placeholder) clearFilter() {
+	p.filter.Clear()
+	p.table.SetFilter("")
+	p.resizeTable()
+}
+
+// CapturingInput implements tabs.InputCapturer.
+func (p *Placeholder) CapturingInput() bool { return p.filter.Active() }
+
 // View implements tabs.Tab.
 func (p *Placeholder) View() string {
-	return p.split.View(p.table.View(), p.detail(), true)
+	list := p.table.View()
+	if p.filter.Visible() {
+		w, _ := p.split.LeftSize()
+		list = p.filter.View(w) + "\n" + list
+	}
+	return p.split.View(list, p.detail(), true)
 }
 
 func (p *Placeholder) detail() string {
@@ -106,7 +156,21 @@ func (p *Placeholder) Title() string { return p.spec.Title }
 
 // ShortHelp implements tabs.Tab.
 func (p *Placeholder) ShortHelp() []key.Binding {
-	return []key.Binding{ui.Keys.Up, ui.Keys.Down, ui.Keys.ShrinkPane, ui.Keys.GrowPane}
+	if p.filter.Active() {
+		return []key.Binding{p.keys.Input.Cancel, p.keys.Input.Accept}
+	}
+	l := p.keys.List
+	return []key.Binding{p.keys.Global.Refresh, l.Filter, l.Up, l.Down}
+}
+
+// FullHelp implements tabs.Tab.
+func (p *Placeholder) FullHelp() [][]key.Binding {
+	l, in := p.keys.List, p.keys.Input
+	return [][]key.Binding{
+		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
+		{l.Filter, l.ShrinkPane, l.GrowPane},
+		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
+	}
 }
 
 // Refresh implements tabs.Tab. Placeholders have nothing to load, so it only
@@ -126,7 +190,11 @@ func (p *Placeholder) SetSize(width, height int) {
 }
 
 func (p *Placeholder) resizeTable() {
-	p.table.SetSize(p.split.LeftSize())
+	w, h := p.split.LeftSize()
+	if p.filter.Visible() {
+		h = max(h-1, 0)
+	}
+	p.table.SetSize(w, h)
 }
 
 // SetProject implements tabs.Tab.

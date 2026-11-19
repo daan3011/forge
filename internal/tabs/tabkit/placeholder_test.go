@@ -15,7 +15,7 @@ import (
 func press(s string) tea.KeyPressMsg { return tea.KeyPressMsg{Code: rune(s[0]), Text: s} }
 
 func TestPlaceholder(t *testing.T) {
-	p := NewPlaceholder(ui.NewTheme(true, nil), PlaceholderSpec{
+	p := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{
 		Title:   "PRs",
 		Feature: "P2.1",
 		Blurb:   "Pull requests.",
@@ -48,6 +48,40 @@ func TestPlaceholder(t *testing.T) {
 	p.Update(press("<"))
 	if p.split.Ratio() >= before {
 		t.Fatal("< should narrow the list")
+	}
+}
+
+func TestPlaceholderFilter(t *testing.T) {
+	p := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{
+		Title:   "PRs",
+		Columns: []ui.Column{{Title: "#", Width: 4}, {Title: "Title", Flex: true}},
+		Rows:    [][]string{{"#1", "first"}, {"#2", "second"}},
+	})
+	p.SetSize(80, 12)
+	p.Update(press("/"))
+	if !p.CapturingInput() {
+		t.Fatal("/ should start the filter")
+	}
+	for _, r := range "sec" {
+		p.Update(press(string(r)))
+	}
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if p.CapturingInput() {
+		t.Fatal("enter should stop typing")
+	}
+	view := ansi.Strip(p.View())
+	if !strings.Contains(view, "/ sec") || !strings.Contains(view, "Title: second") || strings.Contains(view, "#1") {
+		t.Fatalf("filter not applied:\n%s", view)
+	}
+	if got := len(strings.Split(p.View(), "\n")); got != 12 {
+		t.Fatalf("view is %d lines with the filter line, want 12", got)
+	}
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if view := ansi.Strip(p.View()); strings.Contains(view, "/ sec") || !strings.Contains(view, "#1") {
+		t.Fatalf("esc should clear the filter:\n%s", view)
+	}
+	if len(p.FullHelp()) == 0 || len(p.ShortHelp()) > 4 {
+		t.Fatal("help bindings out of range")
 	}
 }
 

@@ -18,8 +18,12 @@ type Tab interface {
 	// View renders the tab at exactly the size given to SetSize.
 	View() string
 	Title() string
-	// ShortHelp returns the tab's most useful bindings for the status bar.
+	// ShortHelp returns the tab's most useful bindings for the status bar,
+	// most important last (at most four; the app adds help).
 	ShortHelp() []key.Binding
+	// FullHelp returns every tab binding for the help overlay, one column per
+	// group.
+	FullHelp() [][]key.Binding
 	// Refresh reloads the tab's data.
 	Refresh() tea.Cmd
 	SetSize(width, height int)
@@ -31,4 +35,11 @@ type Tab interface {
 // so the status bar can show "updated Ns ago".
 type Updater interface {
 	LastUpdated() time.Time
+}
+
+// InputCapturer is implemented by tabs that can take text input (a filter,
+// a form). While CapturingInput is true the root model only handles
+// force-quit and forwards every other key to the tab.
+type InputCapturer interface {
+	CapturingInput() bool
 }

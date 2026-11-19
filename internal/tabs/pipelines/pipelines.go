@@ -7,8 +7,8 @@ import (
 )
 
 // New returns the Pipelines tab. It is a placeholder until P2.6.
-func New(theme *ui.Theme) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, tabkit.PlaceholderSpec{
+func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
+	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
 		Title:   "Pipelines",
 		Feature: "P2.6",
 		Blurb:   "Recent workflow runs for the active project, with log tail and rerun.",

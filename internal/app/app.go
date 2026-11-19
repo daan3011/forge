@@ -3,6 +3,7 @@
 package app
 
 import (
+	"slices"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -22,8 +23,9 @@ import (
 	"github.com/daan3011/forge/internal/ui"
 )
 
-// TODO(P0.6): register every action handled here (quit, next/prev tab, go to
-// tab N, widen/narrow list) as palette commands.
+// TODO(P0.6): register every action handled here (quit, help, refresh,
+// next/prev tab, go to tab N) and the list actions (filter, widen/narrow list)
+// as palette commands, using the action ids from ui.ActionIDs.
 
 // statusBarHeight is the number of rows the status bar takes.
 const statusBarHeight = 1
@@ -38,6 +40,7 @@ type clockMsg time.Time
 type Model struct {
 	cfg     *config.Config
 	theme   *ui.Theme
+	keys    *ui.KeyMap
 	tabs    []tabs.Tab
 	active  int
 	width   int
@@ -48,27 +51,37 @@ type Model struct {
 	message string
 	now     time.Time
 	clockOn bool
+
+	help     ui.HelpView
+	helpOpen bool
 }
 
-// New returns the root model for the given config.
-func New(cfg *config.Config) Model {
+// New returns the root model for the given config. It fails if the keybinds
+// overrides are invalid.
+func New(cfg *config.Config) (Model, error) {
+	keys, err := ui.NewKeyMap(cfg.Keybinds)
+	if err != nil {
+		return Model{}, err
+	}
 	theme := ui.NewTheme(true, cfg.UI.Theme)
-	return newModel(cfg, theme, []tabs.Tab{
-		home.New(theme),
-		prs.New(theme),
-		pipelines.New(theme),
-		plane.New(theme),
-		sessions.New(theme),
-		docs.New(theme),
-		artifacts.New(theme),
-		contexttab.New(theme),
-	})
+	return newModel(cfg, theme, keys, []tabs.Tab{
+		home.New(theme, keys),
+		prs.New(theme, keys),
+		pipelines.New(theme, keys),
+		plane.New(theme, keys),
+		sessions.New(theme, keys),
+		docs.New(theme, keys),
+		artifacts.New(theme, keys),
+		contexttab.New(theme, keys),
+	}), nil
 }
 
-func newModel(cfg *config.Config, theme *ui.Theme, ts []tabs.Tab) Model {
+func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Tab) Model {
 	m := Model{
 		cfg:     cfg,
 		theme:   theme,
+		keys:    keys,
+		help:    ui.NewHelpView(theme, keys),
 		tabs:    ts,
 		toast:   ui.NewToast(theme),
 		status:  ui.NewStatusBar(theme),
@@ -108,6 +121,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, t := range m.tabs {
 			t.SetSize(m.contentSize())
 		}
+		m.help.SetSize(m.width, m.height)
 		return m, nil
 
 	case tea.BackgroundColorMsg:
@@ -139,20 +153,83 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, ui.Keys.Quit):
+	g := m.keys.Global
+	if key.Matches(msg, g.ForceQuit) {
 		return m, tea.Quit
-	case key.Matches(msg, ui.Keys.NextTab):
+	}
+	if m.helpOpen {
+		return m.handleHelpKey(msg)
+	}
+	if m.capturingInput() {
+		return m.updateActive(msg)
+	}
+	switch {
+	case key.Matches(msg, g.Quit):
+		return m, tea.Quit
+	case key.Matches(msg, g.Help):
+		m.openHelp()
+		return m, nil
+	case key.Matches(msg, g.NextTab):
 		return m.switchTo((m.active + 1) % len(m.tabs))
-	case key.Matches(msg, ui.Keys.PrevTab):
+	case key.Matches(msg, g.PrevTab):
 		return m.switchTo((m.active - 1 + len(m.tabs)) % len(m.tabs))
-	case key.Matches(msg, ui.Keys.GotoTab):
-		if i := ui.Keys.TabIndex(msg); i >= 0 && i < len(m.tabs) {
+	case key.Matches(msg, g.GotoTab):
+		if i := m.keys.TabIndex(msg); i >= 0 && i < len(m.tabs) {
 			return m.switchTo(i)
 		}
 		return m, nil
+	case key.Matches(msg, g.Refresh):
+		return m.refresh()
 	}
 	return m.updateActive(msg)
+}
+
+func (m Model) handleHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Global.Help, m.keys.Input.Cancel, m.keys.Global.Quit):
+		m.helpOpen = false
+	default:
+		m.help.Update(msg)
+	}
+	return m, nil
+}
+
+// openHelp shows the help overlay for the global keys and the active tab.
+func (m *Model) openHelp() {
+	sections := []ui.HelpSection{{Title: "Global", Groups: [][]key.Binding{m.keys.GlobalHelp()}}}
+	if len(m.tabs) > 0 {
+		t := m.tabs[m.active]
+		sections = append(sections, ui.HelpSection{Title: t.Title(), Groups: t.FullHelp()})
+	}
+	m.help.SetContent(sections)
+	m.help.SetSize(m.width, m.height)
+	m.helpOpen = true
+}
+
+// statusKeys are the status bar hints: the tab's own, plus help unless the
+// tab is taking text input (where ? would be typed).
+func (m Model) statusKeys(active tabs.Tab) []key.Binding {
+	if m.capturingInput() {
+		return active.ShortHelp()
+	}
+	return slices.Concat(active.ShortHelp(), []key.Binding{m.keys.Global.Help})
+}
+
+func (m Model) capturingInput() bool {
+	if len(m.tabs) == 0 {
+		return false
+	}
+	c, ok := m.tabs[m.active].(tabs.InputCapturer)
+	return ok && c.CapturingInput()
+}
+
+func (m Model) refresh() (tea.Model, tea.Cmd) {
+	if len(m.tabs) == 0 {
+		return m, nil
+	}
+	cmd := m.tabs[m.active].Refresh()
+	m.now = time.Now()
+	return m, tea.Batch(cmd, m.ensureClock())
 }
 
 func (m Model) switchTo(i int) (tea.Model, tea.Cmd) {
@@ -206,6 +283,9 @@ func (m Model) render() string {
 	if m.width == 0 || m.height == 0 || len(m.tabs) == 0 {
 		return m.theme.Wordmark.Render("forge")
 	}
+	if m.helpOpen {
+		return m.help.View()
+	}
 	titles := make([]string, len(m.tabs))
 	for i, t := range m.tabs {
 		titles[i] = t.Title()
@@ -226,6 +306,7 @@ func (m Model) render() string {
 			Message: m.message,
 			Updated: m.activeUpdated(),
 			Now:     m.now,
+			Keys:    m.statusKeys(active),
 		}),
 	)
 	screen = ui.Box(screen, m.width, m.height)
