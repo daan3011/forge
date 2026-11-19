@@ -169,15 +169,15 @@ func Default() *Config {
 			APIKeyEnv: "PLANE_API_KEY",
 		},
 		Sessions: Sessions{
-			WorktreeRoot:       filepath.Join(dataHome(), "forge", "worktrees"),
+			WorktreeRoot:       filepath.Join(DataHome(), "forge", "worktrees"),
 			NotifyAfterMinutes: 5,
 		},
 		UI: UI{Animations: AnimationsFull},
 	}
 }
 
-// dataHome returns $XDG_DATA_HOME, or ~/.local/share.
-func dataHome() string {
+// DataHome returns $XDG_DATA_HOME, or ~/.local/share.
+func DataHome() string {
 	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
 		return d
 	}
