@@ -9,7 +9,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 - [x] P0.3 Store
 - [x] P0.4 App shell & theme
 - [x] P0.5 Keymap & help
-- [ ] P0.6 Command palette
+- [x] P0.6 Command palette
 - [ ] P0.7 Project switcher
 - [ ] P0.8 Background refresh
 - [ ] P0.9 Forge animations

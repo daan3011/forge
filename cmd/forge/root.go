@@ -9,6 +9,7 @@ import (
 	"github.com/daan3011/forge/internal/app"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/editor"
+	"github.com/daan3011/forge/internal/store"
 )
 
 // deps are the external collaborators of the CLI, swapped for fakes in tests.
@@ -31,7 +32,12 @@ func newRootCmd(d deps) *cobra.Command {
 			if created {
 				fmt.Fprintln(cmd.ErrOrStderr(), "created default config at", path)
 			}
-			model, err := app.New(cfg)
+			st, err := store.Open(cmd.Context(), store.DefaultPath())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = st.Close() }()
+			model, err := app.New(cfg, app.WithRecents(st.Cache()))
 			if err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}

@@ -102,3 +102,51 @@ func TestWrap(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaceholderPalette(t *testing.T) {
+	p := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{
+		Title:            "PRs",
+		EntityKind:       "PR",
+		EntityTitleCells: 2,
+		Columns:          []ui.Column{{Title: "#", Width: 4}, {Title: "Title", Flex: true}, {Title: "By", Width: 6}},
+		Rows:             [][]string{{"#1", "first", "ann"}, {"#2", "second", "bob"}, {}},
+	})
+	p.SetSize(80, 12)
+
+	es := p.Entities()
+	if len(es) != 2 || es[1].Kind != "PR" || es[1].ID != "#2" || es[1].Title != "#2 second" || es[1].Detail != "bob" {
+		t.Fatalf("entities = %+v", es)
+	}
+
+	// Select clears a filter that hides the row, then moves to it.
+	p.Update(press("/"))
+	p.Update(press("f"))
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	p.Select("#2")
+	if view := ansi.Strip(p.View()); !strings.Contains(view, "Title: second") || strings.Contains(view, "/ f") {
+		t.Fatalf("select did not jump to #2:\n%s", view)
+	}
+
+	cmds := map[string]func() tea.Cmd{}
+	for _, c := range p.Commands() {
+		cmds[c.ID] = c.Run
+		if c.Title == "" || c.Key.Help().Key == "" {
+			t.Fatalf("command %s needs a title and key hint", c.ID)
+		}
+	}
+	ratio := p.split.Ratio()
+	cmds["grow_pane"]()
+	if p.split.Ratio() <= ratio {
+		t.Fatal("grow_pane should widen the list")
+	}
+	cmds["shrink_pane"]()
+	cmds["filter"]()
+	if !p.CapturingInput() {
+		t.Fatal("filter command should start the filter")
+	}
+
+	none := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{Rows: [][]string{{"x"}}})
+	if none.Entities() != nil {
+		t.Fatal("no EntityKind means no entities")
+	}
+}

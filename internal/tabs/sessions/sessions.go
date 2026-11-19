@@ -9,9 +9,10 @@ import (
 // New returns the Sessions tab. It is a placeholder until P1.3.
 func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
 	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
-		Title:   "Sessions",
-		Feature: "P1.3",
-		Blurb:   "Named Claude Code sessions, each with a worktree, tmux window and live status.",
+		Title:      "Sessions",
+		Feature:    "P1.3",
+		Blurb:      "Named Claude Code sessions, each with a worktree, tmux window and live status.",
+		EntityKind: "Session",
 		Columns: []ui.Column{
 			{Title: "Name", Width: 0, Flex: true},
 			{Title: "Status", Width: 9},
