@@ -6,14 +6,17 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/ui"
 )
 
 // Model is the root model.
-type Model struct{}
+type Model struct {
+	cfg *config.Config
+}
 
-// New returns the root model.
-func New() Model { return Model{} }
+// New returns the root model for the given config.
+func New(cfg *config.Config) Model { return Model{cfg: cfg} }
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd { return nil }

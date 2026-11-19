@@ -1,0 +1,69 @@
+# forge config
+#
+# Created by forge on first run. Every key is optional: anything you leave out
+# (or comment out) falls back to the built-in default shown here.
+# Strings in paths, plane.base_url and plane.api_key may use $VAR / ${VAR}
+# environment variables, and paths may start with ~/.
+#
+# Run `forge config edit` to open this file, `forge config path` to print where it is.
+
+# Projects tie a GitHub repo, a local checkout, a Plane project and a docs
+# folder together. ctrl+p switches the active project.
+projects:
+  # - name: forge                      # short name shown in the UI (unique)
+  #   repo: daan/forge                 # GitHub "owner/name"
+  #   path: ~/code/forge               # local checkout (absolute or ~/)
+  #   plane_project_id: ""             # Plane project UUID (optional)
+  #   docs_dir: .forge/docs            # relative to path (default .forge/docs)
+
+github:
+  # How often PR and pipeline lists refresh in the background ("30s", "2m"; min 5s).
+  refresh_interval: 60s
+  # Sections on the PRs tab. Each query uses GitHub search syntax.
+  pr_sections:
+    - title: Needs my review
+      query: "is:open review-requested:@me"
+    - title: Mine
+      query: "is:open author:@me"
+
+plane:
+  # Plane API base URL; change it for self-hosted Plane.
+  base_url: https://api.plane.so
+  # Your workspace slug (the part after the host in Plane URLs).
+  workspace_slug: ""
+  # Prefer keeping the key in an environment variable. api_key, if set, wins.
+  # api_key: ""
+  api_key_env: PLANE_API_KEY
+
+sessions:
+  # Where agent worktrees are created
+  # (default: $XDG_DATA_HOME/forge/worktrees or ~/.local/share/forge/worktrees).
+  # worktree_root: ~/.local/share/forge/worktrees
+  # Template used when starting a session without picking one.
+  default_template: ""
+  # Desktop notification when an agent waits for input this many minutes (0 = never).
+  notify_after_minutes: 5
+
+artifacts:
+  # Globs of folders/files to watch for HTML/SVG/PNG/MD made by Claude.
+  watch:
+    # - ~/code/*/artifacts/**
+
+ui:
+  # full | reduced | off
+  animations: full
+  # Override palette colours by name with #rgb or #rrggbb.
+  theme:
+    # ember: "#ff7a1a"
+
+# Override key bindings: action name -> list of keys.
+keybinds:
+  # quit: ["q", "ctrl+c"]
+
+# Shell commands available in the palette, optionally bound to a key.
+# Placeholders: {pr}, {branch}, {repo}, {worktree}.
+custom_commands:
+  # - name: open-in-editor
+  #   key: ctrl+e
+  #   command: code {worktree}
+  #   description: Open the worktree in VS Code

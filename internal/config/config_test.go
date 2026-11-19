@@ -1,0 +1,127 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+// writeConfig writes body to a temp config file and returns its path.
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestDefault(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/data")
+	d := Default()
+	if d.GitHub.RefreshInterval.Duration != time.Minute {
+		t.Errorf("refresh_interval = %s", d.GitHub.RefreshInterval)
+	}
+	if len(d.GitHub.PRSections) != 2 {
+		t.Errorf("pr_sections = %v", d.GitHub.PRSections)
+	}
+	if d.Plane.BaseURL != "https://api.plane.so" || d.Plane.APIKeyEnv != "PLANE_API_KEY" {
+		t.Errorf("plane = %+v", d.Plane)
+	}
+	if d.Sessions.WorktreeRoot != "/data/forge/worktrees" {
+		t.Errorf("worktree_root = %q", d.Sessions.WorktreeRoot)
+	}
+	if d.Sessions.NotifyAfterMinutes != 5 {
+		t.Errorf("notify_after_minutes = %d", d.Sessions.NotifyAfterMinutes)
+	}
+	if d.UI.Animations != AnimationsFull {
+		t.Errorf("animations = %q", d.UI.Animations)
+	}
+	if err := d.Validate(); err != nil {
+		t.Errorf("defaults must validate: %v", err)
+	}
+}
+
+func TestTemplateMatchesDefault(t *testing.T) {
+	got, err := Load(writeConfig(t, string(Template())))
+	if err != nil {
+		t.Fatalf("template does not load: %v", err)
+	}
+	if want := Default(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("template and Default() drifted:\n got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestPartialFileKeepsDefaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "github:\n  refresh_interval: 2m\nui:\n  animations: off\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GitHub.RefreshInterval.Duration != 2*time.Minute {
+		t.Errorf("refresh_interval = %s", cfg.GitHub.RefreshInterval)
+	}
+	if cfg.UI.Animations != AnimationsOff {
+		t.Errorf("animations = %q", cfg.UI.Animations)
+	}
+	d := Default()
+	if !reflect.DeepEqual(cfg.GitHub.PRSections, d.GitHub.PRSections) || cfg.Plane != d.Plane {
+		t.Errorf("omitted keys lost their defaults: %+v", cfg)
+	}
+}
+
+func TestEmptyFileIsDefault(t *testing.T) {
+	for _, body := range []string{"", "# just a comment\n"} {
+		cfg, err := Load(writeConfig(t, body))
+		if err != nil {
+			t.Fatalf("%q: %v", body, err)
+		}
+		if !reflect.DeepEqual(cfg, Default()) {
+			t.Fatalf("%q: got %+v", body, cfg)
+		}
+	}
+}
+
+func TestDurationRoundTrip(t *testing.T) {
+	in := struct {
+		D Duration `yaml:"d"`
+	}{Duration{90 * time.Second}}
+	b, err := yaml.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(b)) != "d: 1m30s" {
+		t.Fatalf("marshal = %q", b)
+	}
+	var out struct {
+		D Duration `yaml:"d"`
+	}
+	if err := yaml.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out != in {
+		t.Fatalf("round trip = %v, want %v", out, in)
+	}
+}
+
+func TestProjectHelpers(t *testing.T) {
+	p := Project{Repo: "daan/forge", Path: "/code/forge"}
+	if p.Owner() != "daan" || p.RepoName() != "forge" {
+		t.Errorf("owner/name = %q/%q", p.Owner(), p.RepoName())
+	}
+	tests := []struct{ docsDir, want string }{
+		{"", "/code/forge/.forge/docs"},
+		{"docs", "/code/forge/docs"},
+		{"/elsewhere", "/elsewhere"},
+	}
+	for _, tt := range tests {
+		p.DocsDir = tt.docsDir
+		if got := p.DocsPath(); got != tt.want {
+			t.Errorf("DocsPath(%q) = %q, want %q", tt.docsDir, got, tt.want)
+		}
+	}
+}

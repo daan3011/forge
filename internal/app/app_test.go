@@ -7,10 +7,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/exp/teatest/v2"
+
+	"github.com/daan3011/forge/internal/config"
 )
 
 func TestQuitFlow(t *testing.T) {
-	tm := teatest.NewTestModel(t, New(), teatest.WithInitialTermSize(80, 24))
+	tm := teatest.NewTestModel(t, New(config.Default()), teatest.WithInitialTermSize(80, 24))
 
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("forge"))
@@ -32,7 +34,7 @@ func TestQuitKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, cmd := New().Update(tt.msg)
+			_, cmd := New(config.Default()).Update(tt.msg)
 			gotQuit := cmd != nil && isQuit(cmd())
 			if gotQuit != tt.quit {
 				t.Fatalf("quit = %v, want %v", gotQuit, tt.quit)

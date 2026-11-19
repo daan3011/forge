@@ -5,7 +5,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 ## Phase 0 — Foundations
 
 - [x] P0.1 Project scaffold
-- [ ] P0.2 Config
+- [x] P0.2 Config
 - [ ] P0.3 Store
 - [ ] P0.4 App shell & theme
 - [ ] P0.5 Keymap & help
