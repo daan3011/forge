@@ -129,6 +129,16 @@ type Theme struct {
 
 	FilterPrompt lipgloss.Style
 	FilterText   lipgloss.Style
+
+	PaletteBox            lipgloss.Style
+	PalettePrompt         lipgloss.Style
+	PaletteGroup          lipgloss.Style
+	PaletteItem           lipgloss.Style
+	PaletteDetail         lipgloss.Style
+	PaletteHint           lipgloss.Style
+	PaletteSelected       lipgloss.Style
+	PaletteSelectedDetail lipgloss.Style
+	PaletteSelectedHint   lipgloss.Style
 }
 
 // NewTheme builds the theme for a dark or light terminal, applying colour
@@ -181,6 +191,16 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 
 		FilterPrompt: lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		FilterText:   base,
+
+		PaletteBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
+		PalettePrompt:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		PaletteGroup:          lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		PaletteItem:           base,
+		PaletteDetail:         lipgloss.NewStyle().Foreground(p.Muted),
+		PaletteHint:           lipgloss.NewStyle().Foreground(p.Highlight),
+		PaletteSelected:       lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
+		PaletteSelectedDetail: lipgloss.NewStyle().Foreground(p.Muted).Background(p.Surface),
+		PaletteSelectedHint:   lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 	}
 }
 

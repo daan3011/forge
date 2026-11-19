@@ -43,3 +43,34 @@ type Updater interface {
 type InputCapturer interface {
 	CapturingInput() bool
 }
+
+// Command is a tab-scoped action offered in the command palette while the
+// tab is active. Key is the binding that triggers the same action, shown as
+// a hint; ID matches the keymap action id where there is one.
+type Command struct {
+	ID    string
+	Title string
+	Key   key.Binding
+	Run   func() tea.Cmd
+}
+
+// Commander is implemented by tabs that contribute palette commands.
+type Commander interface {
+	Commands() []Command
+}
+
+// Entity is an item a tab offers for palette search (a PR, an issue, a
+// session, a doc). Kind names the result group, e.g. "PR" or "Issue".
+type Entity struct {
+	Kind   string
+	ID     string
+	Title  string
+	Detail string
+}
+
+// EntityProvider is implemented by tabs that contribute searchable items.
+// Select jumps to the item; the root model has already made the tab active.
+type EntityProvider interface {
+	Entities() []Entity
+	Select(id string) tea.Cmd
+}

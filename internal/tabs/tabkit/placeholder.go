@@ -20,6 +20,12 @@ type PlaceholderSpec struct {
 	Blurb   string // one line on what the tab will show
 	Columns []ui.Column
 	Rows    [][]string // sample rows
+	// EntityKind names the sample rows in palette search ("PR", "Issue", ...).
+	// Empty means the tab contributes no entities.
+	EntityKind string
+	// EntityTitleCells is how many leading cells form the entity title (the
+	// rest become its detail); 0 means 1.
+	EntityTitleCells int
 }
 
 // Placeholder is a tab with the standard list/detail layout and sample rows,
@@ -37,8 +43,10 @@ type Placeholder struct {
 }
 
 var (
-	_ tabs.Tab           = (*Placeholder)(nil)
-	_ tabs.InputCapturer = (*Placeholder)(nil)
+	_ tabs.Tab            = (*Placeholder)(nil)
+	_ tabs.InputCapturer  = (*Placeholder)(nil)
+	_ tabs.Commander      = (*Placeholder)(nil)
+	_ tabs.EntityProvider = (*Placeholder)(nil)
 )
 
 // NewPlaceholder returns a placeholder tab.
@@ -72,20 +80,80 @@ func (p *Placeholder) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	l := p.keys.List
 	switch {
 	case key.Matches(kp, l.Filter):
-		p.filter.Start()
-		p.resizeTable()
+		p.startFilter()
 	case key.Matches(kp, p.keys.Input.Cancel) && p.filter.Value() != "":
 		p.clearFilter()
 	case key.Matches(kp, l.GrowPane):
-		p.split.Grow()
-		p.resizeTable()
+		p.grow()
 	case key.Matches(kp, l.ShrinkPane):
-		p.split.Shrink()
-		p.resizeTable()
+		p.shrink()
 	default:
 		return p, p.table.Update(kp)
 	}
 	return p, nil
+}
+
+func (p *Placeholder) startFilter() {
+	p.filter.Start()
+	p.resizeTable()
+}
+
+func (p *Placeholder) grow() {
+	p.split.Grow()
+	p.resizeTable()
+}
+
+func (p *Placeholder) shrink() {
+	p.split.Shrink()
+	p.resizeTable()
+}
+
+// Commands implements tabs.Commander.
+func (p *Placeholder) Commands() []tabs.Command {
+	l := p.keys.List
+	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return nil } }
+	return []tabs.Command{
+		{ID: "filter", Title: "Filter " + p.spec.Title, Key: l.Filter, Run: do(p.startFilter)},
+		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(p.grow)},
+		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(p.shrink)},
+	}
+}
+
+// Entities implements tabs.EntityProvider: the sample rows, keyed by their
+// first cell.
+func (p *Placeholder) Entities() []tabs.Entity {
+	if p.spec.EntityKind == "" {
+		return nil
+	}
+	out := make([]tabs.Entity, 0, len(p.spec.Rows))
+	for _, row := range p.spec.Rows {
+		if len(row) == 0 {
+			continue
+		}
+		n := min(max(p.spec.EntityTitleCells, 1), len(row))
+		out = append(out, tabs.Entity{
+			Kind:   p.spec.EntityKind,
+			ID:     row[0],
+			Title:  strings.Join(row[:n], " "),
+			Detail: strings.Join(row[n:], " · "),
+		})
+	}
+	return out
+}
+
+// Select implements tabs.EntityProvider: it clears any filter and moves the
+// cursor to the row whose first cell is id.
+func (p *Placeholder) Select(id string) tea.Cmd {
+	if p.filter.Visible() {
+		p.clearFilter()
+	}
+	for i, row := range p.table.VisibleRows() {
+		if len(row) > 0 && row[0] == id {
+			p.table.SetCursor(i)
+			break
+		}
+	}
+	return nil
 }
 
 func (p *Placeholder) updateFilter(msg tea.KeyPressMsg) {

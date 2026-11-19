@@ -29,6 +29,7 @@ type GlobalKeys struct {
 	PrevTab   key.Binding
 	GotoTab   key.Binding
 	Refresh   key.Binding
+	Palette   key.Binding // also works while a text input has focus
 }
 
 // ListKeys drive the list/detail layout every tab uses. Tab-specific groups
@@ -51,6 +52,8 @@ type InputKeys struct {
 	Accept     key.Binding
 	DeleteBack key.Binding
 	ClearInput key.Binding
+	Next       key.Binding // next result in a picker (palette)
+	Prev       key.Binding // previous result in a picker (palette)
 }
 
 func bind(desc string, keys ...string) key.Binding {
@@ -68,6 +71,7 @@ func DefaultKeyMap() *KeyMap {
 			PrevTab:   bind("prev tab", "shift+tab"),
 			GotoTab:   bind("go to tab", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
 			Refresh:   bind("refresh", "r"),
+			Palette:   bind("commands", "ctrl+k"),
 		},
 		List: ListKeys{
 			Up:         bind("up", "k", "up"),
@@ -85,11 +89,13 @@ func DefaultKeyMap() *KeyMap {
 			Accept:     bind("accept", "enter"),
 			DeleteBack: bind("delete char", "backspace"),
 			ClearInput: bind("clear input", "ctrl+u"),
+			Next:       bind("next", "down", "ctrl+n"),
+			Prev:       bind("prev", "up", "ctrl+p"),
 		},
 	}
 }
 
-// action names a binding for config overrides (and, later, the palette).
+// action names a binding for config overrides and palette commands.
 type action struct {
 	id    string
 	scope string // bindings in the same scope must not share keys
@@ -111,6 +117,7 @@ func (k *KeyMap) actions() []action {
 		{"prev_tab", scopeMain, &g.PrevTab},
 		{"goto_tab", scopeMain, &g.GotoTab},
 		{"refresh", scopeMain, &g.Refresh},
+		{"palette", scopeMain, &g.Palette},
 		{"up", scopeMain, &l.Up},
 		{"down", scopeMain, &l.Down},
 		{"top", scopeMain, &l.Top},
@@ -124,6 +131,8 @@ func (k *KeyMap) actions() []action {
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},
 		{"clear_input", scopeInput, &in.ClearInput},
+		{"next", scopeInput, &in.Next},
+		{"prev", scopeInput, &in.Prev},
 	}
 }
 
@@ -218,7 +227,7 @@ func helpKey(keys []string) string {
 // GlobalHelp returns the bindings that work on every tab, for the help overlay.
 func (k *KeyMap) GlobalHelp() []key.Binding {
 	g := k.Global
-	return []key.Binding{g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.Help, g.Quit, g.ForceQuit}
+	return []key.Binding{g.Palette, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.Help, g.Quit, g.ForceQuit}
 }
 
 // TabIndex returns the zero-based tab index for a GotoTab key press (the

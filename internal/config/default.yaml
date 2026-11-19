@@ -67,6 +67,7 @@ keybinds:
   # prev_tab: ["shift+tab"]
   # goto_tab: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]  # nth key -> nth tab
   # refresh: ["r"]
+  # palette: ["ctrl+k"]        # command palette; also works while typing
   # Lists
   # up: ["k", "up"]
   # down: ["j", "down"]
@@ -77,11 +78,13 @@ keybinds:
   # filter: ["/"]
   # grow_pane: [">"]
   # shrink_pane: ["<"]
-  # Text inputs (filter)
+  # Text inputs (filter, palette)
   # cancel: ["esc"]
   # accept: ["enter"]
   # delete_back: ["backspace"]
   # clear_input: ["ctrl+u"]
+  # next: ["down", "ctrl+n"]   # palette results
+  # prev: ["up", "ctrl+p"]
 
 # Shell commands available in the palette, optionally bound to a key.
 # Placeholders: {pr}, {branch}, {repo}, {worktree}.

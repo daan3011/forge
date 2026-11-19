@@ -23,10 +23,6 @@ import (
 	"github.com/daan3011/forge/internal/ui"
 )
 
-// TODO(P0.6): register every action handled here (quit, help, refresh,
-// next/prev tab, go to tab N) and the list actions (filter, widen/narrow list)
-// as palette commands, using the action ids from ui.ActionIDs.
-
 // statusBarHeight is the number of rows the status bar takes.
 const statusBarHeight = 1
 
@@ -54,17 +50,24 @@ type Model struct {
 
 	help     ui.HelpView
 	helpOpen bool
+
+	palette     ui.CommandPalette
+	paletteOpen bool
+	items       []item // registry snapshot taken when the palette opened
+	shown       []item // ranked results
+	recent      []string
+	recents     RecentStore
 }
 
 // New returns the root model for the given config. It fails if the keybinds
 // overrides are invalid.
-func New(cfg *config.Config) (Model, error) {
+func New(cfg *config.Config, opts ...Option) (Model, error) {
 	keys, err := ui.NewKeyMap(cfg.Keybinds)
 	if err != nil {
 		return Model{}, err
 	}
 	theme := ui.NewTheme(true, cfg.UI.Theme)
-	return newModel(cfg, theme, keys, []tabs.Tab{
+	m := newModel(cfg, theme, keys, []tabs.Tab{
 		home.New(theme, keys),
 		prs.New(theme, keys),
 		pipelines.New(theme, keys),
@@ -73,7 +76,11 @@ func New(cfg *config.Config) (Model, error) {
 		docs.New(theme, keys),
 		artifacts.New(theme, keys),
 		contexttab.New(theme, keys),
-	}), nil
+	})
+	for _, o := range opts {
+		o(&m)
+	}
+	return m, nil
 }
 
 func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Tab) Model {
@@ -82,6 +89,7 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		theme:   theme,
 		keys:    keys,
 		help:    ui.NewHelpView(theme, keys),
+		palette: ui.NewCommandPalette(theme, keys),
 		tabs:    ts,
 		toast:   ui.NewToast(theme),
 		status:  ui.NewStatusBar(theme),
@@ -99,7 +107,7 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick()}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.recents)}
 	for _, t := range m.tabs {
 		cmds = append(cmds, t.Init())
 	}
@@ -142,6 +150,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.toast.Show(msg.Err.Error(), ui.ToastError)
 
+	case recentsMsg:
+		m.recent = mergeRecent(m.recent, msg)
+		return m, nil
+
 	case ui.InfoMsg:
 		m.message = msg.Text
 		return m, m.toast.Show(msg.Text, ui.ToastInfo)
@@ -156,6 +168,17 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	g := m.keys.Global
 	if key.Matches(msg, g.ForceQuit) {
 		return m, tea.Quit
+	}
+	if key.Matches(msg, g.Palette) {
+		if m.paletteOpen {
+			m.paletteOpen = false
+		} else {
+			m.openPalette()
+		}
+		return m, nil
+	}
+	if m.paletteOpen {
+		return m.handlePaletteKey(msg)
 	}
 	if m.helpOpen {
 		return m.handleHelpKey(msg)
@@ -184,6 +207,50 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m.updateActive(msg)
 }
 
+// openPalette snapshots the registry and shows every item, recents first.
+func (m *Model) openPalette() {
+	m.helpOpen = false
+	m.items = m.paletteItems()
+	m.palette.Reset()
+	m.rerank()
+	m.paletteOpen = true
+}
+
+func (m *Model) rerank() {
+	m.shown = rank(m.items, m.palette.Query(), m.recent)
+	rows := make([]ui.PaletteRow, len(m.shown))
+	for i, it := range m.shown {
+		rows[i] = ui.PaletteRow{Group: it.group, Title: it.title, Detail: it.detail, Hint: it.hint}
+	}
+	m.palette.SetRows(rows)
+}
+
+func (m Model) handlePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	in := m.keys.Input
+	switch {
+	case key.Matches(msg, in.Cancel):
+		m.paletteOpen = false
+		return m, nil
+	case key.Matches(msg, in.Accept):
+		i := m.palette.Selected()
+		if i < 0 {
+			return m, nil
+		}
+		it := m.shown[i]
+		m.paletteOpen = false
+		m.items, m.shown = nil, nil
+		m.recent = pushRecent(m.recent, it.id)
+		save := saveRecents(m.recents, m.recent)
+		var cmd tea.Cmd
+		m, cmd = it.run(m)
+		return m, tea.Batch(cmd, save)
+	}
+	if m.palette.Update(msg) {
+		m.rerank()
+	}
+	return m, nil
+}
+
 func (m Model) handleHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Global.Help, m.keys.Input.Cancel, m.keys.Global.Quit):
@@ -209,6 +276,10 @@ func (m *Model) openHelp() {
 // statusKeys are the status bar hints: the tab's own, plus help unless the
 // tab is taking text input (where ? would be typed).
 func (m Model) statusKeys(active tabs.Tab) []key.Binding {
+	if m.paletteOpen {
+		in := m.keys.Input
+		return []key.Binding{in.Next, in.Prev, in.Cancel, in.Accept}
+	}
 	if m.capturingInput() {
 		return active.ShortHelp()
 	}
@@ -223,7 +294,7 @@ func (m Model) capturingInput() bool {
 	return ok && c.CapturingInput()
 }
 
-func (m Model) refresh() (tea.Model, tea.Cmd) {
+func (m Model) refresh() (Model, tea.Cmd) {
 	if len(m.tabs) == 0 {
 		return m, nil
 	}
@@ -232,7 +303,7 @@ func (m Model) refresh() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, m.ensureClock())
 }
 
-func (m Model) switchTo(i int) (tea.Model, tea.Cmd) {
+func (m Model) switchTo(i int) (Model, tea.Cmd) {
 	m.active = i
 	m.now = time.Now()
 	return m, m.ensureClock()
@@ -311,16 +382,41 @@ func (m Model) render() string {
 	)
 	screen = ui.Box(screen, m.width, m.height)
 
-	if m.toast.Empty() {
+	layers := []*lipgloss.Layer{lipgloss.NewLayer(screen)}
+	if m.paletteOpen {
+		if l := m.paletteLayer(); l != nil {
+			layers = append(layers, l)
+		}
+	}
+	if !m.toast.Empty() {
+		toast := m.toast.View(max(m.width*2/5, 24))
+		x := max(m.width-lipgloss.Width(toast)-1, 0)
+		y := max(m.height-statusBarHeight-lipgloss.Height(toast), 0)
+		layers = append(layers, lipgloss.NewLayer(toast).X(x).Y(y).Z(2))
+	}
+	if len(layers) == 1 {
 		return screen
 	}
-	toast := m.toast.View(max(m.width*2/5, 24))
-	x := max(m.width-lipgloss.Width(toast)-1, 0)
-	y := max(m.height-statusBarHeight-lipgloss.Height(toast), 0)
 	canvas := lipgloss.NewCanvas(m.width, m.height)
-	canvas.Compose(lipgloss.NewCompositor(
-		lipgloss.NewLayer(screen),
-		lipgloss.NewLayer(toast).X(x).Y(y).Z(1),
-	))
+	canvas.Compose(lipgloss.NewCompositor(layers...))
 	return ui.Box(canvas.Render(), m.width, m.height) // Render trims trailing spaces
+}
+
+// Palette size limits.
+const (
+	paletteMaxWidth  = 72
+	paletteMinHeight = 8
+)
+
+// paletteLayer renders the palette centred over the screen.
+func (m Model) paletteLayer() *lipgloss.Layer {
+	w := min(paletteMaxWidth, m.width-4)
+	h := min(max(m.height*3/5, paletteMinHeight), m.height-2)
+	view := m.palette.View(w, h)
+	if view == "" {
+		return nil
+	}
+	x := (m.width - lipgloss.Width(view)) / 2
+	y := (m.height - lipgloss.Height(view)) / 2
+	return lipgloss.NewLayer(view).X(x).Y(y).Z(1)
 }
