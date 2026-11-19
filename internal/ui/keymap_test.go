@@ -40,6 +40,8 @@ func TestNewKeyMapOverrides(t *testing.T) {
 		{"arrows prettified", map[string][]string{"up": {"up", "w"}}, func(k *KeyMap) key.Binding { return k.List.Up }, "w", true, "↑/w"},
 		{"long run collapsed", map[string][]string{"goto_tab": {"a", "b", "c", "d"}}, func(k *KeyMap) key.Binding { return k.Global.GotoTab }, "c", true, "a-d"},
 		{"desc kept", map[string][]string{"refresh": {"R"}}, func(k *KeyMap) key.Binding { return k.Global.Refresh }, "R", true, "R"},
+		{"default projects", nil, func(k *KeyMap) key.Binding { return k.Global.Projects }, "ctrl+p", true, "ctrl+p"},
+		{"remapped projects", map[string][]string{"projects": {"ctrl+o"}}, func(k *KeyMap) key.Binding { return k.Global.Projects }, "ctrl+o", true, "ctrl+o"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -57,6 +57,22 @@ func TestCommandPaletteNavigation(t *testing.T) {
 	}
 }
 
+func TestCommandPaletteSetCursor(t *testing.T) {
+	p := NewCommandPalette(NewTheme(true, nil), DefaultKeyMap())
+	p.Reset()
+	p.SetCursor(3)
+	if p.Selected() != -1 {
+		t.Fatal("no rows should select nothing")
+	}
+	p.SetRows(paletteRows())
+	for _, tt := range []struct{ in, want int }{{2, 2}, {-1, 0}, {9, 3}} {
+		p.SetCursor(tt.in)
+		if got := p.Selected(); got != tt.want {
+			t.Fatalf("SetCursor(%d): selected = %d, want %d", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestCommandPaletteView(t *testing.T) {
 	p := NewCommandPalette(NewTheme(true, nil), DefaultKeyMap())
 	p.Reset()

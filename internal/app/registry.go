@@ -1,11 +1,14 @@
 package app
 
 import (
+	"time"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/tabs"
+	"github.com/daan3011/forge/internal/ui"
 )
 
 // Result groups, in their default order. Entity groups follow, named after
@@ -19,13 +22,14 @@ const (
 
 // item is one palette entry: a command, a tab, a project or an entity.
 type item struct {
-	id     string // stable id, used for recents
-	title  string
-	detail string
-	group  string
-	hint   string // key hint
-	search string // text matched against the query; title if empty
-	run    func(m Model) (Model, tea.Cmd)
+	id      string // stable id, used for recents
+	title   string
+	detail  string
+	group   string
+	hint    string // key hint
+	search  string // text matched against the query; title if empty
+	current bool   // the active tab or project
+	run     func(m Model) (Model, tea.Cmd)
 }
 
 func (it item) searchText() string {
@@ -62,6 +66,10 @@ func (m Model) paletteItems() []item {
 			id: "prev_tab", title: "Previous tab", group: groupCommands, hint: hint(g.PrevTab),
 			run: func(m Model) (Model, tea.Cmd) { return m.switchTo((m.active - 1 + len(m.tabs)) % len(m.tabs)) },
 		},
+		{
+			id: "projects", title: "Switch project…", group: groupCommands, hint: hint(g.Projects),
+			run: func(m Model) (Model, tea.Cmd) { return m.openProjects() },
+		},
 	}
 
 	// Commands of the active tab.
@@ -93,25 +101,8 @@ func (m Model) paletteItems() []item {
 	}
 
 	// Switch project.
-	for i := range m.cfg.Projects {
-		p := &m.cfg.Projects[i]
-		it := item{
-			id: "project:" + p.Name, title: "Switch project: " + p.Name, detail: p.Repo, group: groupProjects,
-			run: func(m Model) (Model, tea.Cmd) { return m.setProject(p), nil },
-		}
-		if m.project != nil && m.project.Name == p.Name {
-			it.detail = joinDetail(p.Repo, "current")
-		}
-		items = append(items, it)
-	}
-	if len(m.cfg.Projects) > 0 {
-		it := item{
-			id: "project:*", title: "Switch project: all projects", group: groupProjects,
-			run: func(m Model) (Model, tea.Cmd) { return m.setProject(nil), nil },
-		}
-		if m.project == nil {
-			it.detail = "current"
-		}
+	for _, it := range m.projectItems() {
+		it.title = "Switch project: " + it.title
 		items = append(items, it)
 	}
 
@@ -138,6 +129,35 @@ func (m Model) paletteItems() []item {
 	return items
 }
 
+// projectItems lists "All projects" and then every configured project, for
+// the project switcher and the palette. It is empty without projects.
+func (m Model) projectItems() []item {
+	if len(m.cfg.Projects) == 0 {
+		return nil
+	}
+	all := item{
+		id: "project:*", title: "All projects", group: groupProjects, current: m.project == nil,
+		run: func(m Model) (Model, tea.Cmd) { return m.setProject(nil) },
+	}
+	if all.current {
+		all.detail = "current"
+	}
+	items := []item{all}
+	for i := range m.cfg.Projects {
+		p := &m.cfg.Projects[i]
+		it := item{
+			id: "project:" + p.Name, title: p.Name, detail: p.Repo, group: groupProjects,
+			current: m.project != nil && m.project.Name == p.Name,
+			run:     func(m Model) (Model, tea.Cmd) { return m.setProject(p) },
+		}
+		if it.current {
+			it.detail = joinDetail(p.Repo, "current")
+		}
+		items = append(items, it)
+	}
+	return items
+}
+
 func joinDetail(a, b string) string {
 	switch {
 	case a == "":
@@ -148,11 +168,20 @@ func joinDetail(a, b string) string {
 	return a + " · " + b
 }
 
-// setProject makes p the active project (nil = all projects) for every tab.
-func (m Model) setProject(p *config.Project) Model {
+// setProject makes p the active project (nil = all projects): every tab is
+// told and reloads, and the choice is saved for the next start.
+func (m Model) setProject(p *config.Project) (Model, tea.Cmd) {
 	m.project = p
+	cmds := []tea.Cmd{saveProject(m.store, p)}
 	for _, t := range m.tabs {
 		t.SetProject(p)
+		cmds = append(cmds, t.Refresh())
 	}
-	return m
+	name := "all projects"
+	if p != nil {
+		name = p.Name
+	}
+	m.now = time.Now()
+	cmds = append(cmds, m.toast.Show("project: "+name, ui.ToastInfo), m.ensureClock())
+	return m, tea.Batch(cmds...)
 }
