@@ -58,6 +58,14 @@ type Fetcher interface {
 	Fetching() bool
 }
 
+// Animator is implemented by tabs that animate (a springing divider, a
+// working agent's flame). While the tab is visible and Animating is true the
+// root model keeps the shared animation clock running; tabs read the frame
+// from the *anim.Engine in their deps.
+type Animator interface {
+	Animating() bool
+}
+
 // TargetedMsg is a message meant for one tab, such as the result of its
 // background fetch. The root model delivers it to the tab whose Title
 // matches, whether or not that tab is active.

@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // SampleFetchDelay is the simulated latency of a placeholder "fetch", so the
@@ -30,6 +31,16 @@ type Deps struct {
 	Store tabs.KVStore
 	// FetchDelay is the simulated latency of placeholder fetches.
 	FetchDelay time.Duration
+	// Anim is the shared animation clock; nil means animations off.
+	Anim *anim.Engine
+}
+
+// engine returns d.Anim, or a clock that never ticks.
+func (d Deps) engine() *anim.Engine {
+	if d.Anim != nil {
+		return d.Anim
+	}
+	return anim.NewEngine(anim.Settings{Level: config.AnimationsOff})
 }
 
 // PlaceholderSpec configures a placeholder tab.
@@ -61,7 +72,10 @@ type Placeholder struct {
 	keys    *ui.KeyMap
 	store   tabs.KVStore
 	delay   time.Duration
+	anim    *anim.Engine
 	split   ui.SplitPane
+	divider anim.Spring // springs the split ratio after grow/shrink
+	sliding bool        // divider is in motion
 	table   ui.Table
 	filter  ui.Filter
 	project *config.Project
@@ -83,23 +97,27 @@ var (
 	_ tabs.Updater        = (*Placeholder)(nil)
 	_ tabs.Fetcher        = (*Placeholder)(nil)
 	_ tabs.AutoRefresher  = (*Placeholder)(nil)
+	_ tabs.Animator       = (*Placeholder)(nil)
 )
 
 // NewPlaceholder returns a placeholder tab. It starts empty; Init loads the
 // cached rows and fetches the sample rows.
 func NewPlaceholder(d Deps, spec PlaceholderSpec) *Placeholder {
-	return &Placeholder{
+	p := &Placeholder{
 		spec:   spec,
 		theme:  d.Theme,
 		keys:   d.Keys,
 		store:  d.Store,
 		delay:  d.FetchDelay,
+		anim:   d.engine(),
 		split:  ui.NewSplitPane(d.Theme),
 		table:  ui.NewTable(d.Theme, d.Keys, spec.Columns),
 		filter: ui.NewFilter(d.Theme, d.Keys),
 		now:    time.Now,
 		key:    CacheKey(spec.Title, nil),
 	}
+	p.table.SetEmptyView(func(w, h int) string { return anim.EmptyForge(w, h, d.Theme) })
+	return p
 }
 
 // Init implements tabs.Tab.
@@ -143,14 +161,38 @@ func (p *Placeholder) startFilter() {
 	p.resizeTable()
 }
 
-func (p *Placeholder) grow() {
-	p.split.Grow()
-	p.resizeTable()
+func (p *Placeholder) grow() { p.resize(p.split.Grow) }
+
+func (p *Placeholder) shrink() { p.resize(p.split.Shrink) }
+
+// resize changes the split ratio and springs the divider from where it is
+// shown now to the new ratio.
+func (p *Placeholder) resize(change func()) {
+	from := p.split.ShownRatio()
+	change()
+	p.divider = anim.NewSpring(from, p.split.Ratio(), p.anim.Frame(), p.anim.Settings())
+	p.sliding = true
+	p.slide()
 }
 
-func (p *Placeholder) shrink() {
-	p.split.Shrink()
-	p.resizeTable()
+// slide lays the panes out at the divider's position for the current frame.
+func (p *Placeholder) slide() {
+	if !p.sliding {
+		return
+	}
+	pos, settled := p.divider.At(p.anim.Frame())
+	if settled {
+		pos, p.sliding = p.split.Ratio(), false
+	}
+	if pos != p.split.ShownRatio() {
+		p.split.ShowRatio(pos)
+		p.resizeTable()
+	}
+}
+
+// Animating implements tabs.Animator: true while the divider springs.
+func (p *Placeholder) Animating() bool {
+	return p.sliding && !p.divider.Settled(p.anim.Frame())
 }
 
 // Commands implements tabs.Commander.
@@ -229,6 +271,7 @@ func (p *Placeholder) CapturingInput() bool { return p.filter.Active() }
 
 // View implements tabs.Tab.
 func (p *Placeholder) View() string {
+	p.slide()
 	list := p.table.View()
 	if p.filter.Visible() {
 		w, _ := p.split.LeftSize()

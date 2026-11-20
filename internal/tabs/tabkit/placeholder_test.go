@@ -10,6 +10,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 func press(s string) tea.KeyPressMsg { return tea.KeyPressMsg{Code: rune(s[0]), Text: s} }
@@ -152,5 +153,44 @@ func TestPlaceholderPalette(t *testing.T) {
 	drain(t, none, none.Init())
 	if none.Entities() != nil {
 		t.Fatal("no EntityKind means no entities")
+	}
+}
+
+func TestPlaceholderDividerSprings(t *testing.T) {
+	spec := PlaceholderSpec{Title: "PRs", Columns: []ui.Column{{Title: "Title", Flex: true}}}
+
+	// Full: the divider springs, and the tab animates until it settles.
+	d := testDeps(nil)
+	d.Anim = anim.NewEngine(anim.Full())
+	p := NewPlaceholder(d, spec)
+	p.SetSize(100, 20)
+	p.Update(press(">"))
+	if !p.Animating() || p.split.ShownRatio() != ui.DefaultSplitRatio {
+		t.Fatalf("animating %v, shown %v", p.Animating(), p.split.ShownRatio())
+	}
+	for i := 0; p.Animating(); i++ {
+		if i > 3*anim.FPS {
+			t.Fatal("divider never settled")
+		}
+		d.Anim.Sync(false)
+		d.Anim.Update(d.Anim.Sync(true)())
+		p.View()
+	}
+	p.View()
+	if p.split.ShownRatio() != p.split.Ratio() {
+		t.Fatalf("settled at %v, want %v", p.split.ShownRatio(), p.split.Ratio())
+	}
+
+	// Without an engine (animations off) it jumps.
+	p = NewPlaceholder(testDeps(nil), spec)
+	p.SetSize(100, 20)
+	p.Update(press(">"))
+	if p.Animating() || p.split.ShownRatio() != p.split.Ratio() {
+		t.Fatal("divider should snap with animations off")
+	}
+
+	// An empty tab shows the cold forge.
+	if view := ansi.Strip(p.View()); !strings.Contains(view, "▄▄▄▄") || !strings.Contains(view, ui.EmptyText) {
+		t.Fatalf("empty forge missing:\n%s", view)
 	}
 }

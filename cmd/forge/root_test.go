@@ -133,3 +133,33 @@ func TestBadKeybindsFailBeforeStart(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestDemoIsHidden(t *testing.T) {
+	stdout, _, err := run(t, deps{}, "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout, "demo") {
+		t.Fatalf("demo listed in help:\n%s", stdout)
+	}
+	if _, _, err := run(t, deps{}, "demo", "anim", "--level", "fast"); err == nil || !strings.Contains(err.Error(), "--level") {
+		t.Fatalf("bad level accepted: %v", err)
+	}
+}
+
+func TestDemoLevel(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no config file
+	tests := []struct {
+		flag string
+		want string
+	}{{"", "full"}, {"reduced", "reduced"}, {"off", "off"}}
+	for _, tt := range tests {
+		got, err := demoLevel(tt.flag)
+		if err != nil || string(got) != tt.want {
+			t.Errorf("demoLevel(%q) = %q, %v", tt.flag, got, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "forge")); err == nil {
+		t.Fatal("demoLevel created a config")
+	}
+}

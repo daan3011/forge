@@ -11,7 +11,8 @@ import (
 // each in a rounded border. The split is adjustable with Grow and Shrink.
 type SplitPane struct {
 	theme    *Theme
-	ratio    float64
+	ratio    float64 // target ratio, changed by Grow and Shrink
+	shown    float64 // ratio the panes are laid out at; see ShowRatio
 	width    int
 	height   int
 	leftOut  int // outer width of the left pane, borders included
@@ -31,7 +32,7 @@ const (
 
 // NewSplitPane returns a split pane with the default ratio.
 func NewSplitPane(theme *Theme) SplitPane {
-	return SplitPane{theme: theme, ratio: DefaultSplitRatio}
+	return SplitPane{theme: theme, ratio: DefaultSplitRatio, shown: DefaultSplitRatio}
 }
 
 // SetSize sets the total outer size of both panes.
@@ -40,8 +41,18 @@ func (s *SplitPane) SetSize(width, height int) {
 	s.layout()
 }
 
-// Ratio returns the share of the width given to the left pane.
+// Ratio returns the target share of the width given to the left pane.
 func (s *SplitPane) Ratio() float64 { return s.ratio }
+
+// ShownRatio returns the share the panes are currently laid out at.
+func (s *SplitPane) ShownRatio() float64 { return s.shown }
+
+// ShowRatio lays the panes out at r without changing the target ratio, so
+// an owner can spring the divider towards Ratio. r is clamped like Ratio.
+func (s *SplitPane) ShowRatio(r float64) {
+	s.shown = min(max(r, minRatio), maxRatio)
+	s.layout()
+}
 
 // Grow widens the left pane by one step.
 func (s *SplitPane) Grow() { s.setRatio(s.ratio + SplitStep) }
@@ -53,6 +64,7 @@ func (s *SplitPane) setRatio(r float64) {
 	// Round to avoid float drift after many steps.
 	r = math.Round(r*100) / 100
 	s.ratio = min(max(r, minRatio), maxRatio)
+	s.shown = s.ratio
 	s.layout()
 }
 
@@ -61,7 +73,7 @@ func (s *SplitPane) layout() {
 		s.leftOut, s.rightOut = s.width, 0
 		return
 	}
-	left := int(math.Round(float64(s.width) * s.ratio))
+	left := int(math.Round(float64(s.width) * s.shown))
 	left = min(max(left, MinLeftWidth), s.width-MinRightWidth)
 	s.leftOut, s.rightOut = left, s.width-left
 }

@@ -18,6 +18,7 @@ type KeyMap struct {
 	Global GlobalKeys
 	List   ListKeys
 	Input  InputKeys
+	Demo   DemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -58,6 +59,17 @@ type InputKeys struct {
 	Prev       key.Binding // previous result in a picker (palette)
 }
 
+// DemoKeys drive the hidden `forge demo anim` showcase. They are not
+// configurable and not palette commands: the demo is its own program.
+type DemoKeys struct {
+	Replay  key.Binding
+	Burst   key.Binding
+	Full    key.Binding
+	Reduced key.Binding
+	Off     key.Binding
+	Quit    key.Binding
+}
+
 func bind(desc string, keys ...string) key.Binding {
 	return key.NewBinding(key.WithKeys(keys...), key.WithHelp(helpKey(keys), desc))
 }
@@ -95,6 +107,14 @@ func DefaultKeyMap() *KeyMap {
 			ClearInput: bind("clear input", "ctrl+u"),
 			Next:       bind("next", "down", "ctrl+n"),
 			Prev:       bind("prev", "up", "ctrl+p"),
+		},
+		Demo: DemoKeys{
+			Replay:  bind("replay splash", "r"),
+			Burst:   bind("spark burst", "space"),
+			Full:    bind("full", "1"),
+			Reduced: bind("reduced", "2"),
+			Off:     bind("off", "3"),
+			Quit:    bind("quit", "q", "esc", "ctrl+c"),
 		},
 	}
 }

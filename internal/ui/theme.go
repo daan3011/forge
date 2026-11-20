@@ -120,8 +120,9 @@ type Theme struct {
 	StatusKey   lipgloss.Style
 	StatusWarn  lipgloss.Style // rate limit running low
 
-	Toast      lipgloss.Style
-	ToastError lipgloss.Style
+	Toast        lipgloss.Style
+	ToastError   lipgloss.Style
+	ToastSuccess lipgloss.Style
 
 	HelpTitle   lipgloss.Style
 	HelpSection lipgloss.Style
@@ -183,8 +184,9 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		StatusKey:   lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		StatusWarn:  lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Error).Bold(true).Padding(0, 1),
 
-		Toast:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Highlight).Foreground(p.Text).Padding(0, 1),
-		ToastError: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Error).Foreground(p.Text).Padding(0, 1),
+		Toast:        lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Highlight).Foreground(p.Text).Padding(0, 1),
+		ToastError:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Error).Foreground(p.Text).Padding(0, 1),
+		ToastSuccess: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Foreground(p.Highlight).Bold(true).Padding(0, 1),
 
 		HelpTitle:   lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		HelpSection: lipgloss.NewStyle().Foreground(p.Highlight).Bold(true).Underline(true),
@@ -238,4 +240,29 @@ func HeatRamp(n int) []color.Color {
 		out[i] = Heat(float64(i) / float64(n-1))
 	}
 	return out
+}
+
+// Tint renders s in colour c. Animations use it for colours that change per
+// frame; c must come from this file (the palette, Heat or Mix).
+func Tint(c color.Color, s string) string {
+	return lipgloss.NewStyle().Foreground(c).Render(s)
+}
+
+// TintBold is Tint in bold.
+func TintBold(c color.Color, s string) string {
+	return lipgloss.NewStyle().Foreground(c).Bold(true).Render(s)
+}
+
+// Mix blends a into b: 0 is a, 1 is b. Values outside 0..1 are clamped.
+func Mix(a, b color.Color, t float64) color.Color {
+	if math.IsNaN(t) {
+		t = 0
+	}
+	t = math.Min(math.Max(t, 0), 1)
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+	lerp := func(x, y uint32) uint8 {
+		return uint8(math.Round((float64(x>>8)*(1-t) + float64(y>>8)*t)))
+	}
+	return color.RGBA{R: lerp(ar, br), G: lerp(ag, bg), B: lerp(ab, bb), A: 0xff}
 }

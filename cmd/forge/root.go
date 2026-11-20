@@ -37,7 +37,7 @@ func newRootCmd(d deps) *cobra.Command {
 				return err
 			}
 			defer func() { _ = st.Close() }()
-			opts := []app.Option{app.WithStore(st.Cache())}
+			opts := []app.Option{app.WithStore(st.Cache()), app.WithSplash()}
 			switch name, found, err := app.LoadActiveProject(cmd.Context(), st.Cache()); {
 			case err != nil:
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
@@ -57,6 +57,7 @@ func newRootCmd(d deps) *cobra.Command {
 		stubCmd("capture [title]", "Quick-capture a Plane issue", "P3.5", cobra.ArbitraryArgs),
 		stubCmd("new", "Start a new named agent session", "P1.3", cobra.NoArgs),
 		newConfigCmd(d),
+		newDemoCmd(),
 	)
 	return root
 }
