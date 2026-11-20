@@ -3,6 +3,7 @@ package tmuxtest
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/daan3011/forge/internal/sessions/tmux"
@@ -124,6 +125,42 @@ func RunConformance(t *testing.T, d tmux.Driver, cmd []string) {
 		}
 		if _, err := d.Attach(ctx, gone); !errors.Is(err, tmux.ErrNotFound) {
 			t.Errorf("Attach(gone) err = %v", err)
+		}
+	})
+	t.Run("list all", func(t *testing.T) {
+		s := session(t)
+		tg, err := d.NewWindow(ctx, s, "listed", "", cmd, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all, err := d.ListAll(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(all, tg) {
+			t.Errorf("ListAll = %v, missing %v", all, tg)
+		}
+		for _, x := range all {
+			if x.Window == tmux.PlaceholderWindow {
+				t.Errorf("ListAll returned the placeholder: %v", x)
+			}
+		}
+	})
+
+	// Last: it ends every window of every subtest above.
+	t.Run("kill server", func(t *testing.T) {
+		s := session(t)
+		if _, err := d.NewWindow(ctx, s, "doomed", "", cmd, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.KillServer(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if all, err := d.ListAll(ctx); err != nil || len(all) != 0 {
+			t.Errorf("ListAll after KillServer = %v, %v", all, err)
+		}
+		if err := d.KillServer(ctx); err != nil {
+			t.Errorf("KillServer without a server: %v", err)
 		}
 	})
 }

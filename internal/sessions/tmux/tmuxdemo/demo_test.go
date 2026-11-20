@@ -77,7 +77,7 @@ func TestDemoAttachAndDetach(t *testing.T) {
 
 	m, msg := step(t, m, press(tea.KeyEnter))
 	am, ok := msg.(attachMsg)
-	if !ok || am.cmd == nil {
+	if !ok || am.a.Cmd == nil || am.a.Mode != tmux.AttachExec {
 		t.Fatalf("enter gave %T %+v", msg, msg)
 	}
 	if got := f.Attached(); len(got) != 1 || got[0] != demoTarget {
@@ -109,6 +109,33 @@ func TestDemoSwitchInPlace(t *testing.T) {
 	}
 	if s := next.(Model).status; !strings.Contains(s, "switched") {
 		t.Errorf("status = %q", s)
+	}
+}
+
+func TestDemoPopup(t *testing.T) {
+	f := tmuxtest.NewFake()
+	f.Popup = true
+	f.Warning = tmux.OuterMdWarning
+	m := started(t, f)
+	m, msg := step(t, m, press(tea.KeyEnter))
+	if am, ok := msg.(attachMsg); !ok || am.a.Mode != tmux.AttachPopup {
+		t.Fatalf("enter gave %T %+v", msg, msg)
+	}
+	// The popup command runs in a plain tea.Cmd (forge keeps the terminal)
+	// and reports detachedMsg once the popup closes.
+	m, msg = step(t, m, msg)
+	if _, ok := msg.(detachedMsg); !ok {
+		t.Fatalf("popup cmd gave %T", msg)
+	}
+	if !strings.Contains(m.render(), "unbind -n M-d") {
+		t.Error("M-d warning not shown")
+	}
+	m, msg = step(t, m, msg)
+	if !strings.Contains(m.status, "back in forge") {
+		t.Errorf("status = %q", m.status)
+	}
+	if _, ok := msg.(previewMsg); !ok {
+		t.Errorf("popup close should refresh preview, got %T", msg)
 	}
 }
 

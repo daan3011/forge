@@ -186,6 +186,9 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	case deletedMsg:
 		return t, t.deleted(msg)
 	}
+	if cmd, ok := t.updateTmux(msg); ok {
+		return t, cmd
+	}
 	if t.dialog != nil {
 		return t, t.updateDialog(msg)
 	}
@@ -861,6 +864,9 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "session_kill", Title: "Kill session…", Key: s.Kill, Run: t.openKill},
 		{ID: "session_archive_view", Title: view, Key: s.ArchiveView, Run: t.toggleArchive},
 		{ID: "session_delete", Title: "Delete archived session…", Key: s.Delete, Run: t.openDelete},
+		{ID: "tmux_restart", Title: "tmux: restart forge server…", Run: t.restartTmux},
+		{ID: "tmux_config", Title: "tmux: edit forge tmux config", Run: t.editTmuxConfig},
+		{ID: "tmux_config_reset", Title: "tmux: reset forge tmux config…", Run: t.resetTmuxConfig},
 	}
 	return append(cmds,
 		tabs.Command{ID: "filter", Title: "Filter sessions", Key: l.Filter, Run: do(t.startFilter)},

@@ -122,14 +122,14 @@ func TestExecBashWindow(t *testing.T) {
 	}
 
 	// Attach from a plain terminal: a command for tea.ExecProcess.
-	cmd, err := e.Attach(ctx, tg)
-	if err != nil || cmd == nil {
-		t.Fatalf("Attach = %v, %v", cmd, err)
+	a, err := e.Attach(ctx, tg)
+	if err != nil || a.Mode != tmux.AttachExec || a.Cmd == nil {
+		t.Fatalf("Attach = %+v, %v", a, err)
 	}
-	args := strings.Join(cmd.Args, " ")
-	if !strings.HasPrefix(args, "tmux -L "+e.Socket()+" ") ||
+	args := strings.Join(a.Cmd.Args, " ")
+	if !strings.HasPrefix(args, "tmux -L "+e.Socket()+" -f "+os.DevNull+" ") ||
 		!strings.HasSuffix(args, " select-window -t =integration:=bash ; attach-session -t =integration:") {
-		t.Errorf("attach args = %q", cmd.Args)
+		t.Errorf("attach args = %q", a.Cmd.Args)
 	}
 
 	if err := e.KillWindow(ctx, tg); err != nil {
@@ -170,5 +170,61 @@ func TestExecPasteTextArrivesIntact(t *testing.T) {
 	}
 	if string(got) != text+"\n" {
 		t.Errorf("got %q, want %q", got, text+"\n")
+	}
+}
+
+// TestServerIgnoresUserConfig starts forge's server with the default config
+// while HOME holds a ~/.tmux.conf (and an XDG one) setting a marker, and
+// checks the server only ever read forge's file.
+func TestServerIgnoresUserConfig(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not on PATH")
+	}
+	ctx := context.Background()
+	home := t.TempDir()
+	marker := "set -g @forge_marker leaked\nset -g prefix C-a\n"
+	for _, p := range []string{filepath.Join(home, ".tmux.conf"), filepath.Join(home, ".config", "tmux", "tmux.conf")} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(marker), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	conf := filepath.Join(home, ".config", "forge", "tmux.conf")
+	if _, err := tmux.EnsureConfig(conf, tmux.ConfigColors{Bg: "#1c1b1a", Fg: "#e8e2d9", Accent: "#ff7a1a", Muted: "#8a8580"}); err != nil {
+		t.Fatal(err)
+	}
+	socket := fmt.Sprintf("forge-test-cfg-%d", os.Getpid())
+	e := tmux.New(tmux.WithSocket(socket), tmux.WithConfig(conf), tmux.WithGetenv(func(string) string { return "" }))
+	t.Cleanup(func() {
+		_ = e.KillServer(context.Background())
+		_ = os.Remove(socketPath(socket))
+	})
+	if _, err := e.EnsureSession(ctx, "cfg"); err != nil {
+		t.Fatal(err)
+	}
+
+	query := func(args ...string) (string, error) {
+		out, err := exec.Command("tmux", append([]string{"-L", socket}, args...)...).CombinedOutput()
+		return strings.TrimSpace(string(out)), err
+	}
+	if out, err := query("show-options", "-gv", "@forge_marker"); err == nil && out != "" {
+		t.Errorf("~/.tmux.conf leaked into forge's server: @forge_marker = %q", out)
+	}
+	if out, err := query("show-options", "-gv", "prefix"); err != nil || out != "None" {
+		t.Errorf("prefix = %q, %v; want None", out, err)
+	}
+	if out, err := query("show-options", "-gv", "status-right"); err != nil || !strings.Contains(out, "M-d back") {
+		t.Errorf("status-right = %q, %v", out, err)
+	}
+	if out, err := query("display-message", "-p", "#{config_files}"); err != nil || out != conf {
+		t.Errorf("config_files = %q, %v; want %q", out, err, conf)
+	}
+	if out, err := query("list-keys", "-T", "root", "M-d"); err != nil || !strings.Contains(out, "detach-client") {
+		t.Errorf("M-d binding = %q, %v", out, err)
 	}
 }

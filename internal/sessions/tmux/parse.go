@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -39,6 +40,53 @@ func parseWindows(out string) ([]Window, error) {
 		ws = append(ws, w)
 	}
 	return ws, nil
+}
+
+// allWindowsFormat is the list-windows -a -F format parseTargets reads.
+const allWindowsFormat = "#{session_name}\t#{window_name}"
+
+// parseTargets reads list-windows -a output in allWindowsFormat, dropping
+// placeholder windows.
+func parseTargets(out string) ([]Target, error) {
+	var ts []Target
+	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		sess, win, ok := strings.Cut(line, "\t")
+		if !ok {
+			return nil, fmt.Errorf("tmux: list-windows -a: unexpected line %q", line)
+		}
+		if win == PlaceholderWindow {
+			continue
+		}
+		ts = append(ts, Target{Session: sess, Window: win})
+	}
+	return ts, nil
+}
+
+// Version is a tmux major.minor version.
+type Version struct{ Major, Minor int }
+
+// AtLeast reports whether v >= major.minor.
+func (v Version) AtLeast(major, minor int) bool {
+	return v.Major > major || v.Major == major && v.Minor >= minor
+}
+
+func (v Version) String() string { return fmt.Sprintf("%d.%d", v.Major, v.Minor) }
+
+var versionNumRe = regexp.MustCompile(`(\d+)\.(\d+)`)
+
+// parseVersion reads `tmux -V` output ("tmux 3.8", "tmux 3.2a",
+// "tmux next-3.6"); ok is false when it holds no N.N.
+func parseVersion(out string) (v Version, ok bool) {
+	m := versionNumRe.FindStringSubmatch(out)
+	if m == nil {
+		return Version{}, false
+	}
+	v.Major, _ = strconv.Atoi(m[1])
+	v.Minor, _ = strconv.Atoi(m[2])
+	return v, true
 }
 
 // onSocket reports whether $TMUX (value "socketpath,pid,session") names a

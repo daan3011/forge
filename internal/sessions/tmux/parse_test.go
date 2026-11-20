@@ -88,3 +88,47 @@ func TestErrorIsNotFound(t *testing.T) {
 		t.Errorf("Error() = %q", got)
 	}
 }
+
+func TestParseVersion(t *testing.T) {
+	tests := []struct {
+		in   string
+		want Version
+		ok   bool
+	}{
+		{"tmux 3.8\n", Version{3, 8}, true},
+		{"tmux 3.2a", Version{3, 2}, true},
+		{"tmux 3.1c", Version{3, 1}, true},
+		{"tmux next-3.6", Version{3, 6}, true},
+		{"tmux 10.0", Version{10, 0}, true},
+		{"tmux master", Version{}, false},
+		{"", Version{}, false},
+	}
+	for _, tt := range tests {
+		got, ok := parseVersion(tt.in)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("parseVersion(%q) = %v, %v; want %v, %v", tt.in, got, ok, tt.want, tt.ok)
+		}
+	}
+	for _, tt := range []struct {
+		v    Version
+		want bool
+	}{{Version{3, 2}, true}, {Version{3, 1}, false}, {Version{4, 0}, true}, {Version{2, 9}, false}} {
+		if got := tt.v.AtLeast(3, 2); got != tt.want {
+			t.Errorf("%v.AtLeast(3.2) = %v", tt.v, got)
+		}
+	}
+}
+
+func TestParseTargets(t *testing.T) {
+	got, err := parseTargets("p\t_forge\np\tagent-one\nq\tb\n\n")
+	want := []Target{{"p", "agent-one"}, {"q", "b"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("= %v, %v", got, err)
+	}
+	if _, err := parseTargets("no tab here\n"); err == nil {
+		t.Error("want error for a malformed line")
+	}
+	if got, err := parseTargets(""); err != nil || got != nil {
+		t.Errorf("empty = %v, %v", got, err)
+	}
+}

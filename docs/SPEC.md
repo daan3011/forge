@@ -171,63 +171,45 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 
 ## tmux setup (from a plain install)
 
-You only need about five tmux keys. forge runs all agents on its own tmux server (`tmux -L forge`), so it never touches any tmux you use yourself, and you rarely type tmux commands by hand.
+You only need three keys. forge runs all agents on its own tmux server (`tmux -L forge`) with its own config file, so it never touches any tmux you use yourself, and you rarely type tmux commands by hand.
 
 ### How forge uses tmux
 
 - Each project gets a tmux **session** on the `forge` socket; each agent gets a **window** in it, named after the agent.
+- Every tmux call forge makes passes `-L forge -f ~/.config/forge/tmux.conf`, so the forge server never reads `~/.tmux.conf` or `/etc/tmux.conf`. Your `~/.tmux.conf` only affects your own tmux.
 - **forge running in a normal terminal:** pressing Enter on an agent suspends the TUI and attaches to that window (`tea.ExecProcess`). Detaching drops you straight back into forge.
-- **forge running inside tmux:** forge uses `switch-client` instead, so you hop between forge and agents without nesting.
+- **forge running inside your own tmux:** the agent opens in a **popup** of your tmux (`display-popup -E -w 90% -h 90%`, running `env -u TMUX tmux -L forge -f <conf> attach …`), so nothing nests and forge stays visible behind it. `M-d` closes the popup. On tmux older than 3.2 (no popups) forge falls back to attaching inside the current pane.
+- **forge running inside forge's own tmux server:** forge uses `switch-client` instead.
+- After you detach or close the popup, forge refreshes that session's status and preview.
 - forge reads agent output with `capture-pane` for previews, so you can peek without attaching.
 
-### Recommended `~/.tmux.conf`
+### forge's tmux config (`~/.config/forge/tmux.conf`)
 
-Create this file (it applies to the `forge` server too). Each line is commented so you know what it does.
+forge writes this file (or `$XDG_CONFIG_HOME/forge/tmux.conf`) on first run and never overwrites it, so it's yours to customise. Every line is commented. Its first line is a version header (`# forge-tmux-config v1`). The defaults:
 
-```bash
-# Faster Esc handling — important for Bubble Tea apps and Claude Code
-set -sg escape-time 10
+- Terminal: `escape-time 10`, `tmux-256color` with RGB, `extended-keys` (Shift+Enter reaches Claude Code).
+- `mouse on`, `history-limit 50000`, windows and panes numbered from 1, `renumber-windows on`.
+- **No prefix at all** (`prefix None`, `prefix2 None`, `unbind C-b`). Nothing clashes with an outer tmux, and Ctrl+a stays start-of-line in claude and your shells.
+- Prefix-less bindings only (below).
+- A minimal status line in forge colours (ember on charcoal): the agent name on the left, `M-d back · M-[ scroll · M-w windows` on the right.
 
-# Proper colours
-set -g default-terminal "tmux-256color"
-set -as terminal-features ",xterm-256color:RGB"
+The server reads the file only when it starts. To apply changes:
 
-# Let Claude Code receive Shift+Enter and other modified keys
-set -s extended-keys on
-set -as terminal-features ",xterm*:extkeys"
+- `forge tmux config` opens the file in `$EDITOR`, then offers to restart the server.
+- `forge tmux config --reset` restores the default, keeping your file as `tmux.conf.bak.<timestamp>`, then offers a restart.
+- `forge tmux restart` stops the forge server; the next action starts it with the current config. If agents are running, it lists them and asks first (`--yes` skips the question). Stopped sessions stay resumable with `claude --resume` (P1.5).
 
-# Mouse scrolling and clicking
-set -g mouse on
-
-# Bigger scrollback for long agent runs
-set -g history-limit 50000
-
-# Windows start at 1, renumber when one closes
-set -g base-index 1
-setw -g pane-base-index 1
-set -g renumber-windows on
-
-# Alt+d detaches instantly — your "back to forge" key
-bind -n M-d detach-client
-
-# Alt+c opens quick capture for a Plane issue in a popup (after P3.5)
-bind -n M-c display-popup -E -w 60% -h 20% "forge capture"
-
-# Reload this file with prefix + r
-bind r source-file ~/.tmux.conf \; display "tmux.conf reloaded"
-```
-
-Reload with `tmux source-file ~/.tmux.conf`, or just restart tmux.
+All three are palette commands too ("tmux: …").
 
 ### The keys you'll actually use
 
 | Key | Does |
 | --- | --- |
-| `Alt+d` | Detach from an agent, back to forge |
-| `Ctrl+b d` | Same, the default way |
-| `Ctrl+b [` | Scroll mode (`q` to leave); with mouse on, the wheel works too |
-| `Ctrl+b w` | Pick any window from a list |
-| `Alt+c` | Quick-capture a Plane issue from anywhere in tmux |
+| `Alt+d` (`M-d`) | Detach from an agent / close the popup, back to forge |
+| `Alt+[` (`M-[`) | Scroll mode (`q` to leave); with mouse on, the wheel works too |
+| `Alt+w` (`M-w`) | Pick any agent window from a tree |
+
+If your own `~/.tmux.conf` binds `M-d` in its root table, your tmux catches it before forge's popup does. forge warns you about this when it opens a popup; remove that binding (e.g. `unbind -n M-d`) and reload your tmux config.
 
 Check your version with `tmux -V`; aim for 3.3 or newer (`display-popup` and `extended-keys` need 3.2+).
 

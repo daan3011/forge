@@ -429,3 +429,40 @@ func TestDelete(t *testing.T) {
 		t.Error("branch deleted")
 	}
 }
+
+func TestTmuxControl(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	x := e.start(t, "alpha")
+
+	ws, err := e.svc.TmuxWindows(ctx)
+	if err != nil || len(ws) != 1 || ws[0].Window != x.TmuxWindow {
+		t.Fatalf("TmuxWindows = %v, %v", ws, err)
+	}
+	if err := e.svc.RestartTmux(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if ws, _ := e.svc.TmuxWindows(ctx); len(ws) != 0 {
+		t.Errorf("after restart = %v", ws)
+	}
+	rows, err := e.svc.List(ctx, "", false)
+	if err != nil || len(rows) != 1 || rows[0].Status != store.StatusDead {
+		t.Errorf("rows after restart = %+v, %v", rows, err)
+	}
+
+	if _, err := e.svc.ResetTmuxConfig(); err == nil {
+		t.Error("reset without a path: want error")
+	}
+	conf := filepath.Join(t.TempDir(), "tmux.conf")
+	if err := os.WriteFile(conf, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.svc.c.TmuxConf = conf
+	if e.svc.TmuxConfig() != conf {
+		t.Errorf("TmuxConfig = %q", e.svc.TmuxConfig())
+	}
+	backup, err := e.svc.ResetTmuxConfig()
+	if err != nil || backup != conf+".bak."+t0.Add(time.Hour).Format("20060102-150405") {
+		t.Errorf("reset = %q, %v", backup, err)
+	}
+}

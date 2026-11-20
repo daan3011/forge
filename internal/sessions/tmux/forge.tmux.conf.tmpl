@@ -1,0 +1,73 @@
+# forge-tmux-config v{{.Version}}
+#
+# Config for forge's own tmux server (`tmux -L forge`), which hosts agent
+# sessions. forge passes this file with -f, so tmux never reads ~/.tmux.conf
+# or /etc/tmux.conf here: your own tmux and this one stay independent.
+#
+# Edit freely: forge never overwrites this file. Changes apply when the forge
+# server next starts: `forge tmux restart`, or `forge tmux config` to edit and
+# restart in one go. `forge tmux config --reset` restores the default (the old
+# file is kept as tmux.conf.bak.<timestamp>).
+
+# --- Terminal ----------------------------------------------------------------
+
+# Pass Esc through almost at once (Bubble Tea apps and Claude Code want this).
+set -sg escape-time 10
+
+# Report a 256-colour terminal to programs inside tmux.
+set -g default-terminal "tmux-256color"
+# Tell tmux the outer terminal does true colour (24-bit RGB).
+set -as terminal-features ",xterm-256color:RGB"
+
+# Forward modified keys (Shift+Enter and friends) to Claude Code.
+set -s extended-keys on
+# Ask xterm-like outer terminals to send those extended keys.
+set -as terminal-features ",xterm*:extkeys"
+
+# --- Behaviour ---------------------------------------------------------------
+
+# Mouse wheel scrolls, clicks select panes and windows.
+set -g mouse on
+# Keep plenty of scrollback for long agent runs.
+set -g history-limit 50000
+
+# Number windows from 1 rather than 0.
+set -g base-index 1
+# Number panes from 1 as well.
+setw -g pane-base-index 1
+# Close the gaps in window numbers when a window goes away.
+set -g renumber-windows on
+
+# --- Keys: no prefix at all --------------------------------------------------
+
+# No prefix key, so nothing here clashes with an outer tmux, and Ctrl+a keeps
+# meaning start-of-line in claude and your shells.
+set -g prefix None
+# No secondary prefix either.
+set -g prefix2 None
+# Drop the default Ctrl+b binding to the prefix.
+unbind C-b
+
+# Alt+d: detach, back to forge (or close the popup forge opened).
+bind -n M-d detach-client
+# Alt+[: scroll / copy mode (q leaves it; the mouse wheel works too).
+bind -n M-[ copy-mode
+# Alt+w: pick any agent window from a tree, zoomed.
+bind -n M-w choose-tree -Zw
+
+# --- Status line (forge colours: ember on charcoal) ---------------------------
+
+# Status bar colours: light text on charcoal.
+set -g status-style "bg={{.Bg}},fg={{.Fg}}"
+# Give the left side room for long agent names.
+set -g status-left-length 40
+# Left: the agent (window) name in bold ember.
+set -g status-left "#[fg={{.Accent}},bold] #W #[default]"
+# Hide the window list; the left side already names the agent.
+set -g window-status-format ""
+# Hide the current window's list entry too.
+set -g window-status-current-format ""
+# Give the right side room for the key hints.
+set -g status-right-length 60
+# Right: the three keys you need, muted.
+set -g status-right "#[fg={{.Muted}}]M-d back · M-[ scroll · M-w windows "

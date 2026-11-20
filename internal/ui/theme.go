@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 
@@ -341,4 +342,17 @@ func Mix(a, b color.Color, t float64) color.Color {
 		return uint8(math.Round((float64(x>>8)*(1-t) + float64(y>>8)*t)))
 	}
 	return color.RGBA{R: lerp(ar, br), G: lerp(ag, bg), B: lerp(ab, bb), A: 0xff}
+}
+
+// TmuxColors are the colours of forge's tmux status line (the dark palette:
+// ember accent on charcoal), as #rrggbb strings for tmux's config.
+func TmuxColors() (bg, fg, accent, muted string) {
+	p := darkPalette()
+	return Hex(p.Bg), Hex(p.Text), Hex(p.Accent), Hex(p.Muted)
+}
+
+// Hex formats c as #rrggbb.
+func Hex(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
 }

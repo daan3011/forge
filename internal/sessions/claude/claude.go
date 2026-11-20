@@ -8,7 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
+
+	"github.com/daan3011/forge/internal/shell"
 )
 
 // DefaultBin is the claude executable looked up on $PATH.
@@ -62,14 +63,9 @@ func (l Launch) Argv() ([]string, error) {
 	if bin == "" {
 		bin = DefaultBin
 	}
-	script := "exec " + ShellQuote(bin) + " --session-id " + l.SessionID
+	script := "exec " + shell.Quote(bin) + " --session-id " + l.SessionID
 	if l.PromptFile != "" {
-		script += ` -- "$(cat ` + ShellQuote(l.PromptFile) + `)"`
+		script += ` -- "$(cat ` + shell.Quote(l.PromptFile) + `)"`
 	}
 	return []string{"sh", "-c", script}, nil
-}
-
-// ShellQuote quotes s as a single POSIX shell word.
-func ShellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

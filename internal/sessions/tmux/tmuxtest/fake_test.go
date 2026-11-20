@@ -46,13 +46,14 @@ func TestFakeHelpers(t *testing.T) {
 		t.Errorf("ListWindows after Exit = %+v", ws)
 	}
 
-	cmdRun, err := f.Attach(ctx, tg)
+	a, err := f.Attach(ctx, tg)
+	cmdRun := a.Cmd
 	if err != nil || cmdRun == nil {
 		t.Errorf("Attach = %v, %v", cmdRun, err)
 	}
 	f.SwitchInPlace = true
-	if c, err := f.Attach(ctx, tg); err != nil || c != nil {
-		t.Errorf("Attach in place = %v, %v", c, err)
+	if a, err := f.Attach(ctx, tg); err != nil || a.Cmd != nil || a.Mode != tmux.AttachSwitched {
+		t.Errorf("Attach in place = %+v, %v", a, err)
 	}
 	if got := f.Attached(); !reflect.DeepEqual(got, []tmux.Target{tg, tg}) {
 		t.Errorf("Attached = %v", got)
