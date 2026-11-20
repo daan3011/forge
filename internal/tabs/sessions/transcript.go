@@ -585,29 +585,12 @@ func (t *Tab) transcriptHeader(width int) string {
 		stat("tokens", tokens) + follow
 	files := "—"
 	if n := len(s.FilesTouched); n > 0 {
-		files = fmt.Sprintf("%d: %s", n, shortFiles(s.FilesTouched, v.session.Worktree))
+		files = fmt.Sprintf("%d: %s", n, transcript.ShortFiles(s.FilesTouched, v.session.Worktree, 4))
 	}
 	line2 := stat("files", files)
 	return ansi.Truncate(line1, width, "…") + "\n" +
 		ansi.Truncate(line2, width, "…") + "\n" +
 		th.PreviewRule.Render(strings.Repeat("─", width))
-}
-
-// shortFiles lists files relative to the worktree, at most four, then "+N".
-func shortFiles(files []string, root string) string {
-	const shown = 4
-	var out []string
-	for i, f := range files {
-		if i == shown {
-			out = append(out, fmt.Sprintf("+%d", len(files)-shown))
-			break
-		}
-		if prefix := strings.TrimSuffix(root, "/") + "/"; root != "" && strings.HasPrefix(f, prefix) {
-			f = strings.TrimPrefix(f, prefix)
-		}
-		out = append(out, f)
-	}
-	return strings.Join(out, ", ")
 }
 
 // count renders a token count compactly: 950, 12.3k, 4.1M.

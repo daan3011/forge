@@ -156,11 +156,15 @@ func (f *fakeSvc) attachCalls() (inspects []string, resumes []agent.ResumeOpts, 
 }
 
 func row(name string, st store.Status) agent.Row {
-	return agent.Row{Session: store.Session{
+	r := agent.Row{Session: store.Session{
 		ID: int64(len(name)), Name: name, Project: "forge", Branch: "agent/" + name, BaseBranch: "main",
 		Worktree: "/wt/" + name, TmuxSession: "forge", TmuxWindow: name, Status: st,
 		ClaudeSessionID: "uuid-" + name,
 	}}
+	if st == store.StatusArchived { // worktree removed, as Kill leaves it
+		r.Worktree, r.TmuxWindow, r.ArchivedAt = "", "", archiveAt
+	}
+	return r
 }
 
 func (f *fakeSvc) Start(_ context.Context, o agent.StartOpts) (agent.Started, error) {
@@ -192,7 +196,11 @@ func (f *fakeSvc) List(_ context.Context, project string, archived bool) ([]agen
 	defer f.mu.Unlock()
 	var out []agent.Row
 	for _, r := range f.rows {
-		if (project == "" || r.Project == project) && (r.Status == store.StatusArchived) == archived {
+		inArchive := r.Archived() || r.Status == store.StatusArchived
+		if (project == "" || r.Project == project) && inArchive == archived {
+			// Copies, as the real service reads fresh rows from the
+			// database: SyncPRs edits f.rows' links in place.
+			r.LinkList, r.Links = slices.Clone(r.LinkList), slices.Clone(r.Links)
 			out = append(out, r)
 		}
 	}
@@ -222,6 +230,9 @@ func (f *fakeSvc) Kill(_ context.Context, x store.Session, o agent.KillOpts) (ag
 			return agent.Killed{}, &worktree.DirtyError{Path: x.Worktree, Files: []string{" M a.go", "?? b.go"}}
 		}
 		f.rows[i].Status, f.rows[i].Worktree, f.rows[i].TmuxWindow = store.StatusArchived, "", ""
+		if !f.rows[i].Archived() {
+			f.archiveLocked(i) // the real Kill writes a summary too
+		}
 		return agent.Killed{Archived: true}, nil
 	}
 	return agent.Killed{}, errors.New("no such session")
@@ -482,7 +493,7 @@ func TestKillArchiveDeleteFlow(t *testing.T) {
 	sc.wait(t, "no sessions yet")
 
 	tm.Send(press("a"))
-	sc.wait(t, "alpha", "no tmux window")
+	sc.wait(t, "alpha", "── summary", "summary of alpha")
 	tm.Send(press("D"))
 	sc.wait(t, "Delete session alpha for good?")
 	tm.Send(press("y"))

@@ -39,6 +39,9 @@ var sourceTemplates = map[store.LinkKind]string{
 type syncedMsg struct {
 	changed bool
 	err     error
+	// archived are the sessions AutoArchive moved to the archive (P1.10).
+	archived   []agent.Row
+	archiveErr error
 }
 
 type openedMsg struct {
@@ -316,7 +319,10 @@ func (t *Tab) syncPRs() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		changed, err := svc.SyncPRs(ctx, project)
-		return syncedMsg{changed: changed, err: err}
+		// PR states only change here, so this is when sessions whose PRs
+		// are all merged or closed move to the archive.
+		archived, aerr := svc.AutoArchive(ctx, project)
+		return syncedMsg{changed: changed, err: err, archived: archived, archiveErr: aerr}
 	}
 }
 
@@ -331,6 +337,10 @@ func (t *Tab) synced(msg syncedMsg) tea.Cmd {
 		t.syncErrShown = true
 		cmds = append(cmds, info("couldn't look up PRs for sessions: "+msg.err.Error()))
 	}
+	if msg.archiveErr != nil {
+		cmds = append(cmds, errCmd(fmt.Errorf("auto-archive: %w", msg.archiveErr)))
+	}
+	cmds = append(cmds, t.autoArchived(msg.archived))
 	return tea.Batch(cmds...)
 }
 

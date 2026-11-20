@@ -125,7 +125,21 @@ type Sessions struct {
 	NotifyOnFinish bool `yaml:"notify_on_finish"`
 	// RefreshInterval is how often session status refreshes in the background.
 	RefreshInterval Duration `yaml:"refresh_interval"`
+	// ArchiveCleanup says whether archiving a session (P1.10) also removes
+	// its worktree and tmux window: ask, always or never.
+	ArchiveCleanup ArchiveCleanup `yaml:"archive_cleanup"`
 }
+
+// ArchiveCleanup is what happens to an archived session's worktree and tmux
+// window.
+type ArchiveCleanup string
+
+// Archive cleanup modes.
+const (
+	CleanupAsk    ArchiveCleanup = "ask"
+	CleanupAlways ArchiveCleanup = "always"
+	CleanupNever  ArchiveCleanup = "never"
+)
 
 // Artifacts holds the artifact gallery settings.
 type Artifacts struct {
@@ -197,6 +211,7 @@ func Default() *Config {
 			NotifyOnError:      true,
 			NotifyOnFinish:     true,
 			RefreshInterval:    Duration{10 * time.Second},
+			ArchiveCleanup:     CleanupAsk,
 		},
 		UI: UI{Animations: AnimationsFull},
 	}

@@ -157,10 +157,3 @@ func TestCapLines(t *testing.T) {
 		}
 	}
 }
-
-func TestShortFiles(t *testing.T) {
-	files := []string{"/wt/a/x.go", "/wt/a/y.go", "/wt/a/z.go", "/wt/a/q.go", "/wt/a/r.go", "/other/s.go"}
-	if got, want := shortFiles(files, "/wt/a"), "x.go, y.go, z.go, q.go, +2"; got != want {
-		t.Errorf("shortFiles = %q, want %q", got, want)
-	}
-}

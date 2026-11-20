@@ -142,7 +142,7 @@ func TestEnterOnArchivedExplains(t *testing.T) {
 	pump(tab, tab.toggleArchive())
 	_, cmd := tab.Update(press("enter"))
 	toasts, _ := pump(tab, cmd)
-	if len(toasts) != 1 || !strings.Contains(toasts[0], "can't be resumed") {
+	if len(toasts) != 1 || !strings.Contains(toasts[0], "is archived — restore it (A") {
 		t.Errorf("toasts = %q", toasts)
 	}
 	if inspects, _, _ := svc.attachCalls(); len(inspects) != 0 {

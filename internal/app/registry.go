@@ -8,6 +8,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/tabs"
+	"github.com/daan3011/forge/internal/tabs/sessions"
 	"github.com/daan3011/forge/internal/ui"
 )
 
@@ -166,7 +167,7 @@ func (m Model) sessionItems() []item {
 		}
 		var items []item
 		for _, e := range sg.Entities() {
-			if e.Kind != "Session" {
+			if e.Kind != sessions.EntitySession { // archived sessions can't be attached
 				continue
 			}
 			items = append(items, item{

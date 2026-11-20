@@ -73,6 +73,7 @@ type SessionKeys struct {
 	Kill        key.Binding
 	Delete      key.Binding // archived view only
 	ArchiveView key.Binding // toggle between active and archived sessions
+	Archive     key.Binding // archive the session; restore it in the archived view
 	Attach      key.Binding // attach, resuming a dead session first
 	Resume      key.Binding // resume a dead session without attaching
 	Transcript  key.Binding // open the transcript viewer
@@ -160,6 +161,7 @@ func DefaultKeyMap() *KeyMap {
 			Kill:        bind("kill session", "x"),
 			Delete:      bind("delete session", "D"),
 			ArchiveView: bind("archived view", "a"),
+			Archive:     bind("archive / restore", "A"),
 			Attach:      bind("attach", "enter"),
 			Resume:      bind("background resume", "b"),
 			Transcript:  bind("transcript", "t"),
@@ -245,6 +247,7 @@ func (k *KeyMap) actions() []action {
 		{"session_kill", scopeSessions, &ss.Kill},
 		{"session_delete", scopeSessions, &ss.Delete},
 		{"session_archive_view", scopeSessions, &ss.ArchiveView},
+		{"session_archive", scopeSessions, &ss.Archive},
 		{"session_attach", scopeSessions, &ss.Attach},
 		{"session_resume", scopeSessions, &ss.Resume},
 		{"session_transcript", scopeSessions, &ss.Transcript},

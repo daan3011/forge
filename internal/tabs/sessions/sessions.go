@@ -90,13 +90,18 @@ type Tab struct {
 	archived bool // showing the archive
 	rows     map[string]agent.Row
 	list     []agent.Row // rows in display order
-	updated  time.Time
-	listGen  int // bumps on project/view change; stale lists are dropped
-	fetching bool
-	dirty    bool            // a ping arrived during a refresh: refresh again after
-	busy     int             // start/kill/delete actions in flight
-	pending  string          // select this session once it shows up in the list
-	resuming map[string]bool // sessions with an attach/resume in flight
+	// both lists as last loaded, whichever is on screen (P1.10): the
+	// palette searches the archive from either view
+	activeRows, archivedRows []agent.Row
+	// archived sessions whose cleanup question is still to be asked
+	cleanupQueue []agent.Row
+	updated      time.Time
+	listGen      int // bumps on project/view change; stale lists are dropped
+	fetching     bool
+	dirty        bool            // a ping arrived during a refresh: refresh again after
+	busy         int             // start/kill/delete actions in flight
+	pending      string          // select this session once it shows up in the list
+	resuming     map[string]bool // sessions with an attach/resume in flight
 
 	syncing      bool // a PR link sync is running (P1.9)
 	syncErrShown bool // a failed sync was reported once already
@@ -204,10 +209,11 @@ func (t *Tab) renderStatus(cell string, width int, row lipgloss.Style) string {
 // --- messages ---------------------------------------------------------------
 
 type listedMsg struct {
-	gen  int
-	rows []agent.Row
-	err  error
-	at   time.Time
+	gen     int
+	rows    []agent.Row // active
+	archive []agent.Row
+	err     error
+	at      time.Time
 }
 
 type previewTickMsg struct{ gen int }
@@ -300,6 +306,10 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.killed(msg)
 	case deletedMsg:
 		return t, t.deleted(msg)
+	case archivedMsg:
+		return t, t.archivedOne(msg)
+	case restoredMsg:
+		return t, t.restored(msg)
 	case pingMsg:
 		return t, t.pinged(msg)
 	case syncedMsg:
@@ -356,7 +366,12 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	case key.Matches(kp, s.New):
 		return t, t.openNew()
 	case key.Matches(kp, s.Kill):
+		if t.archived {
+			return t, t.openCleanup()
+		}
 		return t, t.openKill()
+	case key.Matches(kp, s.Archive):
+		return t, t.archiveOrRestore()
 	case key.Matches(kp, s.Delete):
 		return t, t.openDelete()
 	case key.Matches(kp, s.ArchiveView):
@@ -383,7 +398,7 @@ func (t *Tab) Refresh() tea.Cmd {
 		return nil
 	}
 	t.fetching = true
-	svc, gen, archived, now := t.svc, t.listGen, t.archived, t.now
+	svc, gen, now := t.svc, t.listGen, t.now
 	project := ""
 	if t.project != nil {
 		project = t.project.Name
@@ -391,8 +406,12 @@ func (t *Tab) Refresh() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
 		defer cancel()
-		rows, err := svc.List(ctx, project, archived)
-		return listedMsg{gen: gen, rows: rows, err: err, at: now()}
+		rows, err := svc.List(ctx, project, false)
+		if err != nil {
+			return listedMsg{gen: gen, err: err, at: now()}
+		}
+		archive, err := svc.List(ctx, project, true)
+		return listedMsg{gen: gen, rows: rows, archive: archive, err: err, at: now()}
 	}
 }
 
@@ -404,7 +423,12 @@ func (t *Tab) listed(msg listedMsg) tea.Cmd {
 	if msg.err != nil {
 		return errCmd(fmt.Errorf("sessions: %w", msg.err))
 	}
-	t.setRows(msg.rows)
+	t.activeRows, t.archivedRows = msg.rows, msg.archive
+	if t.archived {
+		t.setRows(msg.archive)
+	} else {
+		t.setRows(msg.rows)
+	}
 	t.updated = msg.at
 	if t.pending != "" {
 		if _, ok := t.rows[t.pending]; ok {
@@ -412,7 +436,7 @@ func (t *Tab) listed(msg listedMsg) tea.Cmd {
 			t.pending = ""
 		}
 	}
-	cmd := t.selectionChanged()
+	cmd := tea.Batch(t.selectionChanged(), t.nextCleanupAsk())
 	if t.dirty {
 		t.dirty = false
 		cmd = tea.Batch(cmd, t.Refresh())
@@ -524,7 +548,13 @@ func (t *Tab) current() (agent.Row, bool) {
 func (t *Tab) toggleArchive() tea.Cmd {
 	t.archived = !t.archived
 	t.resetList()
-	return t.Refresh()
+	// Both lists are loaded on every refresh: show the cached one at once.
+	if t.archived {
+		t.setRows(t.archivedRows)
+	} else {
+		t.setRows(t.activeRows)
+	}
+	return tea.Batch(t.Refresh(), t.selectionChanged())
 }
 
 // resetList forgets the rows of the previous project or view.
@@ -588,7 +618,7 @@ func isLive(r agent.Row) bool {
 // no capture is in flight. The next tick is scheduled when it lands.
 func (t *Tab) capture() tea.Cmd {
 	r, ok := t.current()
-	if !ok || !t.visible || t.svc == nil || t.previewBusy || r.TmuxWindow == "" {
+	if !ok || !t.visible || t.svc == nil || t.previewBusy || r.TmuxWindow == "" || r.Archived() {
 		return nil
 	}
 	t.previewBusy = true
@@ -931,8 +961,11 @@ func (t *Tab) openDelete() tea.Cmd {
 	if !ok || t.svc == nil {
 		return nil
 	}
-	if !t.archived || r.Status != store.StatusArchived {
-		return info("only archived sessions can be deleted — kill it and remove its worktree first")
+	switch {
+	case !t.archived || !r.Archived():
+		return info("only archived sessions can be deleted — archive it (" + t.keys.Sessions.Archive.Help().Key + ") first")
+	case r.Status != store.StatusArchived:
+		return info(r.Name + " still has its worktree — remove it (" + t.keys.Sessions.Kill.Help().Key + ") before deleting")
 	}
 	yes := false
 	f := huh.NewForm(huh.NewGroup(
@@ -984,6 +1017,9 @@ type dialog struct {
 	// preview, if set, renders text shown beside the form (the new-session
 	// template preview). It runs in View, so it may read the form's values.
 	preview func() string
+	// displaced, if set, is called when another dialog replaces this one
+	// before it was answered (a queued archive cleanup question re-queues).
+	displaced func()
 }
 
 func (t *Tab) openDialog(subject string, f *huh.Form, done func() tea.Cmd) tea.Cmd {
@@ -993,6 +1029,9 @@ func (t *Tab) openDialog(subject string, f *huh.Form, done func() tea.Cmd) tea.C
 // openDialogOr is openDialog with a function to call when the form is
 // abandoned instead of completed.
 func (t *Tab) openDialogOr(subject string, f *huh.Form, done func() tea.Cmd, aborted func()) tea.Cmd {
+	if t.dialog != nil && t.dialog.displaced != nil {
+		t.dialog.displaced()
+	}
 	t.dialog = &dialog{form: f, subject: subject, done: done, aborted: aborted}
 	init := f.Init()
 	w, h := t.formSize()
@@ -1018,13 +1057,14 @@ func (t *Tab) updateDialog(msg tea.Msg) tea.Cmd {
 	switch d.form.State {
 	case huh.StateCompleted:
 		t.dialog = nil
-		return tea.Batch(cmd, d.done(), t.selectionChanged())
+		done := d.done() // may open the next dialog
+		return tea.Batch(cmd, done, t.selectionChanged(), t.nextCleanupAsk())
 	case huh.StateAborted:
 		t.dialog = nil
 		if d.aborted != nil {
 			d.aborted()
 		}
-		return nil
+		return t.nextCleanupAsk()
 	}
 	return cmd
 }
@@ -1222,10 +1262,18 @@ func (t *Tab) detail() string {
 	lines = append(lines,
 		label("created", r.CreatedAt.Format("2006-01-02 15:04")),
 		label("activity", Ago(t.now(), r.LastActivityAt)),
-		"",
 	)
+	if r.Archived() {
+		lines = append(lines, label("archived", t.archiveLine(r)))
+	}
+	lines = append(lines, "")
 	if r.Template != "" {
 		lines[len(lines)-1] = label("template", r.Template) // in place of the blank line
+	}
+	if r.Archived() {
+		// The summary and notes in place of the output preview.
+		lines = append(lines, t.archiveBody(r, w)...)
+		return strings.Join(lines, "\n")
 	}
 	lines = append(lines, th.PreviewRule.Render(rule("output", w)))
 	n := h - len(lines)
@@ -1250,7 +1298,7 @@ func (t *Tab) detail() string {
 
 func (t *Tab) heading() string {
 	if t.archived {
-		return Title + " · archived"
+		return fmt.Sprintf("%s · archived (%d)", Title, len(t.archivedRows))
 	}
 	return Title
 }
@@ -1285,17 +1333,18 @@ func (t *Tab) ShortHelp() []key.Binding {
 	case t.filter.Active():
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	case t.archived:
-		return []key.Binding{t.keys.Global.Refresh, t.keys.List.Filter, t.keys.Sessions.ArchiveView, t.keys.Sessions.Delete}
+		s := t.keys.Sessions
+		return []key.Binding{s.Transcript, s.OpenPR, t.keys.List.Filter, s.ArchiveView, s.Archive, s.Kill, s.Delete}
 	}
 	s := t.keys.Sessions
-	return []key.Binding{s.Attach, s.Resume, s.Transcript, s.OpenPR, t.keys.List.Filter, s.ArchiveView, s.Kill, s.New}
+	return []key.Binding{s.Attach, s.Resume, s.Transcript, s.OpenPR, t.keys.List.Filter, s.ArchiveView, s.Archive, s.Kill, s.New}
 }
 
 // FullHelp implements tabs.Tab.
 func (t *Tab) FullHelp() [][]key.Binding {
 	l, in, s, tr := t.keys.List, t.keys.Input, t.keys.Sessions, t.keys.Transcript
 	return [][]key.Binding{
-		{s.Attach, s.Resume, s.Transcript, s.OpenPR, s.OpenIssue, s.New, s.Kill, s.ArchiveView, s.Delete},
+		{s.Attach, s.Resume, s.Transcript, s.OpenPR, s.OpenIssue, s.New, s.Kill, s.ArchiveView, s.Archive, s.Delete},
 		{tr.Up, tr.Down, tr.PageUp, tr.PageDown, tr.Top, tr.Bottom, tr.Toggle, tr.ToggleAll, tr.Follow, tr.Close},
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, l.ShrinkPane, l.GrowPane},
@@ -1307,9 +1356,13 @@ func (t *Tab) FullHelp() [][]key.Binding {
 func (t *Tab) Commands() []tabs.Command {
 	l, s := t.keys.List, t.keys.Sessions
 	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return nil } }
-	view := "Show archived sessions"
+	view, archive, kill := "Show archived sessions", "Archive session", "Kill session…"
 	if t.archived {
-		view = "Show active sessions"
+		view, archive, kill = "Show active sessions", "Restore archived session", "Remove archived session's worktree and tmux window…"
+	}
+	killRun := t.openKill
+	if t.archived {
+		killRun = t.openCleanup
 	}
 	var cmds []tabs.Command
 	if t.transcript != nil {
@@ -1322,8 +1375,9 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "session_open_pr", Title: "Open linked PR in browser", Key: s.OpenPR, Run: func() tea.Cmd { return t.openLinked(store.KindGitHubPR) }},
 		{ID: "session_open_issue", Title: "Open linked issue in browser", Key: s.OpenIssue, Run: func() tea.Cmd { return t.openLinked(store.KindPlaneIssue) }},
 		{ID: "session_new", Title: "New session…", Key: s.New, Run: t.openNew},
-		{ID: "session_kill", Title: "Kill session…", Key: s.Kill, Run: t.openKill},
+		{ID: "session_kill", Title: kill, Key: s.Kill, Run: killRun},
 		{ID: "session_archive_view", Title: view, Key: s.ArchiveView, Run: t.toggleArchive},
+		{ID: "session_archive", Title: archive, Key: s.Archive, Run: t.archiveOrRestore},
 		{ID: "session_delete", Title: "Delete archived session…", Key: s.Delete, Run: t.openDelete},
 		{ID: "tmux_restart", Title: "tmux: restart forge server…", Run: t.restartTmux},
 		{ID: "tmux_config", Title: "tmux: edit forge tmux config", Run: t.editTmuxConfig},
@@ -1336,31 +1390,66 @@ func (t *Tab) Commands() []tabs.Command {
 	)
 }
 
-// Entities implements tabs.EntityProvider.
+// Entity kinds: active sessions (also listed by the "Go to session…"
+// picker) and archived ones, which the palette finds by summary and notes
+// too (P1.10).
+const (
+	EntitySession         = "Session"
+	EntityArchivedSession = "Archived session"
+)
+
+// Entities implements tabs.EntityProvider. Both lists are offered whichever
+// is on screen.
 func (t *Tab) Entities() []tabs.Entity {
-	out := make([]tabs.Entity, 0, len(t.rows))
-	for _, row := range t.table.Rows() {
-		r := t.rows[row[0]]
+	active, archive := t.activeRows, t.archivedRows
+	if t.archived {
+		archive = t.list
+	} else {
+		active = t.list // has the latest pinged statuses
+	}
+	out := make([]tabs.Entity, 0, len(active)+len(archive))
+	for _, r := range active {
 		detail := []string{string(r.Status), r.Project, r.Branch}
 		if r.Link != "" {
 			detail = append(detail, r.Link)
 		}
 		out = append(out, tabs.Entity{
-			Kind: "Session", ID: r.Name, Title: r.Name,
+			Kind: EntitySession, ID: r.Name, Title: r.Name,
 			Detail: strings.Join(detail, " · "),
 			Search: strings.Join(append(slices.Clone(r.Links), r.Branch), " "),
+		})
+	}
+	for _, r := range archive {
+		detail := []string{"archived " + Ago(t.now(), r.ArchivedAt) + " ago", r.Project}
+		if why := agent.ArchiveReason(r.LinkList); why != "" {
+			detail = append(detail, why)
+		}
+		search := append(slices.Clone(r.Links), r.Branch, r.Summary, r.Notes)
+		out = append(out, tabs.Entity{
+			Kind: EntityArchivedSession, ID: r.Name, Title: r.Name,
+			Detail: strings.Join(detail, " · "),
+			Search: strings.Join(search, " "),
 		})
 	}
 	return out
 }
 
-// Select implements tabs.EntityProvider.
+// Select implements tabs.EntityProvider. An archived session switches to
+// the archived view (and an active one back), then selects it.
 func (t *Tab) Select(id string) tea.Cmd {
 	if t.filter.Visible() {
 		t.clearFilter()
 	}
+	var cmd tea.Cmd
+	if _, ok := t.rows[id]; !ok && (hasRow(t.activeRows, id) || hasRow(t.archivedRows, id)) {
+		cmd = t.toggleArchive()
+	}
 	t.selectName(id)
-	return t.selectionChanged()
+	return tea.Batch(cmd, t.selectionChanged())
+}
+
+func hasRow(rows []agent.Row, name string) bool {
+	return slices.ContainsFunc(rows, func(r agent.Row) bool { return r.Name == name })
 }
 
 // CapturingInput implements tabs.InputCapturer.

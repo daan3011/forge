@@ -54,6 +54,9 @@ type Session struct {
 	// WorktreeExternal is set when Worktree is not forge's (e.g. the main
 	// checkout); forge never removes it.
 	WorktreeExternal bool
+	// AutoArchiveOff is set when the session was restored from the archive;
+	// it is then never archived automatically again (P1.10).
+	AutoArchiveOff bool
 }
 
 // Archived reports whether the session is in the archive.
@@ -66,7 +69,7 @@ type Sessions struct{ s *Store }
 const sessionInsertCols = `name, claude_session_id, project, repo, base_branch, branch, worktree,
 	tmux_session, tmux_window, template, status, status_changed_at, last_activity_at,
 	transcript_path, transcript_offset, waiting_notified_at, notes, summary, archived_at,
-	created_at, updated_at, branch_created, worktree_external`
+	created_at, updated_at, branch_created, worktree_external, auto_archive_off`
 
 const sessionCols = `id, ` + sessionInsertCols
 
@@ -79,7 +82,7 @@ func scanSession(sc interface{ Scan(...any) error }) (Session, error) {
 	err := sc.Scan(&x.ID, &x.Name, &x.ClaudeSessionID, &x.Project, &repo, &base, &branch, &wt,
 		&tsess, &twin, &tmpl, &x.Status, &statusAt, &activity,
 		&tpath, &x.TranscriptOffset, &notified, &notes, &sum, &archived,
-		&created, &updated, &x.BranchCreated, &x.WorktreeExternal)
+		&created, &updated, &x.BranchCreated, &x.WorktreeExternal, &x.AutoArchiveOff)
 	if err != nil {
 		return Session{}, err
 	}
@@ -107,13 +110,13 @@ func (r *Sessions) Create(ctx context.Context, x Session) (Session, error) {
 	}
 	x.CreatedAt, x.UpdatedAt = now, now
 	res, err := r.s.w.ExecContext(ctx, `INSERT INTO sessions (`+sessionInsertCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		x.Name, x.ClaudeSessionID, x.Project, nullStr(x.Repo), nullStr(x.BaseBranch),
 		nullStr(x.Branch), nullStr(x.Worktree), nullStr(x.TmuxSession), nullStr(x.TmuxWindow),
 		nullStr(x.Template), x.Status, toMillis(x.StatusChangedAt), toMillis(x.LastActivityAt),
 		nullStr(x.TranscriptPath), x.TranscriptOffset, toMillis(x.WaitingNotifiedAt),
 		nullStr(x.Notes), nullStr(x.Summary), toMillis(x.ArchivedAt),
-		toMillis(x.CreatedAt), toMillis(x.UpdatedAt), x.BranchCreated, x.WorktreeExternal)
+		toMillis(x.CreatedAt), toMillis(x.UpdatedAt), x.BranchCreated, x.WorktreeExternal, x.AutoArchiveOff)
 	if err != nil {
 		return Session{}, wrap("create session", err)
 	}
@@ -202,14 +205,14 @@ func (r *Sessions) Update(ctx context.Context, x Session) error {
 		worktree = ?, tmux_session = ?, tmux_window = ?, template = ?, status = ?,
 		status_changed_at = ?, last_activity_at = ?, transcript_path = ?, transcript_offset = ?,
 		waiting_notified_at = ?, notes = ?, summary = ?, archived_at = ?, updated_at = ?,
-		branch_created = ?, worktree_external = ?
+		branch_created = ?, worktree_external = ?, auto_archive_off = ?
 		WHERE id = ?`,
 		x.Name, x.ClaudeSessionID, x.Project, nullStr(x.Repo), nullStr(x.BaseBranch),
 		nullStr(x.Branch), nullStr(x.Worktree), nullStr(x.TmuxSession), nullStr(x.TmuxWindow),
 		nullStr(x.Template), x.Status, toMillis(x.StatusChangedAt), toMillis(x.LastActivityAt),
 		nullStr(x.TranscriptPath), x.TranscriptOffset, toMillis(x.WaitingNotifiedAt),
 		nullStr(x.Notes), nullStr(x.Summary), toMillis(x.ArchivedAt),
-		r.s.now().UnixMilli(), x.BranchCreated, x.WorktreeExternal, x.ID)
+		r.s.now().UnixMilli(), x.BranchCreated, x.WorktreeExternal, x.AutoArchiveOff, x.ID)
 	return mustAffect("update session", res, err)
 }
 
@@ -303,22 +306,28 @@ func (r *Sessions) Archive(ctx context.Context, id int64, summary string, at tim
 }
 
 // ArchiveRemoved records that a killed session's worktree was removed: the
-// status becomes archived, archived_at is set and the worktree path and tmux
-// window are cleared. The uuid, branch, links and everything else are kept.
+// status becomes archived, archived_at is set (kept if the session was
+// already in the archive) and the worktree path and tmux window are cleared.
+// The uuid, branch, links and everything else are kept.
 func (r *Sessions) ArchiveRemoved(ctx context.Context, id int64, at time.Time) error {
 	ms := at.UnixMilli()
 	res, err := r.s.w.ExecContext(ctx, `UPDATE sessions SET
-		status = ?1, status_changed_at = ?2, archived_at = ?2,
+		status = ?1, status_changed_at = ?2, archived_at = COALESCE(archived_at, ?2),
 		worktree = NULL, tmux_window = NULL, waiting_notified_at = NULL, updated_at = ?3
 		WHERE id = ?4`, StatusArchived, ms, r.s.now().UnixMilli(), id)
 	return mustAffect("archive removed session", res, err)
 }
 
-// Unarchive moves the session back to the active list.
+// Unarchive moves the session back to the active list and stops it from
+// being archived automatically again (AutoArchiveOff). A session whose
+// worktree was removed (status archived) comes back dead, so resuming it
+// recreates the worktree.
 func (r *Sessions) Unarchive(ctx context.Context, id int64) error {
-	res, err := r.s.w.ExecContext(ctx,
-		`UPDATE sessions SET archived_at = NULL, updated_at = ? WHERE id = ?`,
-		r.s.now().UnixMilli(), id)
+	res, err := r.s.w.ExecContext(ctx, `UPDATE sessions SET
+		archived_at = NULL, auto_archive_off = 1,
+		status = CASE WHEN status = ?1 THEN ?2 ELSE status END,
+		updated_at = ?3
+		WHERE id = ?4`, StatusArchived, StatusDead, r.s.now().UnixMilli(), id)
 	return mustAffect("unarchive session", res, err)
 }
 
