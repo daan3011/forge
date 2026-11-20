@@ -10,6 +10,7 @@ import (
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
+	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
@@ -42,6 +43,12 @@ func WithCheckout(c checkout.Checker) Option {
 // they use OSC 52.
 func WithClipboard(c clipboard.Copier) Option {
 	return func(m *Model) { m.clipboard = c }
+}
+
+// WithDelta lets the PRs diff viewer colour diffs with delta (P2.4); without
+// it, or when delta isn't installed, Lip Gloss colours them.
+func WithDelta(d delta.Renderer) Option {
+	return func(m *Model) { m.delta = d }
 }
 
 // editTemplates creates the templates folder with the defaults if needed,

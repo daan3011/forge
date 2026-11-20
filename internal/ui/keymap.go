@@ -24,8 +24,11 @@ type KeyMap struct {
 	// Transcript drives the transcript viewer (P1.6), which takes over
 	// the Sessions tab while open.
 	Transcript TranscriptKeys
-	Demo       DemoKeys
-	Tmux       TmuxDemoKeys
+	// Diff drives the PR diff viewer (P2.4), which takes over the PRs tab
+	// while open.
+	Diff DiffKeys
+	Demo DemoKeys
+	Tmux TmuxDemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -102,6 +105,8 @@ type PRKeys struct {
 	AutoMerge    key.Binding
 	ToggleDraft  key.Binding
 	Session      key.Binding
+	// Diff opens the full-screen diff viewer to review the PR (P2.4).
+	Diff key.Binding
 }
 
 // TranscriptKeys are active while the transcript viewer is open; nothing
@@ -117,6 +122,24 @@ type TranscriptKeys struct {
 	ToggleAll key.Binding // expand / collapse every tool call
 	Follow    key.Binding // keep the newest entry in view as it arrives
 	Close     key.Binding
+}
+
+// DiffKeys are active while the PR diff viewer is open; nothing else (not
+// even the global keys) is.
+type DiffKeys struct {
+	Up             key.Binding
+	Down           key.Binding
+	PageUp         key.Binding
+	PageDown       key.Binding
+	Top            key.Binding
+	Bottom         key.Binding
+	NextFile       key.Binding
+	PrevFile       key.Binding
+	Approve        key.Binding
+	RequestChanges key.Binding
+	Comment        key.Binding
+	Open           key.Binding // the PR in the browser
+	Close          key.Binding
 }
 
 // DemoKeys drive the hidden `forge demo anim` showcase. They are not
@@ -208,6 +231,7 @@ func DefaultKeyMap() *KeyMap {
 			AutoMerge:    bind("auto-merge", "M"),
 			ToggleDraft:  bind("toggle draft", "d"),
 			Session:      bind("start session", "s"),
+			Diff:         bind("review diff", "v"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -220,6 +244,21 @@ func DefaultKeyMap() *KeyMap {
 			ToggleAll: bind("expand all", "e"),
 			Follow:    bind("follow", "f"),
 			Close:     bind("close", "esc", "q"),
+		},
+		Diff: DiffKeys{
+			Up:             bind("scroll up", "k", "up"),
+			Down:           bind("scroll down", "j", "down"),
+			PageUp:         bind("page up", "ctrl+u", "pgup"),
+			PageDown:       bind("page down", "ctrl+d", "pgdown", "space"),
+			Top:            bind("top", "g", "home"),
+			Bottom:         bind("bottom", "G", "end"),
+			NextFile:       bind("next file", "n"),
+			PrevFile:       bind("prev file", "p"),
+			Approve:        bind("approve", "a"),
+			RequestChanges: bind("request changes", "x"),
+			Comment:        bind("comment", "C"),
+			Open:           bind("open in browser", "o"),
+			Close:          bind("close", "esc", "q"),
 		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
@@ -256,6 +295,8 @@ const (
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
 	scopeTranscript = "transcript"
+	// scopeDiff is modal too: the PR diff viewer (P2.4).
+	scopeDiff = "diff"
 )
 
 // isTabScope reports whether scope belongs to one tab (and is active
@@ -263,7 +304,7 @@ const (
 func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
-	g, l, in, ss, pr, tr := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript
+	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -310,6 +351,7 @@ func (k *KeyMap) actions() []action {
 		{"pr_auto_merge", scopePRs, &pr.AutoMerge},
 		{"pr_toggle_draft", scopePRs, &pr.ToggleDraft},
 		{"pr_session", scopePRs, &pr.Session},
+		{"pr_diff", scopePRs, &pr.Diff},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},
@@ -320,6 +362,19 @@ func (k *KeyMap) actions() []action {
 		{"transcript_toggle_all", scopeTranscript, &tr.ToggleAll},
 		{"transcript_follow", scopeTranscript, &tr.Follow},
 		{"transcript_close", scopeTranscript, &tr.Close},
+		{"diff_up", scopeDiff, &df.Up},
+		{"diff_down", scopeDiff, &df.Down},
+		{"diff_page_up", scopeDiff, &df.PageUp},
+		{"diff_page_down", scopeDiff, &df.PageDown},
+		{"diff_top", scopeDiff, &df.Top},
+		{"diff_bottom", scopeDiff, &df.Bottom},
+		{"diff_next_file", scopeDiff, &df.NextFile},
+		{"diff_prev_file", scopeDiff, &df.PrevFile},
+		{"diff_approve", scopeDiff, &df.Approve},
+		{"diff_request_changes", scopeDiff, &df.RequestChanges},
+		{"diff_comment", scopeDiff, &df.Comment},
+		{"diff_open", scopeDiff, &df.Open},
+		{"diff_close", scopeDiff, &df.Close},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},

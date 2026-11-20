@@ -15,6 +15,7 @@ import (
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/notify"
@@ -110,6 +111,7 @@ func newRootCmd(d deps) *cobra.Command {
 				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
 				app.WithBrowser(browser.Exec{}), app.WithGitHub(githubPulls),
 				app.WithClipboard(clipboard.Exec{}), app.WithCheckout(newCheckout(cfg)),
+				app.WithDelta(delta.Exec{Dark: true}),
 				app.WithAlerts(alert.Checker{
 					Store: st.Sessions(), Notifier: d.notifications(), Watcher: d.tmuxWatcher(),
 					Policy: alert.PolicyFrom(cfg.Sessions),

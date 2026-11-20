@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions"
@@ -62,6 +63,9 @@ type Deps struct {
 	Checkout checkout.Checker
 	// Clipboard copies text (PR URLs); nil falls back to OSC 52.
 	Clipboard clipboard.Copier
+	// Delta colours PR diffs (P2.4); nil, or not installed, falls back to
+	// Lip Gloss colours.
+	Delta delta.Renderer
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

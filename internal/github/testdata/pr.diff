@@ -1,0 +1,50 @@
+diff --git a/internal/a.go b/internal/a.go
+index 1111111..2222222 100644
+--- a/internal/a.go
++++ b/internal/a.go
+@@ -1,4 +1,5 @@
+ package a
+-// old comment
++// new comment
++// --- not a header
+ func A() {}
+diff --git a/docs/new.md b/docs/new.md
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/docs/new.md
+@@ -0,0 +1,2 @@
++# New
++text
+\ No newline at end of file
+diff --git a/old.txt b/old.txt
+deleted file mode 100644
+index 4444444..0000000
+--- a/old.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-gone
+diff --git a/src/before.go b/src/after.go
+similarity index 90%
+rename from src/before.go
+rename to src/after.go
+index 5555555..6666666 100644
+--- a/src/before.go
++++ b/src/after.go
+@@ -1,2 +1,2 @@
+ package src
+-var x = 1
++var x = 2
+diff --git a/img/logo.png b/img/logo.png
+index 7777777..8888888 100644
+Binary files a/img/logo.png and b/img/logo.png differ
+diff --git a/run.sh b/run.sh
+old mode 100644
+new mode 100755
+diff --git a/with space.txt b/with space.txt
+index 9999999..aaaaaaa 100644
+--- a/with space.txt
++++ b/with space.txt
+@@ -1 +1 @@
+-a
++b

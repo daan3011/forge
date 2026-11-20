@@ -26,6 +26,10 @@ type Client struct {
 	gqlOnce sync.Once
 	gqlC    *api.GraphQLClient
 	gqlErr  error
+
+	diffOnce sync.Once // REST asking for diffs (P2.4)
+	diffC    *api.RESTClient
+	diffErr  error
 }
 
 var (

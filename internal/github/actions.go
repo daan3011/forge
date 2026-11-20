@@ -1,7 +1,6 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -111,22 +110,7 @@ func (c *Client) PR(ctx context.Context, repo string, number int) (PR, error) {
 }
 
 func (c *Client) restPut(ctx context.Context, repo string, number int, path string, body any) error {
-	if _, _, err := splitRepo(repo, number); err != nil {
-		return err
-	}
-	r, err := c.rest()
-	if err != nil {
-		return fmt.Errorf("github: %w", err)
-	}
-	b, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	url := fmt.Sprintf("repos/%s/pulls/%d/%s", repo, number, path)
-	if err := r.DoWithContext(ctx, http.MethodPut, url, bytes.NewReader(b), nil); err != nil {
-		return fmt.Errorf("github: %s#%d: %w", repo, number, err)
-	}
-	return nil
+	return c.restDo(ctx, http.MethodPut, repo, number, path, body)
 }
 
 // UpdateBranch implements PRActor.
