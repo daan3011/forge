@@ -38,9 +38,12 @@ func TestNewKeyMapOverrides(t *testing.T) {
 		{"remapped quit", map[string][]string{"quit": {"Q"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "Q", true, "Q"},
 		{"old key gone", map[string][]string{"quit": {"Q"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "q", false, "Q"},
 		{"arrows prettified", map[string][]string{"up": {"up", "w"}}, func(k *KeyMap) key.Binding { return k.List.Up }, "w", true, "↑/w"},
-		{"long run collapsed", map[string][]string{"goto_tab": {"b", "c", "d", "e"}}, func(k *KeyMap) key.Binding { return k.Global.GotoTab }, "c", true, "b-e"},
+		{"long run collapsed", map[string][]string{"goto_tab": {"v", "w", "y", "z"}}, func(k *KeyMap) key.Binding { return k.Global.GotoTab }, "w", true, "v-z"},
 		{"session key remapped", map[string][]string{"session_new": {"N"}}, func(k *KeyMap) key.Binding { return k.Sessions.New }, "N", true, "N"},
 		{"desc kept", map[string][]string{"refresh": {"f5"}}, func(k *KeyMap) key.Binding { return k.Global.Refresh }, "f5", true, "f5"},
+		{"default attach", nil, func(k *KeyMap) key.Binding { return k.Sessions.Attach }, "enter", true, "enter"},
+		{"default background resume", nil, func(k *KeyMap) key.Binding { return k.Sessions.Resume }, "b", true, "b"},
+		{"default go to session", nil, func(k *KeyMap) key.Binding { return k.Global.GotoSession }, "ctrl+g", true, "ctrl+g"},
 		{"default projects", nil, func(k *KeyMap) key.Binding { return k.Global.Projects }, "ctrl+p", true, "ctrl+p"},
 		{"remapped projects", map[string][]string{"projects": {"ctrl+o"}}, func(k *KeyMap) key.Binding { return k.Global.Projects }, "ctrl+o", true, "ctrl+o"},
 	}
@@ -73,7 +76,9 @@ func TestNewKeyMapErrors(t *testing.T) {
 		{"unknown action", map[string][]string{"explode": {"x"}}, "keybinds.explode: unknown action; known: quit,"},
 		{"conflict names the override", map[string][]string{"refresh": {"q"}}, `keybinds.refresh: "q" is already bound to quit`},
 		{"conflict with later action", map[string][]string{"quit": {"j"}}, `keybinds.quit: "j" is already bound to down`},
-		{"session keys share the main scope", map[string][]string{"quit": {"x"}}, `keybinds.quit: "x" is already bound to session_kill`},
+		{"session keys clash with main keys", map[string][]string{"quit": {"x"}}, `keybinds.quit: "x" is already bound to session_kill`},
+		{"tab key clashes with a global one", map[string][]string{"session_resume": {"R"}}, `keybinds.session_resume: "R" is already bound to refresh_all`},
+		{"conflict within a tab", map[string][]string{"session_resume": {"n"}}, `keybinds.session_resume: "n" is already bound to session_new`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,7 +90,7 @@ func TestNewKeyMapErrors(t *testing.T) {
 	}
 
 	// Input keys are a separate scope: esc may be reused by a list action.
-	if _, err := NewKeyMap(map[string][]string{"filter": {"enter"}}); err != nil {
+	if _, err := NewKeyMap(map[string][]string{"filter": {"esc"}}); err != nil {
 		t.Fatalf("input scope should not conflict: %v", err)
 	}
 	// Repeating a key within one action is harmless.
@@ -161,5 +166,38 @@ func TestDefaultConfigListsActions(t *testing.T) {
 		if !strings.Contains(string(b), "# "+id+": [") {
 			t.Fatalf("default.yaml does not document keybinds.%s", id)
 		}
+	}
+}
+
+func TestConflictsAcrossTabScopes(t *testing.T) {
+	b := func(keys ...string) *key.Binding { kb := key.NewBinding(key.WithKeys(keys...)); return &kb }
+	tests := []struct {
+		name string
+		acts []action
+		want int
+	}{
+		{"two tabs may share a key", []action{
+			{"session_resume", "tab:sessions", b("b")},
+			{"plane_board", "tab:plane", b("b")},
+		}, 0},
+		{"same tab may not", []action{
+			{"session_resume", "tab:sessions", b("b")},
+			{"session_other", "tab:sessions", b("b")},
+		}, 1},
+		{"a tab key may not shadow a main key", []action{
+			{"refresh_all", scopeMain, b("R")},
+			{"plane_board", "tab:plane", b("R")},
+		}, 1},
+		{"input keys are separate", []action{
+			{"accept", scopeInput, b("enter")},
+			{"session_attach", "tab:sessions", b("enter")},
+		}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := conflicts(tt.acts, nil); len(got) != tt.want {
+				t.Errorf("conflicts = %v, want %d", got, tt.want)
+			}
+		})
 	}
 }

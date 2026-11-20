@@ -107,7 +107,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | P1.2 | Worktree manager | Each session gets a `git worktree` on branch `agent/<name>`; cleanup offered on close. |
 | P1.3 | Start named session | Form: name, repo, base branch, template, first prompt. Starts `claude --session-id <uuid>` in the worktree. |
 | P1.4 | Live status via hooks | `forge hook <event>` ingests Claude Code hook JSON; list shows working / waiting / idle / error / dead. |
-| P1.5 | Attach & resume | Enter attaches; dead sessions are reopened with `claude --resume <uuid>` in the right directory. |
+| P1.5 | Attach & resume | Enter attaches; dead sessions are reopened with `claude --resume <uuid>` in the right directory. `b` resumes in the background; ctrl+g picks a session from anywhere. |
 | P1.6 | Transcript viewer | Parse session JSONL: recent messages, files touched, tool calls, token estimate. |
 | P1.7 | Session templates | Saved prompts with `{pr}`, `{issue}`, `{branch}`, `{repo}` variables. |
 | P1.8 | Waiting notifications | Desktop notification after a session waits for input longer than N minutes. |
@@ -498,9 +498,15 @@ Implement attach and resume (spec P1.5).
 - enter on a session: if its tmux window is alive, attach (P1.1). If dead, recreate the window
   in the session's worktree running `claude --resume <uuid>` and attach.
 - If the worktree is gone, offer to recreate it from the branch.
-- `R` resumes without attaching (background).
+- `b` resumes without attaching (background resume). (`R` stays the global refresh-all; tab keys
+  may reuse another tab's keys, never a global one.)
 - After detaching, refresh that session's status and preview.
-- Palette command "Go to session..." with fuzzy search by name, issue or PR.
+- Palette command "Go to session..." (also ctrl+g) with fuzzy search by name, issue or PR;
+  picking a session attaches to it, resuming it first if needed.
+- No transcript for the uuid (the session never got a message): start `claude --session-id <uuid>`
+  again, offering to re-send the first prompt if its file still exists. If claude refuses the
+  uuid as already in use, give the session a new one (links stay).
+- Every resume (re)installs forge's hooks in the worktree.
 
 Done when: after rebooting, I can pick a session and land back in the same Claude conversation.
 ```

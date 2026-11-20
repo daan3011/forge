@@ -234,3 +234,16 @@ func TestSessionSetClaudeID(t *testing.T) {
 	wantErr(t, s.Sessions().SetClaudeID(ctx, a.ID, "uuid-b"), ErrConflict)
 	wantErr(t, s.Sessions().SetClaudeID(ctx, 999, "x"), ErrNotFound)
 }
+
+func TestSessionSetWindow(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	a := mustSession(t, s, "a")
+	noErr(t, s.Sessions().SetWindow(ctx, a.ID, "forge", "a-2"))
+	got, err := s.Sessions().Get(ctx, a.ID)
+	noErr(t, err)
+	if got.TmuxSession != "forge" || got.TmuxWindow != "a-2" {
+		t.Fatalf("window = %s:%s, want forge:a-2", got.TmuxSession, got.TmuxWindow)
+	}
+	wantErr(t, s.Sessions().SetWindow(ctx, 999, "forge", "x"), ErrNotFound)
+}

@@ -241,6 +241,15 @@ func (r *Sessions) SetClaudeID(ctx context.Context, id int64, claudeID string) e
 	return mustAffect("set claude session id", res, err)
 }
 
+// SetWindow records the tmux session and window a session runs in, e.g.
+// after a resume opened a new window for it.
+func (r *Sessions) SetWindow(ctx context.Context, id int64, tmuxSession, window string) error {
+	res, err := r.s.w.ExecContext(ctx,
+		`UPDATE sessions SET tmux_session = ?, tmux_window = ?, updated_at = ? WHERE id = ?`,
+		nullStr(tmuxSession), nullStr(window), r.s.now().UnixMilli(), id)
+	return mustAffect("set session window", res, err)
+}
+
 // MarkWaitingNotified records that a "waiting" notification was sent (P1.8).
 func (r *Sessions) MarkWaitingNotified(ctx context.Context, id int64, at time.Time) error {
 	res, err := r.s.w.ExecContext(ctx,

@@ -40,7 +40,23 @@ var (
 	ErrNotArchived = errors.New("only archived sessions can be deleted")
 	// ErrNoWindow means the session has no tmux window to look at.
 	ErrNoWindow = errors.New("session has no tmux window")
+	// ErrWorktreeMissing means the session's worktree directory is gone;
+	// Resume with RecreateWorktree brings it back from the branch.
+	ErrWorktreeMissing = errors.New("session worktree is gone")
 )
+
+// WorktreeMissingError reports a session whose worktree is gone.
+type WorktreeMissingError struct {
+	Path   string
+	Branch string
+}
+
+func (e *WorktreeMissingError) Error() string {
+	return fmt.Sprintf("worktree %s is gone", e.Path)
+}
+
+// Is makes errors.Is(err, ErrWorktreeMissing) true.
+func (e *WorktreeMissingError) Is(target error) bool { return target == ErrWorktreeMissing }
 
 // Store is the persistence the service needs. StoreFrom adapts *store.Store.
 type Store interface {
@@ -49,6 +65,9 @@ type Store interface {
 	List(ctx context.Context, f store.SessionFilter) ([]store.Session, error)
 	SetStatus(ctx context.Context, id int64, st store.Status, at time.Time) error
 	SetStatusIf(ctx context.Context, id int64, from, to store.Status, at time.Time) (bool, error)
+	SetWindow(ctx context.Context, id int64, tmuxSession, window string) error
+	SetClaudeID(ctx context.Context, id int64, claudeID string) error
+	Update(ctx context.Context, x store.Session) error
 	LatestEvent(ctx context.Context, claudeID string) (store.Event, error)
 	ArchiveRemoved(ctx context.Context, id int64, at time.Time) error
 	Delete(ctx context.Context, id int64) error
@@ -96,7 +115,20 @@ type Config struct {
 	// TmuxColors the colours its default is rendered with.
 	TmuxConf   string
 	TmuxColors tmux.ConfigColors
+	// ProjectsDir is where Claude Code keeps transcripts; empty means
+	// claude.DefaultProjectsDir().
+	ProjectsDir string
+	// StartupCheck is how long a resumed session that had to start afresh
+	// is watched for claude refusing its session id; zero means
+	// DefaultStartupCheck. The pane is always checked at least once.
+	StartupCheck time.Duration
 }
+
+// DefaultStartupCheck is the default Config.StartupCheck.
+const DefaultStartupCheck = 2 * time.Second
+
+// startupPoll is how often the startup check looks at the window.
+const startupPoll = 200 * time.Millisecond
 
 // Service starts, lists, previews and kills agent sessions. It does blocking
 // I/O and must only be called from a tea.Cmd or the CLI.
@@ -111,6 +143,12 @@ func New(c Config) *Service {
 	}
 	if c.Now == nil {
 		c.Now = time.Now
+	}
+	if c.ProjectsDir == "" {
+		c.ProjectsDir = claude.DefaultProjectsDir()
+	}
+	if c.StartupCheck == 0 {
+		c.StartupCheck = DefaultStartupCheck
 	}
 	return &Service{c: c}
 }
@@ -270,6 +308,9 @@ type Row struct {
 	store.Session
 	// Link is the linked issue or PR, e.g. "#12" or "PLANE-7"; "" if none.
 	Link string
+	// Links names every linked issue and PR, for search: the full id
+	// ("owner/repo#12", "PLANE-7") and, for PRs, the short "#12" too.
+	Links []string
 }
 
 // List returns the project's sessions (all projects when project is ""),
@@ -300,6 +341,7 @@ func (s *Service) List(ctx context.Context, project string, archived bool) ([]Ro
 			return nil, err
 		}
 		rows[i].Link = linkLabel(links)
+		rows[i].Links = linkNames(links)
 	}
 	return rows, nil
 }
@@ -359,6 +401,20 @@ func linkLabel(links []store.Link) string {
 		}
 	}
 	return issue
+}
+
+// linkNames lists every link's id, plus "#<n>" for PRs.
+func linkNames(links []store.Link) []string {
+	var out []string
+	for _, l := range links {
+		out = append(out, l.Other.ID)
+		if l.Other.Kind == store.KindGitHubPR {
+			if _, num, ok := strings.Cut(l.Other.ID, "#"); ok {
+				out = append(out, "#"+num)
+			}
+		}
+	}
+	return out
 }
 
 // ClearWaiting moves a session that is waiting on a permission prompt back
@@ -514,6 +570,9 @@ type API interface {
 	Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error)
 	Delete(ctx context.Context, x store.Session) error
 	ClearWaiting(ctx context.Context, x store.Session) (bool, error)
+	Inspect(ctx context.Context, x store.Session) (ResumePlan, error)
+	Resume(ctx context.Context, x store.Session, o ResumeOpts) (Resumed, error)
+	Attach(ctx context.Context, x store.Session) (tmux.Attachment, error)
 	TmuxControl
 }
 

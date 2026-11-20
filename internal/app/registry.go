@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
@@ -16,6 +18,7 @@ const (
 	groupCommands = "Commands"
 	groupTabs     = "Tabs"
 	groupProjects = "Projects"
+	groupSessions = "Sessions"
 )
 
 // item is one palette entry: a command, a tab, a project or an entity.
@@ -72,6 +75,10 @@ func (m Model) paletteItems() []item {
 			id: "projects", title: "Switch project…", group: groupCommands, hint: hint(g.Projects),
 			run: func(m Model) (Model, tea.Cmd) { return m.openProjects() },
 		},
+		{
+			id: "goto_session", title: "Go to session…", group: groupCommands, hint: hint(g.GotoSession),
+			run: func(m Model) (Model, tea.Cmd) { return m.openSessions() },
+		},
 	}
 
 	// Commands of the active tab.
@@ -120,7 +127,7 @@ func (m Model) paletteItems() []item {
 				title:  e.Title,
 				detail: e.Detail,
 				group:  e.Kind + "s",
-				search: e.Kind + " " + e.Title,
+				search: strings.TrimSpace(e.Kind + " " + e.Title + " " + e.Search),
 				run: func(m Model) (Model, tea.Cmd) {
 					m, switchCmd := m.switchTo(i)
 					return m, tea.Batch(switchCmd, ep.Select(e.ID))
@@ -129,6 +136,34 @@ func (m Model) paletteItems() []item {
 		}
 	}
 	return items
+}
+
+// sessionItems lists the sessions of the tab that owns them, for the
+// session picker: matched by name, linked issue or PR and branch; picking
+// one switches to that tab and attaches to it (resuming it if needed).
+func (m Model) sessionItems() []item {
+	for i, t := range m.tabs {
+		sg, ok := t.(tabs.SessionGoer)
+		if !ok {
+			continue
+		}
+		var items []item
+		for _, e := range sg.Entities() {
+			if e.Kind != "Session" {
+				continue
+			}
+			items = append(items, item{
+				id: "session:" + e.ID, title: e.Title, detail: e.Detail, group: groupSessions,
+				search: strings.TrimSpace(e.Title + " " + e.Search),
+				run: func(m Model) (Model, tea.Cmd) {
+					m, switchCmd := m.switchTo(i)
+					return m, tea.Batch(switchCmd, sg.AttachSession(e.ID))
+				},
+			})
+		}
+		return items
+	}
+	return nil
 }
 
 // projectItems lists "All projects" and then every configured project, for
