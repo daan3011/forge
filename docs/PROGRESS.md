@@ -16,7 +16,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 
 ## Phase 1 — Agent sessions
 
-- [ ] P1.1 tmux driver
+- [x] P1.1 tmux driver — `internal/sessions/tmux`: `Driver` interface + `Exec` (always `tmux -L forge`; `-f` only via `WithConfig`). Sanitised names are the stable ids, exact-match targets (`=sess:=win`), argv-only (no shell). Each session gets a hidden `_forge` placeholder window; server sets `remain-on-exit` so exited agents read as dead and keep their output. `Attach` switches client when on the forge socket, else returns an `*exec.Cmd` (TMUX stripped, not killed by ctx) for `tea.ExecProcess`. `tmuxtest.Fake` + shared `RunConformance`; real-server tests via `go test -tags tmux ./internal/sessions/tmux/...`. Hidden `forge demo tmux` exercises attach/detach.
 - [ ] P1.2 Worktree manager
 - [ ] P1.3 Start named session
 - [ ] P1.4 Live status via hooks

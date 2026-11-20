@@ -19,6 +19,7 @@ type KeyMap struct {
 	List   ListKeys
 	Input  InputKeys
 	Demo   DemoKeys
+	Tmux   TmuxDemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -70,6 +71,15 @@ type DemoKeys struct {
 	Quit    key.Binding
 }
 
+// TmuxDemoKeys drive the hidden `forge demo tmux` program, which exercises
+// the tmux driver. Same rules as DemoKeys.
+type TmuxDemoKeys struct {
+	Attach  key.Binding
+	Restart key.Binding
+	Kill    key.Binding
+	Quit    key.Binding
+}
+
 func bind(desc string, keys ...string) key.Binding {
 	return key.NewBinding(key.WithKeys(keys...), key.WithHelp(helpKey(keys), desc))
 }
@@ -115,6 +125,12 @@ func DefaultKeyMap() *KeyMap {
 			Reduced: bind("reduced", "2"),
 			Off:     bind("off", "3"),
 			Quit:    bind("quit", "q", "esc", "ctrl+c"),
+		},
+		Tmux: TmuxDemoKeys{
+			Attach:  bind("attach", "enter"),
+			Restart: bind("new window", "n"),
+			Kill:    bind("kill window", "x"),
+			Quit:    bind("quit", "q", "ctrl+c"),
 		},
 	}
 }
