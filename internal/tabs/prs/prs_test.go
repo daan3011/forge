@@ -30,6 +30,31 @@ type fakeGH struct {
 	results map[string]github.SearchResult // section query -> result
 	err     error
 	queries []string
+
+	details   map[string]github.PRDetail // PR id -> detail; missing = pr()'s defaults
+	detailErr error
+	detailed  []string // PR ids PRDetail was called for
+}
+
+func (f *fakeGH) PRDetail(_ context.Context, repo string, number int) (github.PRDetail, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := fmt.Sprintf("%s#%d", repo, number)
+	f.detailed = append(f.detailed, id)
+	if f.detailErr != nil {
+		return github.PRDetail{}, f.detailErr
+	}
+	if d, ok := f.details[id]; ok {
+		return d, nil
+	}
+	// The defaults of pr(): approved and mergeable.
+	return github.PRDetail{ReviewDecision: github.ReviewApproved, Mergeable: github.Mergeable}, nil
+}
+
+func (f *fakeGH) detailCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.detailed)
 }
 
 func (f *fakeGH) SearchPRs(_ context.Context, q string, limit int) (github.SearchResult, error) {
@@ -123,7 +148,7 @@ func sampleGH() *fakeGH {
 	}}
 }
 
-func testDeps(gh github.PRSearcher, kv tabs.KVStore) tabkit.Deps {
+func testDeps(gh github.PRClient, kv tabs.KVStore) tabkit.Deps {
 	d := tabkit.Deps{Theme: ui.NewTheme(true, nil), Keys: ui.DefaultKeyMap(), Store: kv, Config: config.Default()}
 	if gh != nil {
 		d.GitHub = gh
@@ -131,11 +156,17 @@ func testDeps(gh github.PRSearcher, kv tabs.KVStore) tabkit.Deps {
 	return d
 }
 
-func newTestTab(gh github.PRSearcher, kv tabs.KVStore) *Tab {
+func newTestTab(gh github.PRClient, kv tabs.KVStore) *Tab {
 	t := newTab(testDeps(gh, kv))
 	t.now = func() time.Time { return now }
+	t.tick = immediateTick
 	t.SetSize(120, 30)
 	return t
+}
+
+// immediateTick fires at once, so drain runs debounced fetches in order.
+func immediateTick(_ time.Duration, fn func(time.Time) tea.Msg) tea.Cmd {
+	return func() tea.Msg { return fn(now) }
 }
 
 // run executes cmd and returns its messages, flattening batches.
@@ -230,12 +261,12 @@ func TestSectionsFetchAndCount(t *testing.T) {
 		"My PRs (3)", "Review requested (0)", "Involved (2)",
 		"is:pr is:open author:@me sort:updated-desc",
 		"acme/bubbletea · #1", "feat(examples): tree", "+391 -4", "+1.2k -2", "1h", "1y",
-		"feat(tree): support width", "main ← feat-1", "changes approved",
+		"feat(tree): support width", "main ← feat-1", "Changes approved",
 	)
 	if got := tb.StatusDetail(); got != "@daan · PR 1/3 (fetched 3)" {
 		t.Errorf("status detail = %q", got)
 	}
-	if got := len(kv.keys()); got != 3 {
+	if got := len(slices.DeleteFunc(kv.keys(), func(k string) bool { return !strings.HasPrefix(k, "tab:") })); got != 3 {
 		t.Errorf("cached %d sections: %v", got, kv.keys())
 	}
 	if lines := strings.Split(tb.View(), "\n"); len(lines) != 30 {

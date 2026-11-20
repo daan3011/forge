@@ -13,11 +13,11 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
+	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
@@ -30,8 +30,8 @@ const Title = "PRs"
 // EntityPR is the palette group of PRs.
 const EntityPR = "PR"
 
-// listRatio is the list's starting share of the width: the PR columns need
-// room, and the detail pane is small until P2.2.
+// listRatio is the list's starting share of the width: the PR columns and
+// the query need room; the rest goes to the detail pane (< / > move it).
 const listRatio = 0.65
 
 // searchBoxHeight is the bordered query box above the table.
@@ -55,10 +55,14 @@ type Tab struct {
 	theme *ui.Theme
 	keys  *ui.KeyMap
 	store tabs.KVStore
-	gh    github.PRSearcher
+	gh    github.PRClient
 	anim  *anim.Engine
 	cfg   *config.Config
 	now   func() time.Time
+	// sessions finds the forge sessions linked to a PR; nil shows none.
+	sessions sessions.API
+	// tick arms the detail debounce (tea.Tick; tests replace it).
+	tick func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 
 	split   ui.SplitPane
 	divider anim.Spring
@@ -76,6 +80,8 @@ type Tab struct {
 	picked   *string // the repo dialog's value
 	authErr  bool    // the last fetch failed for want of a gh login
 	errShown bool    // a fetch error was toasted since the last Refresh
+
+	det detailState // the detail pane (P2.2)
 }
 
 var (
@@ -100,9 +106,12 @@ func newTab(d tabkit.Deps) *Tab {
 	}
 	t := &Tab{
 		theme: d.Theme, keys: d.Keys, store: d.Store, gh: d.GitHub, anim: d.Engine(), cfg: cfg,
-		now:    time.Now,
-		split:  ui.NewSplitPane(d.Theme),
-		filter: ui.NewFilter(d.Theme, d.Keys),
+		now:      time.Now,
+		sessions: d.Sessions,
+		tick:     tea.Tick,
+		split:    ui.NewSplitPane(d.Theme),
+		filter:   ui.NewFilter(d.Theme, d.Keys),
+		det:      newDetailState(),
 	}
 	t.split.SetRatio(listRatio)
 	t.table = ui.NewTable(d.Theme, d.Keys, t.columns())
@@ -202,25 +211,35 @@ func (t *Tab) byKey(k string) *section {
 	return nil
 }
 
-// Update implements tabs.Tab.
+// Update implements tabs.Tab. After every message the detail pane catches
+// up with the selection: a new PR arms the debounced fetch, a new width
+// re-renders Markdown.
 func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
+	cmd := t.update(msg)
+	return t, tea.Batch(cmd, t.syncDetail(), t.ensureRendered())
+}
+
+func (t *Tab) update(msg tea.Msg) tea.Cmd {
+	if cmd, ok := t.updateDetail(msg); ok {
+		return cmd
+	}
 	switch msg := msg.(type) {
 	case tabkit.CacheLoadedMsg:
 		t.cacheLoaded(msg)
-		return t, nil
+		return nil
 	case tabkit.FetchedMsg:
-		return t, t.fetched(msg)
+		return t.fetched(msg)
 	}
 	if t.dialog != nil {
-		return t, t.updateDialog(msg)
+		return t.updateDialog(msg)
 	}
 	kp, ok := msg.(tea.KeyPressMsg)
 	if !ok {
-		return t, nil
+		return nil
 	}
 	if t.filter.Active() {
 		t.updateFilter(kp)
-		return t, nil
+		return nil
 	}
 	l, pk := t.keys.List, t.keys.PRs
 	switch {
@@ -233,15 +252,23 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	case key.Matches(kp, pk.PrevSection):
 		t.switchSection(t.active - 1)
 	case key.Matches(kp, pk.RepoFilter):
-		return t, t.openRepoFilter()
+		return t.openRepoFilter()
+	case key.Matches(kp, pk.DetailNext):
+		t.setDetailTab(t.det.tab + 1)
+	case key.Matches(kp, pk.DetailPrev):
+		t.setDetailTab(t.det.tab - 1)
+	case key.Matches(kp, pk.DetailDown):
+		t.scrollDetail(1)
+	case key.Matches(kp, pk.DetailUp):
+		t.scrollDetail(-1)
 	case key.Matches(kp, l.GrowPane):
 		t.resize(t.split.Grow)
 	case key.Matches(kp, l.ShrinkPane):
 		t.resize(t.split.Shrink)
 	default:
-		return t, t.table.Update(kp)
+		return t.table.Update(kp)
 	}
-	return t, nil
+	return nil
 }
 
 func (t *Tab) cacheLoaded(msg tabkit.CacheLoadedMsg) {
@@ -621,76 +648,6 @@ func (t *Tab) emptyView(w, h int) string {
 	return ui.Box(th.TableEmpty.Render(msg), w, h)
 }
 
-// detail is the right pane: a short summary until P2.2's detail view.
-func (t *Tab) detail() string {
-	th := t.theme
-	w, _ := t.split.RightSize()
-	p, ok := t.selected()
-	if !ok {
-		return th.Hint.Render("no PR selected")
-	}
-	icon, ist := th.PRIcon(p.State)
-	rev, rst := th.ReviewIcon(p.ReviewDecision)
-	ci, cst := th.CIIcon(p.CI)
-	now := t.now()
-	author := "ghost"
-	if p.Author != "" {
-		author = "@" + p.Author
-	}
-	lines := []string{
-		th.PRRepo.Render(fmt.Sprintf("%s · #%d", p.Repo, p.Number)),
-		th.DetailTitle.Render(ansi.Wrap(p.Title, max(w, 1), "")),
-		"",
-		ist.Render(icon+" "+p.State) + th.Hint.Render("  "+p.BaseRef+" ← "+p.HeadRef),
-		th.Hint.Render("by ") + th.Body.Render(author) + th.Hint.Render(" · opened "+age(now, p.CreatedAt)+" ago · updated "+age(now, p.UpdatedAt)+" ago"),
-		th.DiffAdd.Render("+"+fmt.Sprint(p.Additions)) + " " + th.DiffDel.Render("-"+fmt.Sprint(p.Deletions)),
-		"",
-		rst.Render(rev) + " " + th.Body.Render(reviewText(p.ReviewDecision)),
-		cst.Render(ci) + " " + th.Body.Render(ciText(p.CI)),
-		mergeLine(th, p.Mergeable),
-		"",
-		th.LinkText.Render(p.URL),
-	}
-	return strings.Join(lines, "\n")
-}
-
-func reviewText(d string) string {
-	switch d {
-	case github.ReviewApproved:
-		return "changes approved"
-	case github.ReviewChangesRequested:
-		return "changes requested"
-	case github.ReviewRequired:
-		return "review required"
-	}
-	return "no review required"
-}
-
-func ciText(s string) string {
-	switch s {
-	case github.CISuccess:
-		return "checks passed"
-	case github.CIFailure, github.CIError:
-		return "checks failing"
-	case github.CIPending, github.CIExpected:
-		return "checks running"
-	}
-	return "no checks"
-}
-
-func mergeLine(th *ui.Theme, m string) string {
-	switch m {
-	case github.Mergeable:
-		g, st := th.CIIcon(github.CISuccess)
-		return st.Render(g) + " " + th.Body.Render("no conflicts with base branch")
-	case github.Conflicting:
-		g, st := th.CIIcon(github.CIFailure)
-		return st.Render(g) + " " + th.Body.Render("conflicts with base branch")
-	}
-	g, st := th.CIIcon("")
-	return st.Render(g) + " " + th.Hint.Render("mergeability unknown")
-}
-
 // --- interfaces ----------------------------------------------------------------
 
 // Title implements tabs.Tab.
@@ -705,7 +662,7 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	}
 	pk := t.keys.PRs
-	return []key.Binding{pk.PrevSection, pk.NextSection, pk.RepoFilter, t.keys.List.Filter}
+	return []key.Binding{pk.PrevSection, pk.NextSection, pk.DetailPrev, pk.DetailNext, pk.RepoFilter, t.keys.List.Filter}
 }
 
 // FullHelp implements tabs.Tab.
@@ -714,6 +671,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{pk.NextSection, pk.PrevSection, l.Filter, pk.RepoFilter, l.ShrinkPane, l.GrowPane},
+		{pk.DetailNext, pk.DetailPrev, pk.DetailDown, pk.DetailUp},
 		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
 	}
 }
@@ -721,7 +679,8 @@ func (t *Tab) FullHelp() [][]key.Binding {
 // Commands implements tabs.Commander.
 func (t *Tab) Commands() []tabs.Command {
 	l, pk := t.keys.List, t.keys.PRs
-	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return nil } }
+	// Commands run outside Update, so they catch the detail pane up here.
+	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return t.syncDetail() } }
 	cmds := []tabs.Command{
 		{ID: "filter", Title: "Filter PRs", Key: l.Filter, Run: do(t.startFilter)},
 		{ID: "pr_next_section", Title: "PRs: next section", Key: pk.NextSection, Run: do(func() { t.switchSection(t.active + 1) })},
@@ -737,6 +696,13 @@ func (t *Tab) Commands() []tabs.Command {
 	return append(cmds,
 		tabs.Command{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(func() { t.resize(t.split.Grow) })},
 		tabs.Command{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(func() { t.resize(t.split.Shrink) })},
+		tabs.Command{ID: "pr_detail_next", Title: "PRs: next detail tab", Key: pk.DetailNext, Run: do(func() { t.setDetailTab(t.det.tab + 1) })},
+		tabs.Command{ID: "pr_detail_prev", Title: "PRs: previous detail tab", Key: pk.DetailPrev, Run: do(func() { t.setDetailTab(t.det.tab - 1) })},
+		tabs.Command{ID: "pr_detail_overview", Title: "PRs: show overview", Run: do(func() { t.setDetailTab(tabOverview) })},
+		tabs.Command{ID: "pr_detail_checks", Title: "PRs: show checks", Run: do(func() { t.setDetailTab(tabChecks) })},
+		tabs.Command{ID: "pr_detail_activity", Title: "PRs: show activity", Run: do(func() { t.setDetailTab(tabActivity) })},
+		tabs.Command{ID: "pr_detail_down", Title: "PRs: scroll detail down", Key: pk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
+		tabs.Command{ID: "pr_detail_up", Title: "PRs: scroll detail up", Key: pk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
 	)
 }
 
@@ -787,7 +753,7 @@ func (t *Tab) Select(id string) tea.Cmd {
 		}
 		t.setRows()
 		t.selectID(id)
-		return nil
+		return t.syncDetail()
 	}
 	return nil
 }

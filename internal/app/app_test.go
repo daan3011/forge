@@ -394,6 +394,10 @@ func (fakeGitHub) SearchPRs(context.Context, string, int) (github.SearchResult, 
 	}}, nil
 }
 
+func (fakeGitHub) PRDetail(context.Context, string, int) (github.PRDetail, error) {
+	return github.PRDetail{Body: "Retries **webhooks**."}, nil
+}
+
 func withFetchDelay(d time.Duration) Option { return func(m *Model) { m.fetchDelay = d } }
 
 // runCmd executes cmd and returns its messages, flattening batches. Use it

@@ -171,6 +171,14 @@ type Theme struct {
 	DiffDel         lipgloss.Style // -deletions
 	PRTime          lipgloss.Style // updated / created ages
 
+	// PR detail pane (P2.2).
+	DetailBand      lipgloss.Style // the title on a raised band
+	DetailTab       lipgloss.Style // Overview / Checks / Activity
+	DetailTabActive lipgloss.Style
+	DetailRule      lipgloss.Style // rule under the tab strip
+	StatusCard      lipgloss.Style // bordered box around the status lines
+	CardTitle       lipgloss.Style // first line of a status entry
+
 	PaletteBox            lipgloss.Style
 	PalettePrompt         lipgloss.Style
 	PaletteGroup          lipgloss.Style
@@ -262,6 +270,13 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		DiffAdd:         lipgloss.NewStyle().Foreground(p.Success),
 		DiffDel:         lipgloss.NewStyle().Foreground(p.Error),
 		PRTime:          base,
+
+		DetailBand:      lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
+		DetailTab:       lipgloss.NewStyle().Foreground(p.Muted).Padding(0, 1),
+		DetailTabActive: lipgloss.NewStyle().Foreground(p.Accent).Bold(true).Underline(true).Padding(0, 1),
+		DetailRule:      lipgloss.NewStyle().Foreground(p.Border),
+		StatusCard:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
+		CardTitle:       lipgloss.NewStyle().Foreground(p.Text).Bold(true),
 
 		PaletteBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
 		PalettePrompt:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
@@ -358,6 +373,75 @@ func (t *Theme) CIIcon(state string) (string, lipgloss.Style) {
 		return "●", s.Foreground(t.Highlight)
 	}
 	return "·", s.Foreground(t.Muted)
+}
+
+// StatePill is the filled pill behind a PR's state word in the detail
+// header: open, draft, merged or closed (the github.State* values).
+func (t *Theme) StatePill(state string) lipgloss.Style {
+	s := lipgloss.NewStyle().Foreground(t.OnAccent).Bold(true).Padding(0, 1)
+	switch state {
+	case "draft":
+		return s.Background(t.Muted)
+	case "merged":
+		return s.Background(t.Link)
+	case "closed":
+		return s.Background(t.Border)
+	}
+	return s.Background(t.Accent)
+}
+
+// LabelChip is the style of a GitHub label: its own colour ("d73a4a", with
+// or without "#") as background, with dark or light text for contrast. A
+// missing or bad colour gives a surface-coloured chip.
+func (t *Theme) LabelChip(hex string) lipgloss.Style {
+	s := lipgloss.NewStyle().Padding(0, 1)
+	hex = strings.TrimPrefix(hex, "#")
+	var r, g, b uint8
+	if len(hex) != 6 {
+		return s.Foreground(t.Text).Background(t.Surface)
+	}
+	if _, err := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b); err != nil {
+		return s.Foreground(t.Text).Background(t.Surface)
+	}
+	fg := lipgloss.Color("#ffffff")
+	if 0.299*float64(r)+0.587*float64(g)+0.114*float64(b) > 150 {
+		fg = lipgloss.Color("#000000")
+	}
+	return s.Foreground(fg).Background(lipgloss.Color("#" + hex))
+}
+
+// CheckIcon is the icon and style of one check's normalised state (the
+// github.Check* values: fail, running, pending, pass, skipped).
+func (t *Theme) CheckIcon(state string) (string, lipgloss.Style) {
+	s := lipgloss.NewStyle()
+	switch state {
+	case "fail":
+		return "✗", s.Foreground(t.Error).Bold(true)
+	case "running":
+		return "◐", s.Foreground(t.Highlight).Bold(true)
+	case "pending":
+		return "○", s.Foreground(t.Highlight)
+	case "pass":
+		return "✓", s.Foreground(t.Success).Bold(true)
+	}
+	return "⊘", s.Foreground(t.Muted)
+}
+
+// ReviewStateIcon is the icon and style of one reviewer's state (APPROVED,
+// CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING).
+func (t *Theme) ReviewStateIcon(state string) (string, lipgloss.Style) {
+	s := lipgloss.NewStyle()
+	switch state {
+	case "APPROVED":
+		return "✓", s.Foreground(t.Success).Bold(true)
+	case "CHANGES_REQUESTED":
+		return "✗", s.Foreground(t.Error).Bold(true)
+	case "COMMENTED":
+		return "◇", s.Foreground(t.Link)
+	case "PENDING":
+		return "○", s.Foreground(t.Highlight)
+	}
+	return "⊘", s.Foreground(t.Muted)
 }
 
 // Huh is the Huh form theme in forge colours. It reads the theme each time a

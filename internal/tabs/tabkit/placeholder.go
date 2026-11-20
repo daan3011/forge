@@ -53,9 +53,9 @@ type Deps struct {
 	Providers *templates.Registry
 	// Browser opens URLs (linked issues and PRs); nil can't open any.
 	Browser browser.Opener
-	// GitHub runs the PRs tab searches (P2.1); nil shows that GitHub
+	// GitHub runs the PRs tab searches (P2.1) and detail fetches (P2.2); nil shows that GitHub
 	// isn't available.
-	GitHub github.PRSearcher
+	GitHub github.PRClient
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

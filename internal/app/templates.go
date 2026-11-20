@@ -25,9 +25,9 @@ func WithBrowser(b browser.Opener) Option {
 	return func(m *Model) { m.browser = b }
 }
 
-// WithGitHub sets the client the PRs tab searches with (P2.1). Without it
+// WithGitHub sets the client the PRs tab searches and fetches details with (P2.1, P2.2). Without it
 // the tab says GitHub isn't available.
-func WithGitHub(g github.PRSearcher) Option {
+func WithGitHub(g github.PRClient) Option {
 	return func(m *Model) { m.github = g }
 }
 
