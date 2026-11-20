@@ -10,6 +10,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/worktree"
+	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 )
 
@@ -21,8 +22,9 @@ type FormInput struct {
 	Projects []config.Project
 	// Values pre-fills the form (e.g. the active project, CLI flags).
 	Values agent.StartOpts
-	// Templates offered (P1.7); the field is left out when empty.
-	Templates []string
+	// Templates offered; the field is left out when empty. With a template
+	// chosen the prompt field is hidden: the template flow fills it in.
+	Templates []templates.Template
 	// Taken reports names already used, for instant feedback. The service
 	// checks again against the database.
 	Taken func(name string) bool
@@ -81,22 +83,39 @@ func NewForm(in FormInput) (*huh.Form, *agent.StartOpts, error) {
 			}),
 	}
 	if len(in.Templates) > 0 {
+		if _, ok := templates.Find(in.Templates, vals.Template); !ok {
+			vals.Template = ""
+		}
 		topts := []huh.Option[string]{huh.NewOption("(none)", "")}
 		for _, t := range in.Templates {
-			topts = append(topts, huh.NewOption(t, t))
+			topts = append(topts, huh.NewOption(t.Name, t.Name))
 		}
+		// The tab shows a preview of the selected template beside the form
+		// (previewText). Not a huh Note: its DescriptionFunc runs in a
+		// command, racing the fields that write vals.
 		fields = append(fields, huh.NewSelect[string]().Key("template").Title("Template").
 			Options(topts...).Value(&vals.Template))
 	}
-	fields = append(fields, huh.NewText().Key("prompt").Title("First prompt").
-		Description("sent to claude as its first message; alt+enter for a new line, ctrl+e for $EDITOR").
-		Lines(6).Value(&vals.Prompt))
+	groups := []*huh.Group{huh.NewGroup(fields...).Title("New session")}
+	prompt := promptField(&vals.Prompt)
+	if len(in.Templates) > 0 {
+		groups = append(groups, huh.NewGroup(prompt).Title("New session").
+			WithHideFunc(func() bool { return vals.Template != "" }))
+	} else {
+		groups[0] = huh.NewGroup(append(fields, prompt)...).Title("New session")
+	}
 
-	f := huh.NewForm(huh.NewGroup(fields...).Title("New session")).
+	f := huh.NewForm(groups...).
 		WithTheme(in.Theme.Huh()).
 		WithKeyMap(in.Keys.HuhKeyMap()).
 		WithShowHelp(true)
 	return f, vals, nil
+}
+
+func promptField(v *string) *huh.Text {
+	return huh.NewText().Key("prompt").Title("First prompt").
+		Description("sent to claude as its first message; alt+enter for a new line, ctrl+e for $EDITOR").
+		Lines(6).Value(v)
 }
 
 func validateName(s string, taken func(string) bool) error {

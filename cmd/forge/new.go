@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
@@ -16,6 +18,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
 	sessionstab "github.com/daan3011/forge/internal/tabs/sessions"
+	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 )
 
@@ -52,14 +55,22 @@ func forgeBin() string {
 }
 
 func newNewCmd(d deps) *cobra.Command {
-	var o agent.StartOpts
+	var (
+		o         agent.StartOpts
+		issue, pr string
+		varFlags  []string
+	)
 	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Start a new named agent session",
 		Long: `Start a named Claude Code session in its own worktree and tmux window.
 
 Without --name and --project (or with only one project configured), an
-interactive form asks for the rest. --prompt - reads the prompt from stdin.`,
+interactive form asks for the rest. --prompt - reads the prompt from stdin.
+
+--template fills the first prompt from a session template in
+~/.config/forge/templates (unless --prompt is given). --issue and --pr name
+the issue / PR it is for; --var name=value fills any other variable.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _, _, err := config.LoadOrCreate()
@@ -73,21 +84,37 @@ interactive form asks for the rest. --prompt - reads the prompt from stdin.`,
 				}
 				o.Prompt = string(b)
 			}
+			vars, err := parseVars(varFlags)
+			if err != nil {
+				return err
+			}
+			ts, err := loadTemplates(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
 			usable := sessionstab.UsableProjects(cfg.Projects)
 			if o.Project == "" && len(usable) == 1 {
 				o.Project = usable[0].Name
 			}
+			var theme *ui.Theme
+			var keys *ui.KeyMap
+			if d.runForm != nil {
+				if keys, err = ui.NewKeyMap(cfg.Keybinds); err != nil {
+					return err
+				}
+				theme = ui.NewTheme(lipgloss.HasDarkBackground(os.Stdin, os.Stdout), cfg.UI.Theme)
+			}
+			asked := false
 			if o.Name == "" || o.Project == "" {
 				if d.runForm == nil {
 					return errors.New("--name and --project are required when not on a terminal")
 				}
-				keys, err := ui.NewKeyMap(cfg.Keybinds)
-				if err != nil {
-					return err
+				pre := o
+				if pre.Template == "" && pre.Prompt == "" {
+					pre.Template = cfg.Sessions.DefaultTemplate // pre-selected only
 				}
 				f, vals, err := sessionstab.NewForm(sessionstab.FormInput{
-					Theme: ui.NewTheme(lipgloss.HasDarkBackground(os.Stdin, os.Stdout), cfg.UI.Theme),
-					Keys:  keys, Projects: cfg.Projects, Values: o,
+					Theme: theme, Keys: keys, Projects: cfg.Projects, Values: pre, Templates: ts,
 				})
 				if err != nil {
 					return err
@@ -95,7 +122,20 @@ interactive form asks for the rest. --prompt - reads the prompt from stdin.`,
 				if err := d.runForm(f); err != nil {
 					return err
 				}
-				o = *vals
+				o, asked = *vals, true
+			}
+			if o.Template != "" {
+				tmpl, ok := templates.Find(ts, o.Template)
+				if !ok {
+					return fmt.Errorf("no template called %q in %s", o.Template, templatesDirName())
+				}
+				// An explicit --prompt wins; the template is then recorded only.
+				if asked || o.Prompt == "" {
+					refs := map[store.LinkKind]string{store.KindPlaneIssue: issue, store.KindGitHubPR: pr}
+					if o.Prompt, err = templatePrompt(cmd, d, theme, keys, cfg.Projects, tmpl, o, refs, vars, asked); err != nil {
+						return err
+					}
+				}
 			}
 
 			st, err := store.Open(cmd.Context(), d.dbPath())
@@ -126,7 +166,86 @@ interactive form asks for the rest. --prompt - reads the prompt from stdin.`,
 	f.StringVar(&o.Name, "name", "", "session name (letters, digits, - and _)")
 	f.StringVar(&o.Project, "project", "", "project name from the config")
 	f.StringVar(&o.Base, "base", "", "base branch (default main)")
-	f.StringVar(&o.Template, "template", "", "session template")
+	f.StringVar(&o.Template, "template", "", "session template (fills the first prompt)")
+	f.StringVar(&issue, "issue", "", "issue the session is for (template {issue})")
+	f.StringVar(&pr, "pr", "", "pull request the session is for, owner/repo#n (template {pr})")
+	f.StringArrayVar(&varFlags, "var", nil, "template variable as name=value (repeatable)")
 	f.StringVar(&o.Prompt, "prompt", "", "first prompt; - reads stdin")
 	return cmd
+}
+
+// parseVars reads --var name=value flags.
+func parseVars(flags []string) (map[string]string, error) {
+	vars := map[string]string{}
+	for _, f := range flags {
+		name, value, ok := strings.Cut(f, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("--var %q: use name=value", f)
+		}
+		vars[name] = value
+	}
+	return vars, nil
+}
+
+func templatesDirName() string {
+	dir, err := templates.Dir()
+	if err != nil {
+		return "the templates folder"
+	}
+	return dir
+}
+
+// loadTemplates reads the templates folder, creating it with the defaults
+// on first use. Broken templates are skipped with a warning.
+func loadTemplates(stderr io.Writer) ([]templates.Template, error) {
+	dir, err := templates.Dir()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := templates.EnsureDefaults(dir); err != nil {
+		return nil, err
+	}
+	ts, errs := templates.Load(dir)
+	for _, err := range errs {
+		fmt.Fprintln(stderr, "warning:", err)
+	}
+	return ts, nil
+}
+
+// templatePrompt runs the template flow: ask for refs and missing
+// variables on a terminal (an error naming them without one), then show
+// the rendered prompt for editing if the form was used.
+func templatePrompt(cmd *cobra.Command, d deps, theme *ui.Theme, keys *ui.KeyMap, projects []config.Project,
+	tmpl templates.Template, o agent.StartOpts, refs map[store.LinkKind]string, vars map[string]string, asked bool,
+) (string, error) {
+	if d.runForm != nil {
+		if f, get := sessionstab.RefsForm(theme, keys, tmpl, refs); f != nil {
+			if err := d.runForm(f); err != nil {
+				return "", err
+			}
+			refs = get()
+		}
+	}
+	vals, missing, errs := templates.Resolve(cmd.Context(), d.providers, tmpl, sessionstab.TemplateInput(projects, o, refs, vars))
+	for _, err := range errs {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
+	}
+	if len(missing) > 0 {
+		if d.runForm == nil {
+			return "", fmt.Errorf("template %s needs %s: pass --var name=value (or --issue / --pr)",
+				tmpl.Name, strings.Join(missing, ", "))
+		}
+		f, get := sessionstab.VarsForm(theme, keys, tmpl, missing)
+		if err := d.runForm(f); err != nil {
+			return "", err
+		}
+		maps.Copy(vals, get())
+	}
+	prompt := sessionstab.RenderPrompt(tmpl, vals)
+	if asked {
+		if err := d.runForm(sessionstab.PromptForm(theme, keys, &prompt)); err != nil {
+			return "", err
+		}
+	}
+	return prompt, nil
 }

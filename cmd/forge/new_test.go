@@ -10,6 +10,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/templates"
 )
 
 // fakeSessions records Start calls.
@@ -88,5 +89,75 @@ func TestNewWithoutTerminalNeedsFlags(t *testing.T) {
 	}
 	if len(fake.got) != 0 {
 		t.Errorf("started: %+v", fake.got)
+	}
+}
+
+func TestNewWithTemplateAndVars(t *testing.T) {
+	d, fake := newEnvCLI(t, twoProjects)
+	_, _, err := run(t, d, "new", "--name", "q", "--project", "forge", "--template", "explore",
+		"--var", "question=how does resume work?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.got) != 1 {
+		t.Fatalf("Start = %+v", fake.got)
+	}
+	got := fake.got[0]
+	if got.Template != "explore" || !strings.HasPrefix(got.Prompt, "Explore daan/forge and answer: how does resume work?") {
+		t.Errorf("Start = %+v", got)
+	}
+}
+
+func TestNewWithTemplateMissingVarsWithoutTerminal(t *testing.T) {
+	d, fake := newEnvCLI(t, twoProjects)
+	_, _, err := run(t, d, "new", "--name", "i", "--project", "forge", "--template", "implement-issue", "--issue", "PROJ-1")
+	if err == nil || !strings.Contains(err.Error(), "needs issue_title, issue_body") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(fake.got) != 0 {
+		t.Errorf("started: %+v", fake.got)
+	}
+}
+
+func TestNewWithTemplateProvider(t *testing.T) {
+	d, fake := newEnvCLI(t, twoProjects)
+	d.providers = templates.NewRegistry()
+	d.providers.Register(store.KindPlaneIssue, templates.ProviderFunc(func(_ context.Context, ref string) (map[string]string, error) {
+		return map[string]string{"issue_title": "Title " + ref, "issue_body": "Body"}, nil
+	}))
+	if _, _, err := run(t, d, "new", "--name", "i", "--project", "forge", "--template", "implement-issue", "--issue", "PROJ-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.got) != 1 || !strings.HasPrefix(fake.got[0].Prompt, "Implement issue PROJ-1: Title PROJ-1\n\nBody") {
+		t.Fatalf("Start = %+v", fake.got)
+	}
+}
+
+func TestNewTemplateErrors(t *testing.T) {
+	d, _ := newEnvCLI(t, twoProjects)
+	if _, _, err := run(t, d, "new", "--name", "x", "--project", "forge", "--template", "nope"); err == nil ||
+		!strings.Contains(err.Error(), `no template called "nope"`) {
+		t.Errorf("unknown template: %v", err)
+	}
+	if _, _, err := run(t, d, "new", "--name", "x", "--project", "forge", "--var", "novalue"); err == nil ||
+		!strings.Contains(err.Error(), "use name=value") {
+		t.Errorf("bad --var: %v", err)
+	}
+}
+
+func TestNewPromptWinsOverTemplate(t *testing.T) {
+	d, fake := newEnvCLI(t, twoProjects)
+	if _, _, err := run(t, d, "new", "--name", "x", "--project", "forge", "--template", "explore", "--prompt", "mine"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.got) != 1 || fake.got[0].Prompt != "mine" || fake.got[0].Template != "explore" {
+		t.Fatalf("Start = %+v", fake.got)
+	}
+}
+
+func TestNewUnknownTemplateWithPrompt(t *testing.T) {
+	d, _ := newEnvCLI(t, twoProjects)
+	if _, _, err := run(t, d, "new", "--name", "x", "--project", "forge", "--template", "nope", "--prompt", "p"); err == nil {
+		t.Error("unknown template accepted")
 	}
 }
