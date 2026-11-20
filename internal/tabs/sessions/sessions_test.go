@@ -198,6 +198,9 @@ func (f *fakeSvc) List(_ context.Context, project string, archived bool) ([]agen
 	for _, r := range f.rows {
 		inArchive := r.Archived() || r.Status == store.StatusArchived
 		if (project == "" || r.Project == project) && inArchive == archived {
+			// Copies, as the real service reads fresh rows from the
+			// database: SyncPRs edits f.rows' links in place.
+			r.LinkList, r.Links = slices.Clone(r.LinkList), slices.Clone(r.Links)
 			out = append(out, r)
 		}
 	}

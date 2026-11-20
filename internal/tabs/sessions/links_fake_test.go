@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	agent "github.com/daan3011/forge/internal/sessions"
@@ -92,7 +93,9 @@ func (f *fakeSvc) AutoArchive(context.Context, string) ([]agent.Row, error) {
 		}
 		if agent.PRsFinished(r.LinkList) {
 			f.archiveLocked(i)
-			out = append(out, f.rows[i])
+			r := f.rows[i]
+			r.LinkList, r.Links = slices.Clone(r.LinkList), slices.Clone(r.Links)
+			out = append(out, r)
 		}
 	}
 	return out, nil
