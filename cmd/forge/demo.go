@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/sessions/tmux/tmuxdemo"
 	"github.com/daan3011/forge/internal/ui/anim"
 	"github.com/daan3011/forge/internal/ui/anim/animdemo"
 )
@@ -36,7 +38,20 @@ func newDemoCmd() *cobra.Command {
 		},
 	}
 	animCmd.Flags().StringVar(&level, "level", "", "full, reduced or off (default: ui.animations from the config)")
-	demo.AddCommand(animCmd)
+	tmuxCmd := &cobra.Command{
+		Use:   "tmux",
+		Short: "Run bash on forge's tmux server; attach with enter, detach with Alt+d",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dir, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			_, err = tea.NewProgram(tmuxdemo.New(tmux.New(), dir), tea.WithContext(cmd.Context())).Run()
+			return err
+		},
+	}
+	demo.AddCommand(animCmd, tmuxCmd)
 	return demo
 }
 
