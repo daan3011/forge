@@ -66,6 +66,13 @@ type Animator interface {
 	Animating() bool
 }
 
+// VisibilityAware is implemented by tabs that do work only while on screen
+// (the Sessions output preview). The root model calls SetVisible(true) on
+// the tab it shows and SetVisible(false) on the one it hides.
+type VisibilityAware interface {
+	SetVisible(visible bool) tea.Cmd
+}
+
 // TargetedMsg is a message meant for one tab, such as the result of its
 // background fetch. The root model delivers it to the tab whose Title
 // matches, whether or not that tab is active.

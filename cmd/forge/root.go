@@ -4,17 +4,39 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/daan3011/forge/internal/app"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/editor"
+	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/store"
 )
 
 // deps are the external collaborators of the CLI, swapped for fakes in tests.
 type deps struct {
 	opener editor.Opener
+	// newSessions builds the session service; nil means the real one.
+	newSessions func(*config.Config, *store.Store) agent.API
+	// runForm runs a Huh form on the terminal; nil means no terminal.
+	runForm func(*huh.Form) error
+	// db is the database path; empty means store.DefaultPath().
+	db string
+}
+
+func (d deps) sessions(cfg *config.Config, st *store.Store) agent.API {
+	if d.newSessions != nil {
+		return d.newSessions(cfg, st)
+	}
+	return newSessionService(cfg, st)
+}
+
+func (d deps) dbPath() string {
+	if d.db != "" {
+		return d.db
+	}
+	return store.DefaultPath()
 }
 
 func newRootCmd(d deps) *cobra.Command {
@@ -32,12 +54,12 @@ func newRootCmd(d deps) *cobra.Command {
 			if created {
 				fmt.Fprintln(cmd.ErrOrStderr(), "created default config at", path)
 			}
-			st, err := store.Open(cmd.Context(), store.DefaultPath())
+			st, err := store.Open(cmd.Context(), d.dbPath())
 			if err != nil {
 				return err
 			}
 			defer func() { _ = st.Close() }()
-			opts := []app.Option{app.WithStore(st.Cache()), app.WithSplash()}
+			opts := []app.Option{app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(d.sessions(cfg, st))}
 			switch name, found, err := app.LoadActiveProject(cmd.Context(), st.Cache()); {
 			case err != nil:
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
@@ -55,7 +77,7 @@ func newRootCmd(d deps) *cobra.Command {
 	root.AddCommand(
 		stubCmd("hook <event>", "Ingest a Claude Code hook event", "P1.4", cobra.ArbitraryArgs),
 		stubCmd("capture [title]", "Quick-capture a Plane issue", "P3.5", cobra.ArbitraryArgs),
-		stubCmd("new", "Start a new named agent session", "P1.3", cobra.NoArgs),
+		newNewCmd(d),
 		newConfigCmd(d),
 		newDemoCmd(),
 	)

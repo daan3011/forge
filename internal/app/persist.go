@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/config"
+	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
@@ -36,6 +37,12 @@ type Option func(*Model)
 // they only last for the session.
 func WithStore(s KVStore) Option {
 	return func(m *Model) { m.store = s }
+}
+
+// WithSessions gives the Sessions tab the service that starts and manages
+// agent sessions. Without it the tab explains that sessions are unavailable.
+func WithSessions(s agent.API) Option {
+	return func(m *Model) { m.sessions = s }
 }
 
 // WithActiveProject starts on the project with this name, as returned by

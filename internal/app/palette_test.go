@@ -130,12 +130,14 @@ var notRegistered = []string{
 // command" rule: a new keymap action must be registered or listed above.
 func TestEveryActionIsACommand(t *testing.T) {
 	m := mustNew(t, config.Default())
-	m.active = 1 // a placeholder tab, which contributes list commands
 	registered := map[string]bool{}
-	for _, it := range m.paletteItems() {
-		registered[it.id] = true
-		if strings.HasPrefix(it.id, "tab:") {
-			registered["goto_tab"] = true
+	for i := range m.tabs { // tab commands only show while their tab is active
+		m.active = i
+		for _, it := range m.paletteItems() {
+			registered[it.id] = true
+			if strings.HasPrefix(it.id, "tab:") {
+				registered["goto_tab"] = true
+			}
 		}
 	}
 	for _, id := range ui.ActionIDs() {

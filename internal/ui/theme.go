@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"math"
 
+	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -129,6 +130,9 @@ type Theme struct {
 	HelpKey     lipgloss.Style
 	HelpDesc    lipgloss.Style
 
+	PreviewRule lipgloss.Style // rule above the session output preview
+	PreviewText lipgloss.Style
+
 	FilterPrompt lipgloss.Style
 	FilterText   lipgloss.Style
 
@@ -193,6 +197,9 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		HelpKey:     lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
 		HelpDesc:    base,
 
+		PreviewRule: lipgloss.NewStyle().Foreground(p.Border),
+		PreviewText: lipgloss.NewStyle().Foreground(p.Text),
+
 		FilterPrompt: lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		FilterText:   base,
 
@@ -206,6 +213,75 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		PaletteSelectedDetail: lipgloss.NewStyle().Foreground(p.Muted).Background(p.Surface),
 		PaletteSelectedHint:   lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 	}
+}
+
+// SessionStatus is the style of an agent session status word ("working",
+// "waiting", ...). Unknown statuses render as plain text.
+func (t *Theme) SessionStatus(status string) lipgloss.Style {
+	s := lipgloss.NewStyle()
+	switch status {
+	case "starting":
+		return s.Foreground(t.Muted).Italic(true)
+	case "working":
+		return s.Foreground(t.Accent).Bold(true)
+	case "waiting":
+		return s.Foreground(t.Highlight).Bold(true)
+	case "idle":
+		return s.Foreground(t.Link)
+	case "error":
+		return s.Foreground(t.Error).Bold(true)
+	case "dead":
+		return s.Foreground(t.Border)
+	case "archived":
+		return s.Foreground(t.Muted).Italic(true)
+	}
+	return s.Foreground(t.Text)
+}
+
+// Huh is the Huh form theme in forge colours. It reads the theme each time a
+// form renders, so it follows light/dark detection.
+func (t *Theme) Huh() huh.Theme {
+	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		h := huh.ThemeBase(isDark)
+		f := &h.Focused
+		f.Base = f.Base.BorderForeground(t.Accent)
+		f.Card = f.Base
+		f.Title = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+		f.NoteTitle = f.Title.MarginBottom(1)
+		f.Description = lipgloss.NewStyle().Foreground(t.Muted)
+		f.ErrorIndicator = f.ErrorIndicator.Foreground(t.Error)
+		f.ErrorMessage = f.ErrorMessage.Foreground(t.Error)
+		f.SelectSelector = f.SelectSelector.Foreground(t.Highlight)
+		f.NextIndicator = f.NextIndicator.Foreground(t.Highlight)
+		f.PrevIndicator = f.PrevIndicator.Foreground(t.Highlight)
+		f.Option = lipgloss.NewStyle().Foreground(t.Text)
+		f.SelectedOption = lipgloss.NewStyle().Foreground(t.Highlight)
+		f.UnselectedOption = lipgloss.NewStyle().Foreground(t.Text)
+		f.FocusedButton = f.FocusedButton.Foreground(t.OnAccent).Background(t.Accent).Bold(true)
+		f.Next = f.FocusedButton
+		f.BlurredButton = f.BlurredButton.Foreground(t.Text).Background(t.Surface)
+		f.TextInput.Cursor = lipgloss.NewStyle().Foreground(t.Highlight)
+		f.TextInput.Placeholder = lipgloss.NewStyle().Foreground(t.Muted)
+		f.TextInput.Prompt = lipgloss.NewStyle().Foreground(t.Accent)
+		f.TextInput.Text = lipgloss.NewStyle().Foreground(t.Text)
+
+		h.Blurred = h.Focused
+		h.Blurred.Base = f.Base.BorderStyle(lipgloss.HiddenBorder())
+		h.Blurred.Card = h.Blurred.Base
+		h.Blurred.Title = lipgloss.NewStyle().Foreground(t.Muted)
+		h.Blurred.NextIndicator = lipgloss.NewStyle()
+		h.Blurred.PrevIndicator = lipgloss.NewStyle()
+
+		h.Group.Title = f.Title
+		h.Group.Description = f.Description
+		h.Help.ShortKey = lipgloss.NewStyle().Foreground(t.Highlight)
+		h.Help.ShortDesc = lipgloss.NewStyle().Foreground(t.Muted)
+		h.Help.ShortSeparator = lipgloss.NewStyle().Foreground(t.Border)
+		h.Help.FullKey = h.Help.ShortKey
+		h.Help.FullDesc = h.Help.ShortDesc
+		h.Help.FullSeparator = h.Help.ShortSeparator
+		return h
+	})
 }
 
 // heatSteps is the resolution of the precomputed heat gradient.

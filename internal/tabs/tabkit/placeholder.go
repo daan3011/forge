@@ -14,6 +14,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/refresh"
+	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
@@ -33,10 +34,15 @@ type Deps struct {
 	FetchDelay time.Duration
 	// Anim is the shared animation clock; nil means animations off.
 	Anim *anim.Engine
+	// Config is the loaded config; nil means the defaults.
+	Config *config.Config
+	// Sessions starts and manages agent sessions; nil when forge runs
+	// without its database (tests, previews).
+	Sessions sessions.API
 }
 
-// engine returns d.Anim, or a clock that never ticks.
-func (d Deps) engine() *anim.Engine {
+// Engine returns d.Anim, or a clock that never ticks.
+func (d Deps) Engine() *anim.Engine {
 	if d.Anim != nil {
 		return d.Anim
 	}
@@ -109,7 +115,7 @@ func NewPlaceholder(d Deps, spec PlaceholderSpec) *Placeholder {
 		keys:   d.Keys,
 		store:  d.Store,
 		delay:  d.FetchDelay,
-		anim:   d.engine(),
+		anim:   d.Engine(),
 		split:  ui.NewSplitPane(d.Theme),
 		table:  ui.NewTable(d.Theme, d.Keys, spec.Columns),
 		filter: ui.NewFilter(d.Theme, d.Keys),

@@ -18,6 +18,10 @@ const (
 	StatusIdle     Status = "idle"
 	StatusError    Status = "error"
 	StatusDead     Status = "dead"
+	// StatusArchived is a killed session whose worktree was removed. Its
+	// uuid, branch and links are kept so it can be resumed by recreating the
+	// worktree.
+	StatusArchived Status = "archived"
 )
 
 // Session is a named Claude Code agent session.
@@ -232,6 +236,18 @@ func (r *Sessions) Archive(ctx context.Context, id int64, summary string, at tim
 		`UPDATE sessions SET archived_at = ?, summary = ?, updated_at = ? WHERE id = ?`,
 		at.UnixMilli(), nullStr(summary), r.s.now().UnixMilli(), id)
 	return mustAffect("archive session", res, err)
+}
+
+// ArchiveRemoved records that a killed session's worktree was removed: the
+// status becomes archived, archived_at is set and the worktree path and tmux
+// window are cleared. The uuid, branch, links and everything else are kept.
+func (r *Sessions) ArchiveRemoved(ctx context.Context, id int64, at time.Time) error {
+	ms := at.UnixMilli()
+	res, err := r.s.w.ExecContext(ctx, `UPDATE sessions SET
+		status = ?1, status_changed_at = ?2, archived_at = ?2,
+		worktree = NULL, tmux_window = NULL, waiting_notified_at = NULL, updated_at = ?3
+		WHERE id = ?4`, StatusArchived, ms, r.s.now().UnixMilli(), id)
+	return mustAffect("archive removed session", res, err)
 }
 
 // Unarchive moves the session back to the active list.

@@ -80,6 +80,9 @@ func RunConformance(t *testing.T, d tmux.Driver, cmd []string) {
 		if err := d.SendKeys(ctx, tg, "hello", true); err != nil {
 			t.Errorf("SendKeys: %v", err)
 		}
+		if err := d.PasteText(ctx, tg, "line one\nline \"two\" $HOME `x`"); err != nil {
+			t.Errorf("PasteText: %v", err)
+		}
 		if _, err := d.CapturePane(ctx, tg, 10); err != nil {
 			t.Errorf("CapturePane: %v", err)
 		}
@@ -112,6 +115,9 @@ func RunConformance(t *testing.T, d tmux.Driver, cmd []string) {
 		gone := tmux.Target{Session: s, Window: "gone"}
 		if err := d.SendKeys(ctx, gone, "x", false); !errors.Is(err, tmux.ErrNotFound) {
 			t.Errorf("SendKeys(gone) err = %v", err)
+		}
+		if err := d.PasteText(ctx, gone, "x"); !errors.Is(err, tmux.ErrNotFound) {
+			t.Errorf("PasteText(gone) err = %v", err)
 		}
 		if _, err := d.CapturePane(ctx, gone, 5); !errors.Is(err, tmux.ErrNotFound) {
 			t.Errorf("CapturePane(gone) err = %v", err)

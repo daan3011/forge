@@ -3,6 +3,8 @@ package tmux
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -12,18 +14,21 @@ import (
 	"strings"
 )
 
-// runner runs one tmux invocation (global flags included in args) and
-// returns its stdout.
+// runner runs one tmux invocation (global flags included in args), feeding
+// it stdin when non-empty, and returns its stdout.
 type runner interface {
-	run(ctx context.Context, bin string, args []string) (string, error)
+	run(ctx context.Context, bin string, args []string, stdin string) (string, error)
 }
 
 type execRunner struct{}
 
-func (execRunner) run(ctx context.Context, bin string, args []string) (string, error) {
+func (execRunner) run(ctx context.Context, bin string, args []string, stdin string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	if err := cmd.Run(); err != nil {
 		return "", &Error{Args: args, Stderr: stderr.String(), Err: err}
 	}
@@ -82,7 +87,12 @@ func (e *Exec) global() []string {
 }
 
 func (e *Exec) tmux(ctx context.Context, args ...string) (string, error) {
-	return e.r.run(ctx, e.bin, append(e.global(), args...))
+	return e.r.run(ctx, e.bin, append(e.global(), args...), "")
+}
+
+// tmuxIn is tmux with stdin.
+func (e *Exec) tmuxIn(ctx context.Context, stdin string, args ...string) (string, error) {
+	return e.r.run(ctx, e.bin, append(e.global(), args...), stdin)
 }
 
 // KillServer stops forge's tmux server (every agent window). Used by tests
@@ -238,6 +248,44 @@ func (e *Exec) SendKeys(ctx context.Context, t Target, text string, enter bool) 
 	}
 	_, err := e.tmux(ctx, args...)
 	return err
+}
+
+// PasteText implements Driver. The text goes through a uniquely named paste
+// buffer (load-buffer from stdin, so it never appears in argv) and is pasted
+// with -p so an app that asked for bracketed paste receives it as one paste;
+// -d deletes the buffer afterwards.
+func (e *Exec) PasteText(ctx context.Context, t Target, text string) error {
+	if _, ok, err := e.window(ctx, t); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: %s", ErrNotFound, t)
+	}
+	if text == "" {
+		_, err := e.tmux(ctx, "send-keys", "-t", t.String(), "Enter")
+		return err
+	}
+	buf, err := bufferName()
+	if err != nil {
+		return err
+	}
+	_, err = e.tmuxIn(ctx, text,
+		"load-buffer", "-b", buf, "-", ";",
+		"paste-buffer", "-p", "-d", "-b", buf, "-t", t.String(), ";",
+		"send-keys", "-t", t.String(), "Enter")
+	if err != nil {
+		// A failed paste leaves the buffer behind; best-effort cleanup.
+		_, _ = e.tmux(context.WithoutCancel(ctx), "delete-buffer", "-b", buf)
+	}
+	return err
+}
+
+// bufferName is a fresh paste buffer name.
+func bufferName() (string, error) {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("tmux: paste buffer name: %w", err)
+	}
+	return "forge-paste-" + hex.EncodeToString(b[:]), nil
 }
 
 // CapturePane implements Driver.

@@ -139,3 +139,36 @@ func TestExecBashWindow(t *testing.T) {
 		t.Errorf("after kill = %+v", ws)
 	}
 }
+
+// TestExecPasteTextArrivesIntact pastes a multi-line prompt full of shell
+// metacharacters into a window reading two lines into a file, and checks the
+// bytes that arrive.
+func TestExecPasteTextArrivesIntact(t *testing.T) {
+	ctx := context.Background()
+	e := newServer(t)
+	s, err := e.EnsureSession(ctx, "paste")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "got.txt")
+	tg, err := e.NewWindow(ctx, s, "reader", "", []string{"sh", "-c", `head -n 2 > "$OUT"`},
+		map[string]string{"OUT": out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := "first 'line' \"quoted\"\nsecond $HOME ${X} `whoami` ; | &"
+	if err := e.PasteText(ctx, tg, text); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "reader to exit", func() (bool, string) {
+		alive, err := e.WindowAlive(ctx, tg)
+		return err == nil && !alive, fmt.Sprint(alive, err)
+	})
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != text+"\n" {
+		t.Errorf("got %q, want %q", got, text+"\n")
+	}
+}
