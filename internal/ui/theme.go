@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strings"
 
 	"charm.land/glamour/v2/ansi"
 	"charm.land/glamour/v2/styles"
@@ -266,6 +267,23 @@ func (t *Theme) SessionStatus(status string) lipgloss.Style {
 		return s.Foreground(t.Muted).Italic(true)
 	}
 	return s.Foreground(t.Text)
+}
+
+// LinkState is the style of a linked PR's or issue's state ("open",
+// "merged", a Plane state name, ...). Unknown states render muted.
+func (t *Theme) LinkState(state string) lipgloss.Style {
+	s := lipgloss.NewStyle()
+	switch strings.ToLower(state) {
+	case "open", "started", "in progress":
+		return s.Foreground(t.Accent)
+	case "draft", "backlog", "todo", "unstarted":
+		return s.Foreground(t.Muted).Italic(true)
+	case "merged", "done", "completed":
+		return s.Foreground(t.Link).Bold(true)
+	case "closed", "cancelled", "canceled":
+		return s.Foreground(t.Border)
+	}
+	return s.Foreground(t.Muted)
 }
 
 // Huh is the Huh form theme in forge colours. It reads the theme each time a

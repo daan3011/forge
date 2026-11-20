@@ -101,14 +101,42 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     
     Checked by hand with the built binary and an isolated database: three Notification events gave one claim and one macOS notification.
   - **Limits**: the hook path ignores `notify_after_minutes`. If the TUI quits while a session waits but before N minutes pass, that spell isn't notified. Focus reports need terminal support; inside tmux they also need `focus-events on`. Without them forge counts as focused and doesn't notify about errors or finished turns while it runs.
-- [ ] P1.9 Session ↔ issue/PR links
-  - Note (from P1.7): StartSessionFrom opens the form with `sessionstab.NewRequest{Refs: {plane_issue|github_pr: ref}}`, so the template skips asking for it.
+- [x] P1.9 Session ↔ issue/PR links — sessions know the Plane issue and GitHub PRs they are for. The links table and `store.Links` existed since 0001 (generic edges with cached url / title / state), so no new table.
+  - **Start from a source**: `tabs.StartSessionFrom(tabs.Source{Kind, ID, Number, URL, Title, State, Repo, Base, Branch, Template, Vars})` returns a `tabs.StartSessionMsg`. The root model switches to the `tabs.SessionStarter` tab (Sessions), which opens the new-session form pre-filled:
+    - name: the lower-cased issue key (`proj-123`) or `pr-<n>`, with `-2`, `-3`… if listed
+    - project: from `Repo`; base, branch and vars as given
+    - template: `implement-issue` / `review-pr` when present, else the default
+    - `{issue_title}` / `{pr_title}` from the source's title, so that much is known before P2.1 / P3.1 providers exist
+    
+    The session is linked to the source on start (`StartOpts.Links`, written by `Service.Start`, rolled back with the row). Issues and PRs typed into the template's refs form, or given to `forge new --issue/--pr`, are linked too (`sessionstab.WithRefLinks`: `#12`, `12`, `owner/repo#12` or a PR URL; issue URLs come from `plane.base_url` + `workspace_slug`).
+  - **Branch override**: `StartOpts.Branch` / `worktree.CreateOpts.Branch`, the new form's Branch field and `forge new --branch`. Empty keeps `agent/<name>`. A custom branch is used as found:
+    1. an existing local branch is checked out
+    2. a branch only on origin (a PR head) gets a local tracking branch (`WorktreeAddTracking`)
+    3. otherwise a new branch is made from the base
+    
+    `Resume` recreates a missing worktree on the stored branch the same way.
+  - **Branch checked out elsewhere**: git refuses to check out a branch twice. `worktree.BranchCheckedOutError{Branch, Path}` becomes `sessions.BranchInUseError{Branch, Path, Session}`. The tab then offers "Go to session <name>" when it's a forge session's worktree. Otherwise (e.g. the main checkout) it offers "Start the session in <path>": `StartOpts.Worktree`, recorded as `worktree_external`. forge never removes or recreates that worktree; "remove worktree" then only archives.
+  - **Branch ownership** (migration 0003): `branch_created` (default 1: every earlier session ran on a forge-made `agent/` branch) and `worktree_external`. The kill dialog offers "Kill, remove worktree and delete branch" only when `sessions.CanDeleteBranch` holds, i.e. forge made the branch in its own worktree. `KillOpts.DeleteBranch` is refused with `ErrNotOwnBranch` otherwise, before anything is killed. A reused local branch or a PR head branch is never deleted, not even by Start's rollback. `Worktrees.DeleteBranch` now takes the branch name.
+  - **PR auto-link**: `Service.SyncPRs(project)` asks a `github.PullFinder` for each active session's PRs by head branch and links up to 5 newest. It also refreshes title and state (open / draft / merged / closed); sessions on their base branch are skipped.
+    - `github.REST` is the PullFinder: go-gh v2.12.2 (reuses `gh auth`), `GET repos/{repo}/pulls?head=owner:branch&state=all`. Every response goes through `OnResponse`, which the TUI wires to `github.Observe`, so the rate-limit backoff now really runs.
+    - The Sessions tab syncs once at start and on every GitHub tick. A new optional `tabs.SourceRefresher` lets the root model call `RefreshSource(src)` instead of `Refresh`. A failed sync shows one info toast per run.
+  - **Detail pane**: `issue:` and `pr:` lines with key / `#n`, title and state (coloured by `Theme.LinkState`), `(+N more)`. Open PRs come before merged / closed ones (`sessions.LinksOf`), and the list's Link column also prefers an open PR.
+  - **Open keys**: `o` opens the linked PR, or the issue when there is no PR; `O` opens the issue. More than one link of that kind gives a picker. Both are also palette commands and appear in help. URLs go through the new `internal/browser` (`open` / `xdg-open`, argv only, http(s) URLs only; `browser.Fake` for tests).
+  - **For other tabs**: `Service.LinkedSessions(ctx, kind, id)` (on `sessions.API`) returns the sessions linked to an issue key or `owner/repo#n`.
+  - **Tests**:
+    - worktree cases against real repos: new branch from base, existing local, remote-only PR head (tracking set), checked out in the main checkout and in another worktree, invalid name
+    - service tables: links saved on start, custom-branch ownership, rollback keeps a foreign branch, BranchInUse (main checkout / another session / run in the external worktree), delete-only-own-branches, SyncPRs with a fake finder
+    - GitHub parser and httptest-style transport tests; migration 0003 defaults
+    - teatest flows incl. the "done when" (`TestStartFromIssueThenPR`): start from an issue → detail shows the issue → GitHub tick → detail shows its PR → `o` / `O` open them
+    - also: picker, branch-in-use dialogs, kill options, and app routing of `StartSessionFrom` / `RefreshSource`
+  - **Limits**: PRs from forks aren't matched (head filter is `owner:branch` of the repo itself). Issue states only change when P3.1 calls `Links.SetState`; until then the detail pane shows the state the source had when the session started.
 - [ ] P1.10 Auto-archive
 
 ## Phase 2 — GitHub
 
 - [ ] P2.1 PR list & sections
   - TODO (from P1.7): register a `templates.ContextProvider` for `github_pr` (fills `{pr_title}`, `{pr_body}`) through `app.WithTemplates` / `deps.providers`.
+  - TODO (from P1.9): grow `internal/github` (`REST`, `Pull`) rather than starting a second client; "start session" on a PR = `tabs.StartSessionFrom(tabs.Source{Kind: github_pr, ID, Number, Branch: headRefName, …})`.
 - [ ] P2.2 PR detail pane
 - [ ] P2.3 PR quick actions
 - [ ] P2.4 Review queue & diff
@@ -116,17 +144,20 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 - [ ] P2.6 Pipelines list
 - [ ] P2.7 Log tail & rerun
 - [ ] P2.8 "Fix this" from CI
+  - Note (from P1.9): find a linked session with `Service.LinkedSessions(github_pr, "owner/repo#n")`; otherwise `StartSessionFrom` with `Branch` = the PR's head and `Vars{"failing_log": …}`.
 
 ## Phase 3 — Plane
 
 - [ ] P3.1 Plane client
   - TODO (from P1.7): register a `templates.ContextProvider` for `plane_issue` (fills `{issue_title}`, `{issue_body}`) through `app.WithTemplates` / `deps.providers`.
+  - TODO (from P1.9): on refresh, `Links.SetState(store.IssueRef(key), state)` so session detail panes show current issue states.
 - [ ] P3.2 Issue list view
 - [ ] P3.3 Kanban board
 - [ ] P3.4 Create & edit
 - [ ] P3.5 Quick capture
 - [ ] P3.6 Cycle summary
 - [ ] P3.7 Branch naming
+  - Note (from P1.9): pass `BranchFor(item)` as `tabs.Source.Branch`; the worktree side (create / reuse / ownership) is done.
 
 ## Phase 4 — Docs & design artifacts
 

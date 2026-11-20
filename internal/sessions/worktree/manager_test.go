@@ -345,7 +345,7 @@ func TestRemove(t *testing.T) {
 		if _, err := os.Stat(c.Path); !os.IsNotExist(err) {
 			t.Errorf("worktree still there: %v", err)
 		}
-		if err := f.m.DeleteBranch(ctx, f.project, "merged", false); err != nil {
+		if err := f.m.DeleteBranch(ctx, f.project, "agent/merged", false); err != nil {
 			t.Fatal(err)
 		}
 		if ok, _ := f.g.RefExists(ctx, f.project.Path, "refs/heads/agent/merged"); ok {
@@ -363,10 +363,10 @@ func TestRemove(t *testing.T) {
 		if r.BranchMerged {
 			t.Error("branch with new commit reported merged")
 		}
-		if err := f.m.DeleteBranch(ctx, f.project, "work", false); err == nil {
+		if err := f.m.DeleteBranch(ctx, f.project, "agent/work", false); err == nil {
 			t.Error("deleting unmerged branch without force: want error")
 		}
-		if err := f.m.DeleteBranch(ctx, f.project, "work", true); err != nil {
+		if err := f.m.DeleteBranch(ctx, f.project, "agent/work", true); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -445,4 +445,92 @@ func TestEnsureExcludedAlreadyIgnored(t *testing.T) {
 	if b, _ := os.ReadFile(exclude); strings.Contains(string(b), ".env.local") {
 		t.Errorf("wrote an exclude for an ignored file:\n%s", b)
 	}
+}
+
+func TestCreateCustomBranch(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, true)
+	custom := func(session, branch string) worktree.CreateOpts {
+		return worktree.CreateOpts{Project: f.project, Session: session, Base: "main", Branch: branch}
+	}
+
+	t.Run("new branch from base", func(t *testing.T) {
+		c, err := f.m.Create(ctx, custom("proj-1", "PROJ-1-fix-login"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Branch != "PROJ-1-fix-login" || !c.BranchCreated || c.Reused || c.Tracking != "" || c.StartPoint != "origin/main" {
+			t.Errorf("created = %+v", c)
+		}
+		if b := git(t, f.g, c.Path, "branch", "--show-current"); b != "PROJ-1-fix-login" {
+			t.Errorf("branch = %q", b)
+		}
+		if want := filepath.Join(f.root, "forge", "proj-1"); c.Path != want {
+			t.Errorf("path = %q, want %q", c.Path, want)
+		}
+	})
+
+	t.Run("existing local branch", func(t *testing.T) {
+		git(t, f.g, f.project.Path, "branch", "mine", "main")
+		c, err := f.m.Create(ctx, custom("mine", "mine"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !c.Reused || c.BranchCreated || c.Tracking != "" {
+			t.Errorf("created = %+v", c)
+		}
+	})
+
+	t.Run("remote-only branch (PR head)", func(t *testing.T) {
+		other := filepath.Join(t.TempDir(), "other")
+		git(t, f.g, filepath.Dir(other), "clone", "-q", f.origin, other)
+		git(t, f.g, other, "switch", "-q", "-c", "feature/pr")
+		head := commit(t, f.g, other, "pr.txt", "pr work")
+		git(t, f.g, other, "push", "-q", "origin", "feature/pr")
+
+		c, err := f.m.Create(ctx, custom("pr-7", "feature/pr"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Reused || c.BranchCreated || c.Tracking != "origin/feature/pr" {
+			t.Errorf("created = %+v", c)
+		}
+		if got := git(t, f.g, c.Path, "rev-parse", "HEAD"); got != head {
+			t.Errorf("HEAD = %s, want PR head %s", got, head)
+		}
+		if up := git(t, f.g, c.Path, "rev-parse", "--abbrev-ref", "@{upstream}"); up != "origin/feature/pr" {
+			t.Errorf("upstream = %q", up)
+		}
+	})
+
+	t.Run("checked out in the main checkout", func(t *testing.T) {
+		_, err := f.m.Create(ctx, custom("on-main", "main"))
+		var co *worktree.BranchCheckedOutError
+		if !errors.As(err, &co) || !errors.Is(err, worktree.ErrBranchCheckedOut) {
+			t.Fatalf("err = %v", err)
+		}
+		if co.Branch != "main" || !sameDir(co.Path, f.project.Path) {
+			t.Errorf("error = %+v", co)
+		}
+	})
+
+	t.Run("checked out in another worktree", func(t *testing.T) {
+		_, err := f.m.Create(ctx, custom("again", "PROJ-1-fix-login"))
+		var co *worktree.BranchCheckedOutError
+		if !errors.As(err, &co) || !sameDir(co.Path, filepath.Join(f.root, "forge", "proj-1")) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("invalid branch", func(t *testing.T) {
+		if _, err := f.m.Create(ctx, custom("bad", "--force")); !errors.Is(err, worktree.ErrInvalidName) {
+			t.Errorf("err = %v", err)
+		}
+	})
+}
+
+func sameDir(a, b string) bool {
+	ra, _ := filepath.EvalSymlinks(a)
+	rb, _ := filepath.EvalSymlinks(b)
+	return ra == rb
 }

@@ -570,7 +570,9 @@ Plane tabs will call into it later.
 - Exported helper: StartSessionFrom(ctx Source) that pre-fills the new-session form
   (name from issue key or PR number, branch, template, variables).
 - When a PR is opened from a session's branch, auto-link it (match head branch on refresh).
-- Session detail pane shows linked issue and PR with status; enter opens them.
+- Session detail pane shows linked issue and PR with status; `o` opens the linked PR (the
+  issue if there is no PR), `O` opens the issue, with a small picker when there is more than
+  one link of that kind. Enter stays attach.
 - Expose a LinkedSessions(kind, id) query for other tabs.
 
 Done when: a session started for an issue shows that issue, and later its PR, in the detail pane.

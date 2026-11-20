@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
@@ -44,7 +46,35 @@ var (
 	// ErrWorktreeMissing means the session's worktree directory is gone;
 	// Resume with RecreateWorktree brings it back from the branch.
 	ErrWorktreeMissing = errors.New("session worktree is gone")
+	// ErrBranchInUse means the branch is checked out in another worktree.
+	ErrBranchInUse = errors.New("branch is checked out elsewhere")
+	// ErrNotOwnBranch means forge was asked to delete a branch it didn't
+	// create (a pre-existing or PR head branch); it never does.
+	ErrNotOwnBranch = errors.New("forge didn't create this branch")
+	// ErrExternalWorktree means the session runs in a worktree forge
+	// didn't create, which it never removes or recreates.
+	ErrExternalWorktree = errors.New("worktree isn't forge's")
 )
+
+// BranchInUseError reports that a new session's branch is checked out in
+// another worktree at Path. Session names the forge session running there,
+// "" when the worktree isn't a forge session's (e.g. the main checkout).
+// Starting again with StartOpts.Worktree = Path runs the session there.
+type BranchInUseError struct {
+	Branch  string
+	Path    string
+	Session string
+}
+
+func (e *BranchInUseError) Error() string {
+	if e.Session != "" {
+		return fmt.Sprintf("branch %s is checked out by session %s (%s)", e.Branch, e.Session, e.Path)
+	}
+	return fmt.Sprintf("branch %s is checked out at %s", e.Branch, e.Path)
+}
+
+// Is makes errors.Is(err, ErrBranchInUse) true.
+func (e *BranchInUseError) Is(target error) bool { return target == ErrBranchInUse }
 
 // WorktreeMissingError reports a session whose worktree is gone.
 type WorktreeMissingError struct {
@@ -72,7 +102,10 @@ type Store interface {
 	LatestEvent(ctx context.Context, claudeID string) (store.Event, error)
 	ArchiveRemoved(ctx context.Context, id int64, at time.Time) error
 	Delete(ctx context.Context, id int64) error
+	Get(ctx context.Context, id int64) (store.Session, error)
 	LinksFor(ctx context.Context, ref store.Ref) ([]store.Link, error)
+	AddLink(ctx context.Context, from, to store.Ref, meta store.LinkMeta) error
+	LinkedSessions(ctx context.Context, ref store.Ref) ([]int64, error)
 }
 
 type storeAdapter struct {
@@ -87,6 +120,14 @@ func (a storeAdapter) LatestEvent(ctx context.Context, claudeID string) (store.E
 
 func (a storeAdapter) LinksFor(ctx context.Context, ref store.Ref) ([]store.Link, error) {
 	return a.links.For(ctx, ref)
+}
+
+func (a storeAdapter) AddLink(ctx context.Context, from, to store.Ref, meta store.LinkMeta) error {
+	return a.links.Add(ctx, from, to, meta)
+}
+
+func (a storeAdapter) LinkedSessions(ctx context.Context, ref store.Ref) ([]int64, error) {
+	return a.links.LinkedSessions(ctx, ref)
 }
 
 // StoreFrom returns the Store backed by the forge database.
@@ -119,6 +160,9 @@ type Config struct {
 	// ProjectsDir is where Claude Code keeps transcripts; empty means
 	// claude.DefaultProjectsDir().
 	ProjectsDir string
+	// Pulls finds the PRs opened from a session's branch (P1.9); nil
+	// disables SyncPRs.
+	Pulls github.PullFinder
 	// StartupCheck is how long a resumed session that had to start afresh
 	// is watched for claude refusing its session id; zero means
 	// DefaultStartupCheck. The pane is always checked at least once.
@@ -188,6 +232,21 @@ type StartOpts struct {
 	Base     string // base branch; empty means DefaultBase
 	Template string // template name, recorded only (P1.7)
 	Prompt   string // first prompt; empty starts claude without one
+	// Branch is the branch to work on; empty means agent/<name>. See
+	// worktree.CreateOpts.Branch for how an existing branch is used.
+	Branch string
+	// Worktree runs the session in an existing worktree that isn't forge's
+	// (the path from a BranchInUseError) instead of creating one. forge
+	// never removes it and never deletes its branch.
+	Worktree string
+	// Links are the issue / PR the session is for, saved with it (P1.9).
+	Links []LinkSpec
+}
+
+// LinkSpec is a link a new session gets: To and what forge knows of it.
+type LinkSpec struct {
+	To   store.Ref
+	Meta store.LinkMeta
 }
 
 // Started is a new session.
@@ -240,20 +299,23 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		}
 	}()
 
-	wt, err := s.c.Worktrees.Create(ctx, worktree.CreateOpts{Project: p, Session: o.Name, Base: o.Base})
+	wt, err := s.worktree(ctx, p, o)
 	if err != nil {
 		return Started{}, err
 	}
-	undo = append(undo, func(ctx context.Context) error {
-		_, rmErr := s.c.Worktrees.Remove(ctx, worktree.RemoveOpts{Project: p, Session: o.Name, Force: true})
-		if rmErr != nil || wt.Reused {
-			return rmErr
-		}
-		return s.c.Worktrees.DeleteBranch(ctx, p, o.Name, true)
-	})
+	if !o.external() {
+		undo = append(undo, func(ctx context.Context) error {
+			_, rmErr := s.c.Worktrees.Remove(ctx, worktree.RemoveOpts{Project: p, Session: o.Name, Force: true})
+			if rmErr != nil || !wt.BranchCreated {
+				return rmErr
+			}
+			return s.c.Worktrees.DeleteBranch(ctx, p, wt.Branch, true)
+		})
+	}
 
 	if s.c.ForgeBin != "" {
-		// The worktree's removal (undo above) takes the settings file along.
+		// The worktree's removal (undo above) takes the settings file along;
+		// in an external worktree it stays (it is git-ignored and harmless).
 		if err := hooks.Install(wt.Path, s.c.ForgeBin); err != nil {
 			return Started{}, err
 		}
@@ -295,17 +357,19 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 	undo = append(undo, func(ctx context.Context) error { return s.c.Tmux.KillWindow(ctx, target) })
 
 	x, err := s.c.Store.Create(ctx, store.Session{
-		Name:            o.Name,
-		ClaudeSessionID: id,
-		Project:         p.Name,
-		Repo:            p.Repo,
-		BaseBranch:      o.Base,
-		Branch:          wt.Branch,
-		Worktree:        wt.Path,
-		TmuxSession:     target.Session,
-		TmuxWindow:      target.Window,
-		Template:        o.Template,
-		Status:          store.StatusStarting,
+		Name:             o.Name,
+		ClaudeSessionID:  id,
+		Project:          p.Name,
+		Repo:             p.Repo,
+		BaseBranch:       o.Base,
+		Branch:           wt.Branch,
+		Worktree:         wt.Path,
+		TmuxSession:      target.Session,
+		TmuxWindow:       target.Window,
+		Template:         o.Template,
+		Status:           store.StatusStarting,
+		BranchCreated:    wt.BranchCreated,
+		WorktreeExternal: o.external(),
 	})
 	if errors.Is(err, store.ErrConflict) {
 		err = fmt.Errorf("%w: %s", ErrNameTaken, o.Name)
@@ -313,7 +377,57 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 	if err != nil {
 		return Started{}, err
 	}
+	undo = append(undo, func(ctx context.Context) error { return s.c.Store.Delete(ctx, x.ID) })
+	for _, l := range o.Links {
+		if err := s.c.Store.AddLink(ctx, store.SessionRef(x.ID), l.To, l.Meta); err != nil {
+			return Started{}, err
+		}
+	}
 	return Started{Session: x, FetchErr: wt.FetchErr}, nil
+}
+
+func (o StartOpts) external() bool { return o.Worktree != "" }
+
+// worktree creates the new session's worktree, or describes the external
+// one it was asked to use. A branch checked out elsewhere becomes a
+// *BranchInUseError naming the forge session there, if any.
+func (s *Service) worktree(ctx context.Context, p config.Project, o StartOpts) (worktree.Created, error) {
+	if o.external() {
+		if !isDir(o.Worktree) {
+			return worktree.Created{}, fmt.Errorf("worktree %s: %w", o.Worktree, os.ErrNotExist)
+		}
+		return worktree.Created{Path: o.Worktree, Branch: o.Branch, Reused: true}, nil
+	}
+	wt, err := s.c.Worktrees.Create(ctx, worktree.CreateOpts{Project: p, Session: o.Name, Base: o.Base, Branch: o.Branch})
+	var co *worktree.BranchCheckedOutError
+	if !errors.As(err, &co) {
+		return wt, err
+	}
+	inUse := &BranchInUseError{Branch: co.Branch, Path: co.Path}
+	archived := false
+	xs, err := s.c.Store.List(ctx, store.SessionFilter{Project: p.Name, Archived: &archived})
+	if err != nil {
+		return wt, err
+	}
+	for _, x := range xs {
+		if x.Worktree != "" && samePath(x.Worktree, co.Path) {
+			inUse.Session = x.Name
+			break
+		}
+	}
+	return wt, inUse
+}
+
+// samePath compares paths with symlinks resolved: git reports resolved
+// paths (macOS temp dirs live behind /var -> /private/var).
+func samePath(a, b string) bool {
+	resolve := func(p string) string {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			return r
+		}
+		return filepath.Clean(p)
+	}
+	return resolve(a) == resolve(b)
 }
 
 // Row is a session as the list shows it.
@@ -324,6 +438,9 @@ type Row struct {
 	// Links names every linked issue and PR, for search: the full id
 	// ("owner/repo#12", "PLANE-7") and, for PRs, the short "#12" too.
 	Links []string
+	// LinkList is every link of the session, oldest first, with the cached
+	// url, title and state of the far end (P1.9 detail pane).
+	LinkList []store.Link
 }
 
 // List returns the project's sessions (all projects when project is ""),
@@ -355,6 +472,7 @@ func (s *Service) List(ctx context.Context, project string, archived bool) ([]Ro
 		}
 		rows[i].Link = linkLabel(links)
 		rows[i].Links = linkNames(links)
+		rows[i].LinkList = links
 	}
 	return rows, nil
 }
@@ -397,23 +515,132 @@ func (s *Service) sweep(ctx context.Context, xs []store.Session) (changed bool, 
 	return changed, nil
 }
 
-// linkLabel picks the label of the first PR link, else the first issue.
+// linkLabel picks the label of the newest open PR, else the newest PR,
+// else the first issue.
 func linkLabel(links []store.Link) string {
-	var issue string
-	for _, l := range links {
-		switch l.Other.Kind {
-		case store.KindGitHubPR:
-			if _, num, ok := strings.Cut(l.Other.ID, "#"); ok {
-				return "#" + num
-			}
-			return l.Other.ID
-		case store.KindPlaneIssue:
-			if issue == "" {
-				issue = l.Other.ID
-			}
+	if pr, ok := PrimaryLink(links, store.KindGitHubPR); ok {
+		return ShortRef(pr.Other)
+	}
+	if issue, ok := PrimaryLink(links, store.KindPlaneIssue); ok {
+		return issue.Other.ID
+	}
+	return ""
+}
+
+// ShortRef is a link's short label: "#12" for a PR, the key for an issue.
+func ShortRef(r store.Ref) string {
+	if r.Kind == store.KindGitHubPR {
+		if _, num, ok := strings.Cut(r.ID, "#"); ok {
+			return "#" + num
 		}
 	}
-	return issue
+	return r.ID
+}
+
+// LinksOf returns the links of the given kind, the most relevant first:
+// open (or draft) ones before the rest, newer before older.
+func LinksOf(links []store.Link, kind store.LinkKind) []store.Link {
+	var out []store.Link
+	for _, l := range links {
+		if l.Other.Kind == kind {
+			out = append(out, l)
+		}
+	}
+	open := func(l store.Link) bool { return l.State != "merged" && l.State != "closed" }
+	slices.SortStableFunc(out, func(a, b store.Link) int {
+		if oa, ob := open(a), open(b); oa != ob {
+			if oa {
+				return -1
+			}
+			return 1
+		}
+		return b.CreatedAt.Compare(a.CreatedAt)
+	})
+	return out
+}
+
+// PrimaryLink is the most relevant link of the kind (see LinksOf).
+func PrimaryLink(links []store.Link, kind store.LinkKind) (store.Link, bool) {
+	ls := LinksOf(links, kind)
+	if len(ls) == 0 {
+		return store.Link{}, false
+	}
+	return ls[0], true
+}
+
+// LinkedSessions returns the sessions linked to the issue or PR id (an
+// issue key, or "owner/repo#12"), oldest link first. It is the query the
+// PR and Plane tabs use to show a ticket's sessions.
+func (s *Service) LinkedSessions(ctx context.Context, kind store.LinkKind, id string) ([]store.Session, error) {
+	ids, err := s.c.Store.LinkedSessions(ctx, store.Ref{Kind: kind, ID: id})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.Session, 0, len(ids))
+	for _, sid := range ids {
+		x, err := s.c.Store.Get(ctx, sid)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			continue // a link left behind by a deleted session
+		case err != nil:
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, nil
+}
+
+// maxSyncedPulls is how many PRs per branch SyncPRs links.
+const maxSyncedPulls = 5
+
+// SyncPRs links every active session of the project (all projects when
+// "") to the PRs opened from its branch, and refreshes the title and state
+// of PRs already linked. A session whose branch is its base is skipped.
+// changed reports whether any link was added or changed. Lookups that fail
+// for one session are joined into err; the others still sync.
+func (s *Service) SyncPRs(ctx context.Context, project string) (changed bool, err error) {
+	if s.c.Pulls == nil {
+		return false, nil
+	}
+	archived := false
+	xs, err := s.c.Store.List(ctx, store.SessionFilter{Project: project, Archived: &archived})
+	if err != nil {
+		return false, err
+	}
+	var errs []error
+	for _, x := range xs {
+		if x.Repo == "" || x.Branch == "" || x.Branch == x.BaseBranch {
+			continue
+		}
+		pulls, err := s.c.Pulls.PullsForBranch(ctx, x.Repo, x.Branch)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", x.Name, err))
+			continue
+		}
+		if len(pulls) == 0 {
+			continue
+		}
+		have, err := s.c.Store.LinksFor(ctx, store.SessionRef(x.ID))
+		if err != nil {
+			return changed, err
+		}
+		known := map[store.Ref]store.Link{}
+		for _, l := range have {
+			known[l.Other] = l
+		}
+		for _, p := range pulls[:min(len(pulls), maxSyncedPulls)] {
+			ref := store.PRRef(p.Repo, p.Number)
+			meta := store.LinkMeta{URL: p.URL, Title: p.Title, State: p.State}
+			if l, ok := known[ref]; ok && l.LinkMeta == meta {
+				continue
+			}
+			if err := s.c.Store.AddLink(ctx, store.SessionRef(x.ID), ref, meta); err != nil {
+				return changed, err
+			}
+			changed = true
+		}
+	}
+	return changed, errors.Join(errs...)
 }
 
 // linkNames lists every link's id, plus "#<n>" for PRs.
@@ -479,6 +706,17 @@ type KillOpts struct {
 	RemoveWorktree bool
 	// Force removes the worktree even with uncommitted changes.
 	Force bool
+	// DeleteBranch also force-deletes the session's branch once the
+	// worktree is gone. Only allowed when forge created the branch
+	// (store.Session.BranchCreated); otherwise Kill returns ErrNotOwnBranch
+	// before doing anything.
+	DeleteBranch bool
+}
+
+// CanDeleteBranch reports whether forge may offer to delete x's branch: it
+// created the branch itself, in a worktree of its own.
+func CanDeleteBranch(x store.Session) bool {
+	return x.BranchCreated && !x.WorktreeExternal && x.Branch != ""
 }
 
 // Killed describes a kill.
@@ -487,16 +725,23 @@ type Killed struct {
 	// BranchMerged reports whether the kept branch is already merged into
 	// the base (only when the worktree was removed).
 	BranchMerged bool
+	// BranchDeleted reports whether the branch was deleted (DeleteBranch).
+	BranchDeleted bool
 }
 
 // Kill closes the session's tmux window. The row is never deleted: without
 // RemoveWorktree the session becomes dead (resumable in place); with it the
 // worktree is removed, the branch kept, and the session archived. A dirty
 // worktree returns *worktree.DirtyError (the window is already closed and
-// the session marked dead); retry with Force to remove it anyway.
+// the session marked dead); retry with Force to remove it anyway. An
+// external worktree (StartOpts.Worktree) is never removed: RemoveWorktree
+// then only archives the session.
 func (s *Service) Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error) {
 	if x.Status == store.StatusArchived {
 		return Killed{}, fmt.Errorf("%w: %s", ErrArchived, x.Name)
+	}
+	if o.DeleteBranch && (!o.RemoveWorktree || !CanDeleteBranch(x)) {
+		return Killed{}, fmt.Errorf("%w: %s", ErrNotOwnBranch, x.Branch)
 	}
 	if t, err := Target(x); err == nil {
 		if err := s.c.Tmux.KillWindow(ctx, t); err != nil {
@@ -511,7 +756,7 @@ func (s *Service) Kill(ctx context.Context, x store.Session, o KillOpts) (Killed
 		return Killed{}, nil
 	}
 	var res Killed
-	if x.Worktree != "" {
+	if x.Worktree != "" && !x.WorktreeExternal {
 		p, ok := s.Project(x.Project)
 		if !ok {
 			return Killed{}, fmt.Errorf("%w: %q", ErrUnknownProject, x.Project)
@@ -525,6 +770,12 @@ func (s *Service) Kill(ctx context.Context, x store.Session, o KillOpts) (Killed
 			return Killed{}, err
 		default:
 			res.BranchMerged = rm.BranchMerged
+		}
+		if o.DeleteBranch {
+			if err := s.c.Worktrees.DeleteBranch(ctx, p, x.Branch, true); err != nil {
+				return Killed{}, fmt.Errorf("delete branch %s: %w", x.Branch, err)
+			}
+			res.BranchDeleted = true
 		}
 	}
 	if err := s.c.Store.ArchiveRemoved(ctx, x.ID, now); err != nil {
@@ -587,6 +838,8 @@ type API interface {
 	Resume(ctx context.Context, x store.Session, o ResumeOpts) (Resumed, error)
 	Attach(ctx context.Context, x store.Session) (tmux.Attachment, error)
 	Transcript(ctx context.Context, x store.Session) (transcript.Transcript, error)
+	LinkedSessions(ctx context.Context, kind store.LinkKind, id string) ([]store.Session, error)
+	SyncPRs(ctx context.Context, project string) (bool, error)
 	TmuxControl
 }
 

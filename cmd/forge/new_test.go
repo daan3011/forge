@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestNewWithFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := agent.StartOpts{Name: "fix-ci", Project: "other", Base: "dev", Prompt: "fix \"it\"\n$HOME"}
-	if len(fake.got) != 1 || fake.got[0] != want {
+	if len(fake.got) != 1 || !reflect.DeepEqual(fake.got[0], want) {
 		t.Fatalf("Start = %+v, want %+v", fake.got, want)
 	}
 	if !strings.Contains(stdout, "started fix-ci on agent/fix-ci") || !strings.Contains(stdout, "tmux -L forge attach -t =other:=fix-ci") {

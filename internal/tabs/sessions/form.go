@@ -81,6 +81,10 @@ func NewForm(in FormInput) (*huh.Form, *agent.StartOpts, error) {
 				}
 				return nil
 			}),
+		huh.NewInput().Key("branch").Title("Branch").
+			Description("empty: a new agent/<name>; an existing local branch or one on origin (a PR head) is checked out").
+			Placeholder("agent/<name>").Value(&vals.Branch).
+			Validate(validateBranch),
 	}
 	if len(in.Templates) > 0 {
 		if _, ok := templates.Find(in.Templates, vals.Template); !ok {
@@ -127,6 +131,16 @@ func validateName(s string, taken func(string) bool) error {
 	}
 	if taken != nil && taken(s) {
 		return fmt.Errorf("a session called %s already exists", s)
+	}
+	return nil
+}
+
+func validateBranch(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	if worktree.CheckBranch(strings.TrimSpace(s)) != nil {
+		return errors.New("not a valid branch name")
 	}
 	return nil
 }

@@ -132,3 +132,21 @@ func TestProjectHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaneIssueURL(t *testing.T) {
+	tests := []struct {
+		p    Plane
+		key  string
+		want string
+	}{
+		{Plane{BaseURL: "https://plane.example.com/", Workspace: "acme"}, "PROJ-12", "https://plane.example.com/acme/browse/PROJ-12/"},
+		{Plane{BaseURL: "https://app.plane.so", Workspace: "acme"}, "", ""},
+		{Plane{BaseURL: "", Workspace: "acme"}, "PROJ-12", ""},
+		{Plane{BaseURL: "https://app.plane.so"}, "PROJ-12", ""},
+	}
+	for _, tt := range tests {
+		if got := tt.p.IssueURL(tt.key); got != tt.want {
+			t.Errorf("IssueURL(%+v, %q) = %q, want %q", tt.p, tt.key, got, tt.want)
+		}
+	}
+}

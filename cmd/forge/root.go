@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,8 +12,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/daan3011/forge/internal/app"
+	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/editor"
+	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/notify"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/alert"
@@ -104,6 +107,7 @@ func newRootCmd(d deps) *cobra.Command {
 			}
 			opts := []app.Option{
 				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
+				app.WithBrowser(browser.Exec{}),
 				app.WithAlerts(alert.Checker{
 					Store: st.Sessions(), Notifier: d.notifications(), Watcher: d.tmuxWatcher(),
 					Policy: alert.PolicyFrom(cfg.Sessions),
@@ -131,7 +135,13 @@ func newRootCmd(d deps) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}
-			_, err = tea.NewProgram(model, tea.WithContext(cmd.Context())).Run()
+			p := tea.NewProgram(model, tea.WithContext(cmd.Context()))
+			githubPulls.OnResponse = func(resp *http.Response) {
+				if msg := github.Observe(resp, time.Now()); msg != nil {
+					p.Send(msg)
+				}
+			}
+			_, err = p.Run()
 			return err
 		},
 	}

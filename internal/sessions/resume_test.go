@@ -274,7 +274,7 @@ func TestResumeMissingWorktreeAndBranch(t *testing.T) {
 	e := newEnv(t)
 	x := e.dead(t, "fix-ci")
 	_ = os.RemoveAll(x.Worktree)
-	delete(e.wt.branches, "fix-ci")
+	delete(e.wt.branches, "agent/fix-ci")
 	res, err := e.svc.Resume(context.Background(), x, ResumeOpts{RecreateWorktree: true})
 	if err != nil {
 		t.Fatal(err)

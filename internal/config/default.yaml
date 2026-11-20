@@ -98,6 +98,8 @@ keybinds:
   # session_attach: ["enter"]   # attach; a dead session is resumed first
   # session_resume: ["b"]       # background resume: resume without attaching
   # session_transcript: ["t"]   # read the session's transcript
+  # session_open_pr: ["o"]      # open the linked PR (else the issue) in the browser
+  # session_open_issue: ["O"]   # open the linked issue in the browser
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

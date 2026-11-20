@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -46,6 +47,11 @@ type fakeSvc struct {
 	attaches  []string
 	attachAs  tmux.Attachment
 	resumeErr error // returned once by Resume
+
+	// links (P1.9)
+	startErr error                 // returned once by Start
+	pulls    map[string]store.Link // branch -> PR SyncPRs links
+	syncs    int
 
 	// transcripts by session name; a missing name means no transcript.
 	transcripts     map[string]transcript.Transcript
@@ -161,8 +167,21 @@ func (f *fakeSvc) Start(_ context.Context, o agent.StartOpts) (agent.Started, er
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.starts = append(f.starts, o)
+	if err := f.startErr; err != nil {
+		f.startErr = nil
+		return agent.Started{}, err
+	}
 	r := row(o.Name, store.StatusStarting)
-	r.Project, r.Template = o.Project, o.Template
+	r.Project, r.Template, r.BranchCreated = o.Project, o.Template, true
+	if o.Branch != "" {
+		r.Branch, r.BranchCreated = o.Branch, false
+	}
+	if o.Worktree != "" {
+		r.Worktree, r.WorktreeExternal = o.Worktree, true
+	}
+	for _, l := range o.Links {
+		r.LinkList = append(r.LinkList, store.Link{Other: l.To, LinkMeta: l.Meta})
+	}
 	f.rows = append(f.rows, r)
 	f.output[o.Name] = "claude ready> " + o.Prompt
 	return agent.Started{Session: r.Session}, nil
@@ -405,6 +424,7 @@ func TestNewSessionFlow(t *testing.T) {
 	tm.Send(press("enter")) // name
 	tm.Send(press("enter")) // project: the active one
 	tm.Send(press("enter")) // base: main
+	tm.Send(press("enter")) // branch: empty = agent/<name>
 	// Huh moves focus with a command round-trip; keys typed before the
 	// prompt field has focus would land elsewhere.
 	time.Sleep(200 * time.Millisecond)
@@ -417,7 +437,7 @@ func TestNewSessionFlow(t *testing.T) {
 	h := tm.FinalModel(t, teatest.WithFinalTimeout(3*time.Second)).(*host)
 	starts, _, _ := svc.snapshot()
 	want := agent.StartOpts{Name: "fix-ci", Project: "forge", Base: "main", Prompt: "hello"}
-	if len(starts) != 1 || starts[0] != want {
+	if len(starts) != 1 || !reflect.DeepEqual(starts[0], want) {
 		t.Fatalf("starts = %+v, want %+v", starts, want)
 	}
 	if r, ok := h.tab.current(); !ok || r.Name != "fix-ci" {
