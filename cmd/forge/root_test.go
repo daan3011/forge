@@ -42,7 +42,6 @@ func TestStubSubcommands(t *testing.T) {
 	}{
 		{[]string{"hook", "PreToolUse"}, "P1.4"},
 		{[]string{"capture", "fix the thing"}, "P3.5"},
-		{[]string{"new"}, "P1.3"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.args[0], func(t *testing.T) {

@@ -11,8 +11,9 @@ import (
 
 // call is one recorded invocation.
 type call struct {
-	bin  string
-	args []string
+	bin   string
+	args  []string
+	stdin string
 }
 
 // reply is a canned result for invocations whose args contain sub.
@@ -29,8 +30,8 @@ type recorder struct {
 	replies []reply
 }
 
-func (r *recorder) run(_ context.Context, bin string, args []string) (string, error) {
-	r.calls = append(r.calls, call{bin, slices.Clone(args)})
+func (r *recorder) run(_ context.Context, bin string, args []string, stdin string) (string, error) {
+	r.calls = append(r.calls, call{bin, slices.Clone(args), stdin})
 	joined := strings.Join(args, " ")
 	for _, rp := range r.replies {
 		if strings.Contains(joined, rp.sub) {
@@ -334,6 +335,7 @@ func TestInvalidTargetsNeverRunTmux(t *testing.T) {
 	_, _ = e.WindowAlive(ctx, bad)
 	_ = e.KillWindow(ctx, bad)
 	_ = e.SendKeys(ctx, bad, "x", true)
+	_ = e.PasteText(ctx, bad, "x")
 	_, _ = e.CapturePane(ctx, bad, 1)
 	_, _ = e.Attach(ctx, bad)
 	_, _ = e.ListWindows(ctx, "p.q")
@@ -341,5 +343,58 @@ func TestInvalidTargetsNeverRunTmux(t *testing.T) {
 	_, _ = e.NewWindow(ctx, "p", "w", "", nil, map[string]string{"": "x"})
 	if len(r.calls) != 0 {
 		t.Errorf("ran tmux for invalid input: %q", r.argv())
+	}
+}
+
+func TestPasteText(t *testing.T) {
+	ctx := context.Background()
+	tg := Target{Session: "p", Window: "w"}
+	list := reply{sub: "list-windows", out: "@1\t2\tw\t0\t\tbash\n"}
+	text := "line one\nsay \"hi\" $HOME `x` ; -n"
+
+	e, r := newRec(list)
+	if err := e.PasteText(ctx, tg, text); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.calls) != 2 {
+		t.Fatalf("calls = %q", r.argv())
+	}
+	got := r.calls[1]
+	if got.stdin != text {
+		t.Errorf("stdin = %q, want %q", got.stdin, text)
+	}
+	if slices.Contains(got.args, text) {
+		t.Errorf("text leaked into argv: %q", got.args)
+	}
+	buf := got.args[4]
+	if !strings.HasPrefix(buf, "forge-paste-") {
+		t.Fatalf("buffer name = %q", buf)
+	}
+	want := []string{
+		"-L", "forge", "load-buffer", "-b", buf, "-", ";",
+		"paste-buffer", "-p", "-d", "-b", buf, "-t", "=p:=w", ";",
+		"send-keys", "-t", "=p:=w", "Enter",
+	}
+	if !reflect.DeepEqual(got.args, want) {
+		t.Errorf("args = %q\nwant  %q", got.args, want)
+	}
+
+	// Missing window: nothing is loaded.
+	e, r = newRec(list)
+	if err := e.PasteText(ctx, Target{Session: "p", Window: "gone"}, "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+	if len(r.calls) != 1 {
+		t.Errorf("calls = %q", r.argv())
+	}
+
+	// A failed paste deletes the buffer it loaded.
+	e, r = newRec(list, reply{sub: "paste-buffer", stderr: "boom"})
+	if err := e.PasteText(ctx, tg, "x"); err == nil {
+		t.Fatal("want error")
+	}
+	last := r.calls[len(r.calls)-1].args
+	if !slices.Contains(last, "delete-buffer") {
+		t.Errorf("no cleanup, last call %q", last)
 	}
 }

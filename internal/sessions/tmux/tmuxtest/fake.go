@@ -34,6 +34,7 @@ type fakeWindow struct {
 	Env    map[string]string
 	output string
 	sent   []string
+	pasted []string
 }
 
 var _ tmux.Driver = (*Fake)(nil)
@@ -161,6 +162,29 @@ func (f *Fake) SendKeys(_ context.Context, t tmux.Target, text string, enter boo
 		text += "\n"
 	}
 	w.sent = append(w.sent, text)
+	return nil
+}
+
+// PasteText implements tmux.Driver.
+func (f *Fake) PasteText(_ context.Context, t tmux.Target, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w, err := f.mustFind(t)
+	if err != nil {
+		return err
+	}
+	w.pasted = append(w.pasted, text)
+	return nil
+}
+
+// Pasted returns every text PasteText pasted into t, in order (each was
+// followed by Enter).
+func (f *Fake) Pasted(t tmux.Target) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if w, _ := f.find(t); w != nil {
+		return slices.Clone(w.pasted)
+	}
 	return nil
 }
 

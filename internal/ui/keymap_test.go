@@ -35,10 +35,11 @@ func TestNewKeyMapOverrides(t *testing.T) {
 		wantHelp  string
 	}{
 		{"default quit", nil, func(k *KeyMap) key.Binding { return k.Global.Quit }, "q", true, "q"},
-		{"remapped quit", map[string][]string{"quit": {"x"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "x", true, "x"},
-		{"old key gone", map[string][]string{"quit": {"x"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "q", false, "x"},
+		{"remapped quit", map[string][]string{"quit": {"Q"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "Q", true, "Q"},
+		{"old key gone", map[string][]string{"quit": {"Q"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "q", false, "Q"},
 		{"arrows prettified", map[string][]string{"up": {"up", "w"}}, func(k *KeyMap) key.Binding { return k.List.Up }, "w", true, "↑/w"},
-		{"long run collapsed", map[string][]string{"goto_tab": {"a", "b", "c", "d"}}, func(k *KeyMap) key.Binding { return k.Global.GotoTab }, "c", true, "a-d"},
+		{"long run collapsed", map[string][]string{"goto_tab": {"b", "c", "d", "e"}}, func(k *KeyMap) key.Binding { return k.Global.GotoTab }, "c", true, "b-e"},
+		{"session key remapped", map[string][]string{"session_new": {"N"}}, func(k *KeyMap) key.Binding { return k.Sessions.New }, "N", true, "N"},
 		{"desc kept", map[string][]string{"refresh": {"f5"}}, func(k *KeyMap) key.Binding { return k.Global.Refresh }, "f5", true, "f5"},
 		{"default projects", nil, func(k *KeyMap) key.Binding { return k.Global.Projects }, "ctrl+p", true, "ctrl+p"},
 		{"remapped projects", map[string][]string{"projects": {"ctrl+o"}}, func(k *KeyMap) key.Binding { return k.Global.Projects }, "ctrl+o", true, "ctrl+o"},
@@ -72,6 +73,7 @@ func TestNewKeyMapErrors(t *testing.T) {
 		{"unknown action", map[string][]string{"explode": {"x"}}, "keybinds.explode: unknown action; known: quit,"},
 		{"conflict names the override", map[string][]string{"refresh": {"q"}}, `keybinds.refresh: "q" is already bound to quit`},
 		{"conflict with later action", map[string][]string{"quit": {"j"}}, `keybinds.quit: "j" is already bound to down`},
+		{"session keys share the main scope", map[string][]string{"quit": {"x"}}, `keybinds.quit: "x" is already bound to session_kill`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -87,7 +89,7 @@ func TestNewKeyMapErrors(t *testing.T) {
 		t.Fatalf("input scope should not conflict: %v", err)
 	}
 	// Repeating a key within one action is harmless.
-	if _, err := NewKeyMap(map[string][]string{"quit": {"x", "x"}}); err != nil {
+	if _, err := NewKeyMap(map[string][]string{"quit": {"Q", "Q"}}); err != nil {
 		t.Fatalf("duplicate within action: %v", err)
 	}
 }

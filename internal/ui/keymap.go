@@ -9,17 +9,19 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 )
 
 // KeyMap holds every key binding in forge. Define bindings only here so the
 // help overlay stays accurate. Build one with NewKeyMap; the root model owns
 // it and hands a pointer to every tab and widget.
 type KeyMap struct {
-	Global GlobalKeys
-	List   ListKeys
-	Input  InputKeys
-	Demo   DemoKeys
-	Tmux   TmuxDemoKeys
+	Global   GlobalKeys
+	List     ListKeys
+	Input    InputKeys
+	Sessions SessionKeys
+	Demo     DemoKeys
+	Tmux     TmuxDemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -58,6 +60,14 @@ type InputKeys struct {
 	ClearInput key.Binding
 	Next       key.Binding // next result in a picker (palette)
 	Prev       key.Binding // previous result in a picker (palette)
+}
+
+// SessionKeys are the Sessions tab's actions.
+type SessionKeys struct {
+	New         key.Binding
+	Kill        key.Binding
+	Delete      key.Binding // archived view only
+	ArchiveView key.Binding // toggle between active and archived sessions
 }
 
 // DemoKeys drive the hidden `forge demo anim` showcase. They are not
@@ -118,6 +128,12 @@ func DefaultKeyMap() *KeyMap {
 			Next:       bind("next", "down", "ctrl+n"),
 			Prev:       bind("prev", "up", "ctrl+p"),
 		},
+		Sessions: SessionKeys{
+			New:         bind("new session", "n"),
+			Kill:        bind("kill session", "x"),
+			Delete:      bind("delete session", "D"),
+			ArchiveView: bind("archived view", "a"),
+		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
 			Burst:   bind("spark burst", "space"),
@@ -148,7 +164,7 @@ const (
 )
 
 func (k *KeyMap) actions() []action {
-	g, l, in := &k.Global, &k.List, &k.Input
+	g, l, in, ss := &k.Global, &k.List, &k.Input, &k.Sessions
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -169,6 +185,10 @@ func (k *KeyMap) actions() []action {
 		{"filter", scopeMain, &l.Filter},
 		{"grow_pane", scopeMain, &l.GrowPane},
 		{"shrink_pane", scopeMain, &l.ShrinkPane},
+		{"session_new", scopeMain, &ss.New},
+		{"session_kill", scopeMain, &ss.Kill},
+		{"session_delete", scopeMain, &ss.Delete},
+		{"session_archive_view", scopeMain, &ss.ArchiveView},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},
@@ -270,6 +290,22 @@ func helpKey(keys []string) string {
 func (k *KeyMap) GlobalHelp() []key.Binding {
 	g := k.Global
 	return []key.Binding{g.Palette, g.Projects, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
+}
+
+// HuhKeyMap is the key map for Huh forms embedded in forge: Huh's defaults,
+// except that the input Cancel keys (esc) abandon the form. ctrl+c never
+// reaches a form inside the TUI (it force-quits forge).
+func (k *KeyMap) HuhKeyMap() *huh.KeyMap {
+	km := huh.NewDefaultKeyMap()
+	km.Quit = key.NewBinding(key.WithKeys(k.Input.Cancel.Keys()...), key.WithHelp(k.Input.Cancel.Help().Key, "cancel"))
+	return km
+}
+
+// FormHelp is the help for embedded Huh forms, for the status bar and the
+// help overlay. The keys mirror HuhKeyMap.
+func (k *KeyMap) FormHelp() []key.Binding {
+	km := k.HuhKeyMap()
+	return []key.Binding{km.Quit, km.Input.Prev, km.Text.NewLine, km.Input.Next}
 }
 
 // TabIndex returns the zero-based tab index for a GotoTab key press (the

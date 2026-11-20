@@ -91,6 +91,10 @@ type Driver interface {
 	KillWindow(ctx context.Context, t Target) error
 	// SendKeys types text literally, then presses Enter if enter is set.
 	SendKeys(ctx context.Context, t Target, text string, enter bool) error
+	// PasteText pastes text (newlines included) into the window as one
+	// bracketed paste, then presses Enter. It is how prompts reach an agent
+	// that is already running; text never passes through argv.
+	PasteText(ctx context.Context, t Target, text string) error
 	// CapturePane returns the last lines lines of the window's pane (the
 	// visible screen if lines <= 0), without trailing blank lines.
 	CapturePane(ctx context.Context, t Target, lines int) (string, error)

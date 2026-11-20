@@ -15,6 +15,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
+	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/artifacts"
 	contexttab "github.com/daan3011/forge/internal/tabs/context"
@@ -77,6 +78,7 @@ type Model struct {
 	savedProject string // from WithActiveProject
 	hasSaved     bool
 	fetchDelay   time.Duration // simulated latency of placeholder fetches
+	sessions     agent.API     // from WithSessions
 }
 
 // paletteMode is which picker the palette overlay shows, if any.
@@ -100,7 +102,10 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 	for _, o := range opts {
 		o(&m)
 	}
-	d := tabkit.Deps{Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim}
+	d := tabkit.Deps{
+		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
+		Config: cfg, Sessions: m.sessions,
+	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
 		prs.New(d),
@@ -169,7 +174,18 @@ func (m Model) Init() tea.Cmd {
 	for _, t := range m.tabs {
 		cmds = append(cmds, t.Init())
 	}
+	if len(m.tabs) > 0 {
+		cmds = append(cmds, setVisible(m.tabs[m.active], true))
+	}
 	return tea.Batch(cmds...)
+}
+
+// setVisible tells a tab that wants to know whether it is on screen.
+func setVisible(t tabs.Tab, v bool) tea.Cmd {
+	if va, ok := t.(tabs.VisibilityAware); ok {
+		return va.SetVisible(v)
+	}
+	return nil
 }
 
 func clockTick() tea.Cmd {
@@ -498,13 +514,17 @@ func (m Model) refreshAll() (Model, tea.Cmd) {
 // switchTo shows tab i. A tab that missed refreshes while hidden (or was
 // never loaded for this project) refreshes right away.
 func (m Model) switchTo(i int) (Model, tea.Cmd) {
+	var vis []tea.Cmd
+	if i != m.active {
+		vis = append(vis, setVisible(m.tabs[m.active], false), setVisible(m.tabs[i], true))
+	}
 	m.active = i
 	m.now = m.clock()
 	var cmd tea.Cmd
 	if m.stale(m.tabs[i]) {
 		cmd = m.tabs[i].Refresh()
 	}
-	return m, tea.Batch(cmd, m.ensureClock())
+	return m, tea.Batch(append(vis, cmd, m.ensureClock())...)
 }
 
 // stale reports whether t has never loaded, or is older than the shortest

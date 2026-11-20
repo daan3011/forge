@@ -5,11 +5,18 @@ package main
 import (
 	"os"
 
+	"charm.land/huh/v2"
+	"github.com/charmbracelet/x/term"
+
 	"github.com/daan3011/forge/internal/editor"
 )
 
 func main() {
-	if err := newRootCmd(deps{opener: editor.Exec{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}}).Execute(); err != nil {
+	d := deps{opener: editor.Exec{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}}
+	if term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) {
+		d.runForm = func(f *huh.Form) error { return f.Run() }
+	}
+	if err := newRootCmd(d).Execute(); err != nil {
 		os.Exit(1)
 	}
 }
