@@ -76,6 +76,15 @@ func (m Model) paletteItems() []item {
 			run: func(m Model) (Model, tea.Cmd) { return m.openProjects() },
 		},
 		{
+			id: "notify_test", title: "Notifications: send test notification", group: groupCommands,
+			run: func(m Model) (Model, tea.Cmd) {
+				if m.alerts == nil {
+					return m, func() tea.Msg { return ui.InfoMsg{Text: "Notifications are not available"} }
+				}
+				return m, m.testNotification()
+			},
+		},
+		{
 			id: "goto_session", title: "Go to session…", group: groupCommands, hint: hint(g.GotoSession),
 			run: func(m Model) (Model, tea.Cmd) { return m.openSessions() },
 		},

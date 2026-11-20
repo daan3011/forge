@@ -247,3 +247,58 @@ func TestSessionSetWindow(t *testing.T) {
 	}
 	wantErr(t, s.Sessions().SetWindow(ctx, 999, "forge", "x"), ErrNotFound)
 }
+
+func TestClaimWaitingNotification(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	r := s.Sessions()
+	x := mustSession(t, s, "a")
+	claim := func() bool {
+		t.Helper()
+		ok, err := r.ClaimWaitingNotification(ctx, x.ID, t0.Add(10*time.Minute))
+		noErr(t, err)
+		return ok
+	}
+	steps := []struct {
+		name   string
+		status Status // set first unless ""
+		want   bool
+	}{
+		{"not waiting", StatusWorking, false},
+		{"first claim while waiting", StatusWaiting, true},
+		{"second claim in the same spell", "", false},
+		{"same status again keeps the claim", StatusWaiting, false},
+		{"leaves waiting", StatusWorking, false},
+		{"new waiting spell", StatusWaiting, true},
+	}
+	at := t0
+	for _, st := range steps {
+		if st.status != "" {
+			at = at.Add(time.Minute)
+			noErr(t, r.SetStatus(ctx, x.ID, st.status, at))
+		}
+		if got := claim(); got != st.want {
+			t.Errorf("%s: claim = %v, want %v", st.name, got, st.want)
+		}
+	}
+	if ok, err := r.ClaimWaitingNotification(ctx, 999, t0); err != nil || ok {
+		t.Errorf("missing session claim = %v, %v", ok, err)
+	}
+}
+
+func TestListByStatus(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	r := s.Sessions()
+	a, b := mustSession(t, s, "a"), mustSession(t, s, "b")
+	_ = mustSession(t, s, "c")
+	noErr(t, r.SetStatus(ctx, a.ID, StatusWaiting, t0))
+	noErr(t, r.SetStatus(ctx, b.ID, StatusWaiting, t0))
+	noErr(t, r.Archive(ctx, b.ID, "", t0))
+	no := false
+	got, err := r.List(ctx, SessionFilter{Status: StatusWaiting, Archived: &no})
+	noErr(t, err)
+	if len(got) != 1 || got[0].Name != "a" {
+		t.Errorf("waiting, unarchived = %+v", got)
+	}
+}

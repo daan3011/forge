@@ -11,8 +11,14 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/refresh"
+	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/store"
 )
+
+// SessionPingMsg tells the root model that `forge hook` recorded an event,
+// so it can recount waiting sessions and notify (P1.8). The Sessions tab
+// emits it for every ping it receives.
+type SessionPingMsg struct{ Ping live.Ping }
 
 // Tab is one top-level screen of forge.
 type Tab interface {

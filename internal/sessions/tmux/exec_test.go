@@ -569,3 +569,29 @@ func TestPasteText(t *testing.T) {
 		t.Errorf("no cleanup, last call %q", last)
 	}
 }
+
+func TestWindowWatched(t *testing.T) {
+	ctx := context.Background()
+	out := "agent\t1\t1\nother\t0\t1\n"
+	e, r := newRec(reply{sub: "list-windows", out: out})
+	for name, want := range map[string]bool{"agent": true, "other": false, "absent": false} {
+		got, err := e.WindowWatched(ctx, Target{Session: "p", Window: name})
+		if err != nil || got != want {
+			t.Errorf("WindowWatched(%s) = %v, %v; want %v", name, got, err, want)
+		}
+	}
+	if args := strings.Join(r.calls[0].args, " "); !strings.Contains(args, "list-windows -t =p: -F #{window_name}\t#{window_active}\t#{session_attached}") {
+		t.Errorf("args = %q", args)
+	}
+	e, _ = newRec(reply{sub: "list-windows", out: "agent\t1\t0\n"})
+	if got, err := e.WindowWatched(ctx, Target{Session: "p", Window: "agent"}); err != nil || got {
+		t.Errorf("active window, no client = %v, %v; want false", got, err)
+	}
+	e, _ = newRec(reply{sub: "list-windows", stderr: "can't find session: p"})
+	if got, err := e.WindowWatched(ctx, Target{Session: "p", Window: "agent"}); err != nil || got {
+		t.Errorf("missing session = %v, %v", got, err)
+	}
+	if _, err := e.WindowWatched(ctx, Target{Session: "p", Window: "a:b"}); !errors.Is(err, ErrInvalidName) {
+		t.Errorf("invalid target err = %v", err)
+	}
+}

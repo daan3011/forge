@@ -85,7 +85,22 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - teatest done-when (`TestImplementIssueFillsPromptFromProvider`): a fake `plane_issue` provider, implement-issue + PROJ-123, and the prompt holds its title and body
     - a manual-variables flow and cancel
     - CLI flag tests and the palette command
-- [ ] P1.8 Waiting notifications
+- [x] P1.8 Waiting notifications — desktop notifications through `internal/notify` (`gen2brain/beeep`, falling back to `osascript` on macOS / `notify-send` elsewhere; `notifytest.Recorder` for tests). The rules are in `internal/sessions/alert`, which both `forge hook` and the TUI use.
+  - **Debounce**: `store.Sessions.ClaimWaitingNotification` is a compare-and-set on the existing `waiting_notified_at` column (`status = 'waiting' AND waiting_notified_at IS NULL`). Whoever wins the claim notifies, so one waiting spell gives exactly one notification even when the hook and the TUI race. `SetStatus` already clears the claim on a status change, so the next spell notifies again. No migration was needed.
+  - **TUI path**: every sessions refresh tick (which runs even when the Sessions tab is hidden), plus every hook ping, runs `Checker.CheckWaiting` in a `tea.Cmd`. It covers every project's unarchived waiting sessions and notifies "<name> is waiting for you" once a session has waited `sessions.notify_after_minutes` (0 = never). The same check counts the waiting sessions for the status bar badge `● N waiting`, shown on every tab (`ui.StatusInfo.Waiting`, `Theme.StatusWait`). The Sessions tab forwards each ping to the root model as `tabs.SessionPingMsg`. While the terminal isn't focused (`View.ReportFocus`, `tea.FocusMsg` / `tea.BlurMsg`; assumed focused until told otherwise), Stop gives "<name> finished" and StopFailure gives "<name> hit an error", controlled by the new `sessions.notify_on_finish` / `notify_on_error` (default on).
+  - **Hook path**: `live.Sender.Send` now reports whether a TUI received the ping. When none did (nothing listening, or the send failed), `forge hook` notifies itself. Waiting notifies at once, debounced by the same claim, because no process is left to wait N minutes. Errors and finished turns follow the toggles. The hook reads the config without creating it; a missing file means the defaults.
+  - **Watched windows**: both paths skip a session whose tmux window is the active window of an attached session on the forge socket (`tmux.Driver.WindowWatched`, `list-windows -F '#{window_name}\t#{window_active}\t#{session_attached}'`). A watched waiting session isn't claimed, so it notifies once you look away.
+  - **Palette**: "Notifications: send test notification".
+  - **Tests**:
+    - done-when `TestWaitingNotifiesExactlyOnce` (alert) and `TestAlertsWaitingExactlyOnce` (app, through the refresh tick)
+    - store claim table test
+    - hook table tests: no TUI, TUI running, watched, toggles off, `notify_after_minutes: 0`, a failed send
+    - focus tests and a teatest that the waiting count shows on another tab
+    - fallback argv and escaping tests
+    - fake and real-tmux conformance for `WindowWatched`
+    
+    Checked by hand with the built binary and an isolated database: three Notification events gave one claim and one macOS notification.
+  - **Limits**: the hook path ignores `notify_after_minutes`. If the TUI quits while a session waits but before N minutes pass, that spell isn't notified. Focus reports need terminal support; inside tmux they also need `focus-events on`. Without them forge counts as focused and doesn't notify about errors or finished turns while it runs.
 - [ ] P1.9 Session ↔ issue/PR links
   - Note (from P1.7): StartSessionFrom opens the form with `sessionstab.NewRequest{Refs: {plane_issue|github_pr: ref}}`, so the template skips asking for it.
 - [ ] P1.10 Auto-archive

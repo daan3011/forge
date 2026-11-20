@@ -46,6 +46,10 @@ sessions:
   default_template: ""
   # Desktop notification when an agent waits for input this many minutes (0 = never).
   notify_after_minutes: 5
+  # Desktop notification when an agent hits an error / finishes its turn,
+  # while forge isn't focused (or isn't running).
+  notify_on_error: true
+  notify_on_finish: true
   # How often session status refreshes in the background (min 5s).
   refresh_interval: 10s
 

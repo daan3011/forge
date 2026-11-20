@@ -59,3 +59,21 @@ func TestFakeHelpers(t *testing.T) {
 		t.Errorf("Attached = %v", got)
 	}
 }
+
+func TestFakeWindowWatched(t *testing.T) {
+	ctx := context.Background()
+	f := NewFake()
+	s, _ := f.EnsureSession(ctx, "proj")
+	tg, _ := f.NewWindow(ctx, s, "agent", "", nil, nil)
+	if w, err := f.WindowWatched(ctx, tg); err != nil || w {
+		t.Fatalf("fresh window watched = %v, %v", w, err)
+	}
+	f.SetWatched(tg, true)
+	if w, _ := f.WindowWatched(ctx, tg); !w {
+		t.Fatal("SetWatched(true) not reported")
+	}
+	f.SetWatched(tg, false)
+	if w, _ := f.WindowWatched(ctx, tg); w {
+		t.Fatal("SetWatched(false) not reported")
+	}
+}

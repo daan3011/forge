@@ -438,7 +438,8 @@ func (t *Tab) pinged(msg pingMsg) tea.Cmd {
 		}
 		t.setRows(t.list)
 	}
-	return tea.Batch(t.waitPing(), t.liveRefresh())
+	pinged := func() tea.Msg { return tabs.SessionPingMsg{Ping: p} }
+	return tea.Batch(t.waitPing(), t.liveRefresh(), pinged)
 }
 
 // liveRefresh reloads the list now, or right after the refresh in flight

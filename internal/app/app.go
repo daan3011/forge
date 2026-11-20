@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/artifacts"
@@ -84,6 +85,11 @@ type Model struct {
 	live         <-chan live.Ping
 	templatesDir string              // from WithTemplates
 	providers    *templates.Registry // from WithTemplates
+
+	alerts        *alert.Checker // from WithAlerts; nil: no notifications
+	waiting       int            // sessions waiting for input, every project
+	alertsFailing bool           // the last waiting check failed
+	focused       bool           // the terminal has focus (assumed until told otherwise)
 }
 
 // paletteMode is which picker the palette overlay shows, if any.
@@ -140,6 +146,7 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		now:     time.Now(),
 		clock:   time.Now,
 		clockOn: true, // Init starts the first tick
+		focused: true,
 		sched:   refresh.New(cfg),
 		anim:    anim.NewEngine(anim.Resolve(cfg.UI.Animations, os.Getenv)),
 
@@ -177,7 +184,7 @@ func (m Model) findProject(name string) *config.Project {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.store), m.sched.Start()}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.store), m.sched.Start(), m.checkWaiting()}
 	for _, t := range m.tabs {
 		cmds = append(cmds, t.Init())
 	}
@@ -309,6 +316,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refresh.TickMsg:
 		return m.handleTick(msg)
+
+	case waitingMsg:
+		return m.handleWaiting(msg)
+
+	case tabs.SessionPingMsg:
+		return m.handleSessionPing(msg)
+
+	case tea.FocusMsg:
+		m.focused = true
+		return m, nil
+
+	case tea.BlurMsg:
+		m.focused = false
+		return m, nil
 
 	case github.RateLimitMsg:
 		return m.handleRateLimit(msg.RateLimit)
@@ -592,7 +613,7 @@ func (m Model) handleTick(msg refresh.TickMsg) (Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	cmds := []tea.Cmd{next}
+	cmds := []tea.Cmd{next, m.alertTick(msg)}
 	for i, t := range m.tabs {
 		ar, isAuto := t.(tabs.AutoRefresher)
 		if !isAuto || !slices.Contains(ar.Sources(), msg.Source) || !m.refreshesNow(i) {
@@ -681,6 +702,7 @@ func (m Model) contentSize() (width, height int) {
 func (m Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
+	v.ReportFocus = true // notifications on errors / finished turns only when unfocused
 	v.BackgroundColor = m.theme.Bg
 	return v
 }
@@ -718,6 +740,7 @@ func (m Model) render() string {
 			Fetching: m.activeFetching(),
 			Spinner:  anim.HammerFrame(m.anim.Frame(), m.anim.Settings(), m.theme),
 			Rate:     m.rateBadge(),
+			Waiting:  m.waiting,
 			Keys:     m.statusKeys(active),
 		}),
 	)

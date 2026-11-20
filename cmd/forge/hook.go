@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +14,13 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
+	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/notify"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/live"
+	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/store"
 )
 
@@ -92,10 +97,76 @@ func (d deps) hook(ctx context.Context, event string, stdin io.Reader) error {
 	if res.Session == "" {
 		return nil // not a forge session: nothing to show
 	}
-	return d.liveSender().Send(ctx, live.Ping{
+	delivered, err := d.liveSender().Send(ctx, live.Ping{
 		Session: res.Session, ClaudeSessionID: p.SessionID, Event: p.Event,
 		Status: string(res.Status), Changed: res.Changed,
 	})
+	if delivered {
+		return nil // the running TUI notifies (P1.8)
+	}
+	return errors.Join(err, d.hookNotify(ctx, st, p.Event, res))
+}
+
+// hookNotify sends the desktop notification for an event when no forge TUI
+// is running (P1.8). Waiting notifies at once (there is nobody to wait
+// notify_after_minutes), debounced in the database; errors and finished
+// turns notify since forge can't be focused.
+func (d deps) hookNotify(ctx context.Context, st *store.Store, event string, res hooks.Result) error {
+	kind, ok := alert.ForEvent(event, res.Status, res.Changed)
+	if !ok {
+		return nil
+	}
+	cfg, err := d.hookConfig()
+	if err != nil {
+		d.logHook(event, err) // notify with the defaults anyway
+	}
+	c := alert.Checker{
+		Store: st.Sessions(), Notifier: d.notifications(), Watcher: d.tmuxWatcher(),
+		Policy: alert.PolicyFrom(cfg.Sessions), Clock: d.clock,
+	}
+	_, err = c.NotifyEvent(ctx, res.Session, kind)
+	return err
+}
+
+// hookConfig loads the config without creating it; a missing file is the
+// defaults. On other errors it returns the defaults and the error.
+func (d deps) hookConfig() (*config.Config, error) {
+	load := d.loadConfig
+	if load == nil {
+		load = func() (*config.Config, error) {
+			path, err := config.Path()
+			if err != nil {
+				return nil, err
+			}
+			return config.Load(path)
+		}
+	}
+	cfg, err := load()
+	switch {
+	case err == nil:
+		return cfg, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return config.Default(), nil
+	default:
+		return config.Default(), err
+	}
+}
+
+// tmuxWatcher is the tmux driver asked whether a window is being
+// watched. It only queries, so it needs no config file.
+func (d deps) tmuxWatcher() alert.Watcher {
+	if d.newTmux != nil {
+		return d.newTmux("")
+	}
+	return tmux.New()
+}
+
+// notifications is the desktop notifier.
+func (d deps) notifications() notify.Notifier {
+	if d.notifier != nil {
+		return d.notifier
+	}
+	return notify.System{}
 }
 
 func (d deps) env(key string) string {

@@ -123,6 +123,7 @@ type Theme struct {
 	StatusRight lipgloss.Style
 	StatusKey   lipgloss.Style
 	StatusWarn  lipgloss.Style // rate limit running low
+	StatusWait  lipgloss.Style // sessions waiting for input
 
 	Toast        lipgloss.Style
 	ToastError   lipgloss.Style
@@ -203,6 +204,7 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		StatusRight: lipgloss.NewStyle().Foreground(p.Muted).Background(p.Surface),
 		StatusKey:   lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		StatusWarn:  lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Error).Bold(true).Padding(0, 1),
+		StatusWait:  lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Highlight).Bold(true).Padding(0, 1),
 
 		Toast:        lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Highlight).Foreground(p.Text).Padding(0, 1),
 		ToastError:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Error).Foreground(p.Text).Padding(0, 1),

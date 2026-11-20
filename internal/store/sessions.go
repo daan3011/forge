@@ -142,6 +142,7 @@ func (r *Sessions) GetByClaudeID(ctx context.Context, claudeID string) (Session,
 type SessionFilter struct {
 	Project  string
 	Archived *bool
+	Status   Status // "" means any
 }
 
 // List returns sessions, waiting ones first, then most recently active.
@@ -153,6 +154,10 @@ func (r *Sessions) List(ctx context.Context, f SessionFilter) ([]Session, error)
 	if f.Project != "" {
 		where = append(where, "project = ?")
 		args = append(args, f.Project)
+	}
+	if f.Status != "" {
+		where = append(where, "status = ?")
+		args = append(args, f.Status)
 	}
 	if f.Archived != nil {
 		if *f.Archived {
@@ -256,6 +261,22 @@ func (r *Sessions) MarkWaitingNotified(ctx context.Context, id int64, at time.Ti
 		`UPDATE sessions SET waiting_notified_at = ?, updated_at = ? WHERE id = ?`,
 		at.UnixMilli(), r.s.now().UnixMilli(), id)
 	return mustAffect("mark session notified", res, err)
+}
+
+// ClaimWaitingNotification records that the session's current waiting
+// spell was notified, if it is waiting and nobody did so yet. It reports
+// whether this call won: `forge hook` and the TUI both claim before
+// notifying, so a waiting spell is notified exactly once. SetStatus clears
+// the claim when the status changes.
+func (r *Sessions) ClaimWaitingNotification(ctx context.Context, id int64, at time.Time) (bool, error) {
+	res, err := r.s.w.ExecContext(ctx, `UPDATE sessions SET waiting_notified_at = ?, updated_at = ?
+		WHERE id = ? AND status = ? AND waiting_notified_at IS NULL`,
+		at.UnixMilli(), r.s.now().UnixMilli(), id, StatusWaiting)
+	if err != nil {
+		return false, wrap("claim waiting notification", err)
+	}
+	n, err := res.RowsAffected()
+	return n > 0, wrap("claim waiting notification", err)
 }
 
 // SetTranscript stores the transcript path and the parsed byte offset (P1.6).

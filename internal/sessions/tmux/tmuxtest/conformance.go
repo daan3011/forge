@@ -71,6 +71,9 @@ func RunConformance(t *testing.T, d tmux.Driver, cmd []string) {
 		if alive, err := d.WindowAlive(ctx, tg); err != nil || !alive {
 			t.Errorf("WindowAlive = %v, %v; want true", alive, err)
 		}
+		if watched, err := d.WindowWatched(ctx, tg); err != nil || watched {
+			t.Errorf("WindowWatched with no client = %v, %v; want false", watched, err)
+		}
 		ws, err := d.ListWindows(ctx, s)
 		if err != nil || len(ws) != 1 || ws[0].Name != "agent-one" || ws[0].Dead || ws[0].ID == "" {
 			t.Errorf("ListWindows = %+v, %v", ws, err)
@@ -105,6 +108,9 @@ func RunConformance(t *testing.T, d tmux.Driver, cmd []string) {
 		}
 		if alive, err := d.WindowAlive(ctx, missing); err != nil || alive {
 			t.Errorf("WindowAlive(missing) = %v, %v", alive, err)
+		}
+		if watched, err := d.WindowWatched(ctx, missing); err != nil || watched {
+			t.Errorf("WindowWatched(missing) = %v, %v", watched, err)
 		}
 		if err := d.KillWindow(ctx, missing); err != nil {
 			t.Errorf("KillWindow(missing): %v", err)
