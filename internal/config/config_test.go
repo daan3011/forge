@@ -39,8 +39,9 @@ func TestDefault(t *testing.T) {
 	if d.Plane.RefreshInterval.Duration != 2*time.Minute || d.Sessions.RefreshInterval.Duration != 10*time.Second {
 		t.Errorf("refresh intervals: plane %s, sessions %s", d.Plane.RefreshInterval, d.Sessions.RefreshInterval)
 	}
-	if d.Sessions.NotifyAfterMinutes != 5 {
-		t.Errorf("notify_after_minutes = %d", d.Sessions.NotifyAfterMinutes)
+	if d.Sessions.NotifyAfterMinutes != 5 || !d.Sessions.NotifyOnError || !d.Sessions.NotifyOnFinish {
+		t.Errorf("notify: after %d, on error %v, on finish %v",
+			d.Sessions.NotifyAfterMinutes, d.Sessions.NotifyOnError, d.Sessions.NotifyOnFinish)
 	}
 	if d.UI.Animations != AnimationsFull {
 		t.Errorf("animations = %q", d.UI.Animations)

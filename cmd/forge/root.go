@@ -13,7 +13,9 @@ import (
 	"github.com/daan3011/forge/internal/app"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/editor"
+	"github.com/daan3011/forge/internal/notify"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/store"
@@ -43,6 +45,10 @@ type deps struct {
 	sender live.Sender
 	// listen replaces live.Listen for the TUI; nil means the real socket.
 	listen func() (pingSource, error)
+	// notifier shows desktop notifications; nil means notify.System.
+	notifier notify.Notifier
+	// loadConfig replaces loading the config in `forge hook`.
+	loadConfig func() (*config.Config, error)
 }
 
 func (d deps) sessions(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -96,7 +102,13 @@ func newRootCmd(d deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := []app.Option{app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc)}
+			opts := []app.Option{
+				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
+				app.WithAlerts(alert.Checker{
+					Store: st.Sessions(), Notifier: d.notifications(), Watcher: d.tmuxWatcher(),
+					Policy: alert.PolicyFrom(cfg.Sessions),
+				}),
+			}
 			switch src, err := d.listenLive(cmd.Context()); {
 			case errors.Is(err, live.ErrRunning):
 				fmt.Fprintln(cmd.ErrOrStderr(), "note: another forge is running and gets live session updates; this one refreshes every few seconds")

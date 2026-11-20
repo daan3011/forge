@@ -45,8 +45,8 @@ func recv(t *testing.T, l *Listener) Ping {
 
 func TestSendWithoutListener(t *testing.T) {
 	path := sockPath(t)
-	if err := Send(context.Background(), path, Ping{Event: "Stop"}); err != nil {
-		t.Errorf("no socket: %v", err)
+	if ok, err := Send(context.Background(), path, Ping{Event: "Stop"}); err != nil || ok {
+		t.Errorf("no socket: %v, %v", ok, err)
 	}
 	// A stale socket file (nothing accepting) is not an error either.
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", path)
@@ -55,8 +55,8 @@ func TestSendWithoutListener(t *testing.T) {
 	}
 	ln.(*net.UnixListener).SetUnlinkOnClose(false)
 	_ = ln.Close()
-	if err := Send(context.Background(), path, Ping{Event: "Stop"}); err != nil {
-		t.Errorf("stale socket: %v", err)
+	if ok, err := Send(context.Background(), path, Ping{Event: "Stop"}); err != nil || ok {
+		t.Errorf("stale socket: %v, %v", ok, err)
 	}
 }
 
@@ -64,8 +64,8 @@ func TestSendReceive(t *testing.T) {
 	path := sockPath(t)
 	l := listen(t, path)
 	want := Ping{Session: "fix", ClaudeSessionID: "id", Event: "PreToolUse", Status: "working", Changed: true}
-	if err := (Socket{Path: path}).Send(context.Background(), want); err != nil {
-		t.Fatal(err)
+	if ok, err := (Socket{Path: path}).Send(context.Background(), want); err != nil || !ok {
+		t.Fatalf("Send = %v, %v; want delivered", ok, err)
 	}
 	want.V = Version
 	if got := recv(t, l); got != want {
@@ -100,7 +100,7 @@ func TestListenReclaimsStaleSocket(t *testing.T) {
 	ln.(*net.UnixListener).SetUnlinkOnClose(false)
 	_ = ln.Close() // a forge that died: the file stays
 	l := listen(t, path)
-	if err := Send(context.Background(), path, Ping{Event: "Stop"}); err != nil {
+	if _, err := Send(context.Background(), path, Ping{Event: "Stop"}); err != nil {
 		t.Fatal(err)
 	}
 	recv(t, l)
@@ -138,7 +138,7 @@ func TestFullBufferDrops(t *testing.T) {
 	path := sockPath(t)
 	l := listen(t, path)
 	for range buffer + 10 {
-		if err := Send(context.Background(), path, Ping{Event: "PreToolUse"}); err != nil {
+		if _, err := Send(context.Background(), path, Ping{Event: "PreToolUse"}); err != nil {
 			t.Fatal(err)
 		}
 	}

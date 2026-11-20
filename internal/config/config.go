@@ -108,6 +108,10 @@ type Sessions struct {
 	WorktreeRoot       string `yaml:"worktree_root"`
 	DefaultTemplate    string `yaml:"default_template"`
 	NotifyAfterMinutes int    `yaml:"notify_after_minutes"`
+	// NotifyOnError and NotifyOnFinish send a desktop notification when a
+	// session hits an error or finishes its turn, while forge isn't focused.
+	NotifyOnError  bool `yaml:"notify_on_error"`
+	NotifyOnFinish bool `yaml:"notify_on_finish"`
 	// RefreshInterval is how often session status refreshes in the background.
 	RefreshInterval Duration `yaml:"refresh_interval"`
 }
@@ -179,6 +183,8 @@ func Default() *Config {
 		Sessions: Sessions{
 			WorktreeRoot:       filepath.Join(DataHome(), "forge", "worktrees"),
 			NotifyAfterMinutes: 5,
+			NotifyOnError:      true,
+			NotifyOnFinish:     true,
 			RefreshInterval:    Duration{10 * time.Second},
 		},
 		UI: UI{Animations: AnimationsFull},

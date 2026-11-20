@@ -302,6 +302,24 @@ func TestStatusBarRefreshState(t *testing.T) {
 			gone:  []string{"r refresh"},
 		},
 		{
+			name:  "waiting badge",
+			width: 100,
+			info:  StatusInfo{Waiting: 2, Rate: "gh 12/5000"},
+			want:  []string{"● 2 waiting", "gh 12/5000", "? help"},
+		},
+		{
+			name:  "waiting badge outlives hints",
+			width: 40,
+			info:  StatusInfo{Waiting: 1},
+			want:  []string{"● 1 waiting"},
+			gone:  []string{"r refresh"},
+		},
+		{
+			name:  "no waiting badge at zero",
+			width: 100,
+			gone:  []string{"waiting"},
+		},
+		{
 			name:  "rate badge dropped when nothing fits",
 			width: 16,
 			info:  StatusInfo{Rate: "gh 12/5000 · resets 14m"},

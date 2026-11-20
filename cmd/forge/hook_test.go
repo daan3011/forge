@@ -11,23 +11,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/notify/notifytest"
 	"github.com/daan3011/forge/internal/sessions/live"
+	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/sessions/tmux/tmuxtest"
 	"github.com/daan3011/forge/internal/store"
 )
 
 const hookID = "0b5f3c3e-8a1d-4c2b-9f00-1234567890ab"
 
+// fakeSender records pings. A TUI receives them unless noTUI is set.
 type fakeSender struct {
 	mu    sync.Mutex
 	pings []live.Ping
 	err   error
+	noTUI bool
 }
 
-func (f *fakeSender) Send(_ context.Context, p live.Ping) error {
+func (f *fakeSender) Send(_ context.Context, p live.Ping) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.pings = append(f.pings, p)
-	return f.err
+	return !f.noTUI && f.err == nil, f.err
 }
 
 type hookEnv struct {
@@ -35,15 +41,24 @@ type hookEnv struct {
 	db     string
 	sender *fakeSender
 	env    map[string]string
+	notes  *notifytest.Recorder
+	tmux   *tmuxtest.Fake
+	cfg    *config.Config
 }
 
 func newHookEnv(t *testing.T) *hookEnv {
 	t.Helper()
-	e := &hookEnv{db: filepath.Join(t.TempDir(), "data", "forge.db"), sender: &fakeSender{}, env: map[string]string{}}
+	e := &hookEnv{
+		db: filepath.Join(t.TempDir(), "data", "forge.db"), sender: &fakeSender{}, env: map[string]string{},
+		notes: &notifytest.Recorder{}, tmux: tmuxtest.NewFake(), cfg: config.Default(),
+	}
 	e.d = deps{
 		db: e.db, sender: e.sender,
-		getenv: func(k string) string { return e.env[k] },
-		now:    func() time.Time { return time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC) },
+		getenv:     func(k string) string { return e.env[k] },
+		now:        func() time.Time { return time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC) },
+		notifier:   e.notes,
+		newTmux:    func(string) tmux.Driver { return e.tmux },
+		loadConfig: func() (*config.Config, error) { return e.cfg, nil },
 	}
 	return e
 }

@@ -27,9 +27,17 @@ type StatusInfo struct {
 	// Rate is the GitHub rate limit badge, set only when it runs low. It sits
 	// next to the tab name and is kept when hints are dropped.
 	Rate string
+	// Waiting is how many agent sessions wait for input, in every project;
+	// 0 hides it. Like Rate it sits next to the tab name and outlives hints.
+	Waiting int
 	// Keys are the hints shown on the right, most important last: when space
 	// runs out they are dropped from the front.
 	Keys []key.Binding
+}
+
+// WaitingBadge is the status bar text for n waiting sessions.
+func WaitingBadge(n int) string {
+	return fmt.Sprintf("● %d waiting", n)
 }
 
 // NewStatusBar returns a status bar.
@@ -48,6 +56,11 @@ func (s StatusBar) View(width int, info StatusInfo) string {
 	}
 
 	left := t.StatusLeft.Render(info.Tab + " · " + project)
+	if info.Waiting > 0 {
+		if w := t.StatusWait.Render(WaitingBadge(info.Waiting)); lipgloss.Width(left)+lipgloss.Width(w) <= width {
+			left += w
+		}
+	}
 	if info.Rate != "" {
 		if rate := t.StatusWarn.Render(info.Rate); lipgloss.Width(left)+lipgloss.Width(rate) <= width {
 			left += rate

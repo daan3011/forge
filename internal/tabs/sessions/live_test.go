@@ -14,6 +14,7 @@ import (
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
@@ -100,6 +101,23 @@ func TestPingUnknownOrUnchangedKeepsRows(t *testing.T) {
 	}
 }
 
+func TestPingIsForwardedToTheApp(t *testing.T) {
+	svc := newFakeSvc(row("alpha", store.StatusIdle))
+	tab := newLiveTab(svc, nil, config.AnimationsOff)
+	load(t, tab)
+	p := live.Ping{V: 1, Session: "alpha", Event: "Stop", Status: "idle", Changed: true}
+	_, cmd := tab.Update(pingMsg{ok: true, ping: p})
+	var got []tabs.SessionPingMsg
+	for _, m := range runAll(cmd) {
+		if sp, ok := m.(tabs.SessionPingMsg); ok {
+			got = append(got, sp)
+		}
+	}
+	if len(got) != 1 || got[0].Ping != p {
+		t.Errorf("forwarded %+v, want one SessionPingMsg for %+v", got, p)
+	}
+}
+
 func TestPingsCoalesceRefreshes(t *testing.T) {
 	svc := newFakeSvc(row("alpha", store.StatusIdle))
 	tab := newLiveTab(svc, nil, config.AnimationsOff)
@@ -108,8 +126,11 @@ func TestPingsCoalesceRefreshes(t *testing.T) {
 	inflight := tab.Refresh() // a refresh that read the db before the hook
 	ping := pingMsg{ok: true, ping: live.Ping{V: 1, Session: "alpha", Status: "working", Changed: true}}
 	for range 3 {
-		if _, cmd := tab.Update(ping); cmd != nil {
-			t.Fatal("ping during a refresh started another one")
+		_, cmd := tab.Update(ping)
+		for _, m := range runAll(cmd) {
+			if _, ok := m.(tabs.SessionPingMsg); !ok {
+				t.Fatalf("ping during a refresh started %T", m)
+			}
 		}
 	}
 	if !tab.dirty {

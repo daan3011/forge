@@ -89,6 +89,10 @@ type Driver interface {
 	WindowAlive(ctx context.Context, t Target) (bool, error)
 	// KillWindow removes the window; a missing window is not an error.
 	KillWindow(ctx context.Context, t Target) error
+	// WindowWatched reports whether someone is looking at the window: it
+	// is the active window of a session with at least one attached client.
+	// A missing server, session or window is false, nil.
+	WindowWatched(ctx context.Context, t Target) (bool, error)
 	// SendKeys types text literally, then presses Enter if enter is set.
 	SendKeys(ctx context.Context, t Target, text string, enter bool) error
 	// PasteText pastes text (newlines included) into the window as one

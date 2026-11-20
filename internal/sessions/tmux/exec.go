@@ -267,6 +267,30 @@ func (e *Exec) WindowAlive(ctx context.Context, t Target) (bool, error) {
 	return ok && !w.Dead, err
 }
 
+// watchFormat is window name, window_active and session_attached.
+const watchFormat = "#{window_name}\t#{window_active}\t#{session_attached}"
+
+// WindowWatched implements Driver.
+func (e *Exec) WindowWatched(ctx context.Context, t Target) (bool, error) {
+	if err := t.Validate(); err != nil {
+		return false, err
+	}
+	out, err := e.tmux(ctx, "list-windows", "-t", sessionTarget(t.Session), "-F", watchFormat)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) == 3 && f[0] == t.Window {
+			return f[1] == "1" && f[2] != "" && f[2] != "0", nil
+		}
+	}
+	return false, nil
+}
+
 // KillWindow implements Driver.
 func (e *Exec) KillWindow(ctx context.Context, t Target) error {
 	if err := t.Validate(); err != nil {

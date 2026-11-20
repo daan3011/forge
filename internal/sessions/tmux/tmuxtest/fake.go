@@ -33,6 +33,7 @@ type Fake struct {
 	sessions map[string][]*fakeWindow // in creation order
 	nextID   int
 	attached []tmux.Target
+	watched  map[tmux.Target]bool
 }
 
 type fakeWindow struct {
@@ -164,6 +165,29 @@ func (f *Fake) KillWindow(_ context.Context, t tmux.Target) error {
 		f.sessions[t.Session] = slices.Delete(f.sessions[t.Session], i, i+1)
 	}
 	return nil
+}
+
+// WindowWatched implements tmux.Driver: true after SetWatched(t, true),
+// while the window exists.
+func (f *Fake) WindowWatched(_ context.Context, t tmux.Target) (bool, error) {
+	if err := t.Validate(); err != nil {
+		return false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w, _ := f.find(t)
+	return w != nil && f.watched[t], nil
+}
+
+// SetWatched marks the window as looked at (a client is attached to it) or
+// not.
+func (f *Fake) SetWatched(t tmux.Target, on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.watched == nil {
+		f.watched = map[tmux.Target]bool{}
+	}
+	f.watched[t] = on
 }
 
 // SendKeys implements tmux.Driver.

@@ -54,21 +54,24 @@ func DefaultPath() string {
 
 // Sender delivers pings; `forge hook` takes one so tests can fake it.
 type Sender interface {
-	Send(ctx context.Context, p Ping) error
+	// Send reports whether a TUI received p; no TUI running is not an
+	// error.
+	Send(ctx context.Context, p Ping) (delivered bool, err error)
 }
 
 // Socket is the Sender for the socket at Path.
 type Socket struct{ Path string }
 
-// Send implements Sender. No TUI running (no socket, or a stale one) is not
-// an error.
-func (s Socket) Send(ctx context.Context, p Ping) error {
+// Send implements Sender. No TUI running (no socket, or a stale one) is
+// false, nil.
+func (s Socket) Send(ctx context.Context, p Ping) (bool, error) {
 	return Send(ctx, s.Path, p)
 }
 
-// Send writes p to the TUI listening at path, giving up after SendTimeout.
-// It returns nil when nothing is listening.
-func Send(ctx context.Context, path string, p Ping) error {
+// Send writes p to the TUI listening at path, giving up after SendTimeout,
+// and reports whether it was delivered. It returns false, nil when nothing
+// is listening.
+func Send(ctx context.Context, path string, p Ping) (bool, error) {
 	if p.V == 0 {
 		p.V = Version
 	}
@@ -78,9 +81,9 @@ func Send(ctx context.Context, path string, p Ping) error {
 	conn, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
 		if notListening(err) {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("live: %w", err)
+		return false, fmt.Errorf("live: %w", err)
 	}
 	defer conn.Close()
 	if dl, ok := ctx.Deadline(); ok {
@@ -88,12 +91,12 @@ func Send(ctx context.Context, path string, p Ping) error {
 	}
 	b, err := json.Marshal(p)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, err := conn.Write(append(b, '\n')); err != nil {
-		return fmt.Errorf("live: %w", err)
+		return false, fmt.Errorf("live: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 func notListening(err error) bool {
