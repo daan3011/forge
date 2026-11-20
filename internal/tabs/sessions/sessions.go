@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
+	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
 )
@@ -70,9 +72,12 @@ type Tab struct {
 	cfg   *config.Config
 	svc   agent.API
 	live  <-chan live.Ping // forge hook pings; nil when not listening
-	anim  *anim.Engine
-	now   func() time.Time
-	tick  func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
+	// session templates (P1.7)
+	tmplDir   string
+	providers *templates.Registry
+	anim      *anim.Engine
+	now       func() time.Time
+	tick      func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 
 	split   ui.SplitPane
 	divider anim.Spring
@@ -134,18 +139,20 @@ func New(d tabkit.Deps) *Tab {
 		cfg = config.Default()
 	}
 	t := &Tab{
-		theme:  d.Theme,
-		keys:   d.Keys,
-		cfg:    cfg,
-		svc:    d.Sessions,
-		live:   d.Live,
-		anim:   d.Engine(),
-		now:    time.Now,
-		tick:   tea.Tick,
-		split:  ui.NewSplitPane(d.Theme),
-		table:  ui.NewTable(d.Theme, d.Keys, nil),
-		filter: ui.NewFilter(d.Theme, d.Keys),
-		rows:   map[string]agent.Row{},
+		theme:     d.Theme,
+		keys:      d.Keys,
+		cfg:       cfg,
+		svc:       d.Sessions,
+		live:      d.Live,
+		tmplDir:   d.TemplatesDir,
+		providers: d.Providers,
+		anim:      d.Engine(),
+		now:       time.Now,
+		tick:      tea.Tick,
+		split:     ui.NewSplitPane(d.Theme),
+		table:     ui.NewTable(d.Theme, d.Keys, nil),
+		filter:    ui.NewFilter(d.Theme, d.Keys),
+		rows:      map[string]agent.Row{},
 
 		resuming: map[string]bool{},
 	}
@@ -218,6 +225,20 @@ type previewMsg struct {
 	err  error
 }
 
+type templatesLoadedMsg struct {
+	req       NewRequest
+	templates []templates.Template
+	errs      []error
+}
+
+type templateResolvedMsg struct {
+	req     NewRequest
+	tmpl    templates.Template
+	vals    map[string]string
+	missing []string
+	errs    []error
+}
+
 type startedMsg struct {
 	name string
 	res  agent.Started
@@ -262,6 +283,10 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.capture()
 	case previewMsg:
 		return t, t.previewed(msg)
+	case templatesLoadedMsg:
+		return t, t.templatesLoaded(msg)
+	case templateResolvedMsg:
+		return t, t.templateResolved(msg)
 	case startedMsg:
 		return t, t.started(msg)
 	case killedMsg:
@@ -621,22 +646,116 @@ func (t *Tab) previewLines() int {
 // --- new session ----------------------------------------------------------------
 
 func (t *Tab) openNew() tea.Cmd {
-	if t.svc == nil {
-		return errCmd(errUnavailable)
-	}
 	vals := agent.StartOpts{}
 	if t.project != nil {
 		vals.Project = t.project.Name
 	}
 	vals.Template = t.cfg.Sessions.DefaultTemplate
+	return t.openNewWith(NewRequest{Opts: vals})
+}
+
+// openNewWith loads the templates (off the update loop), then opens the
+// new-session form pre-filled from req.
+func (t *Tab) openNewWith(req NewRequest) tea.Cmd {
+	if t.svc == nil {
+		return errCmd(errUnavailable)
+	}
+	dir := t.tmplDir
+	return func() tea.Msg {
+		if dir == "" {
+			return templatesLoadedMsg{req: req}
+		}
+		if _, err := templates.EnsureDefaults(dir); err != nil {
+			return templatesLoadedMsg{req: req, errs: []error{err}}
+		}
+		ts, errs := templates.Load(dir)
+		return templatesLoadedMsg{req: req, templates: ts, errs: errs}
+	}
+}
+
+func (t *Tab) templatesLoaded(msg templatesLoadedMsg) tea.Cmd {
+	if t.dialog != nil {
+		return nil // something else opened meanwhile
+	}
+	var cmds []tea.Cmd
+	if err := errors.Join(msg.errs...); err != nil {
+		cmds = append(cmds, errCmd(err))
+	}
 	f, v, err := NewForm(FormInput{
-		Theme: t.theme, Keys: t.keys, Projects: t.cfg.Projects, Values: vals,
-		Taken: func(name string) bool { _, ok := t.rows[name]; return ok },
+		Theme: t.theme, Keys: t.keys, Projects: t.cfg.Projects, Values: msg.req.Opts,
+		Templates: msg.templates,
+		Taken:     func(name string) bool { _, ok := t.rows[name]; return ok },
 	})
 	if err != nil {
-		return errCmd(err)
+		return tea.Batch(append(cmds, errCmd(err))...)
 	}
-	return t.openDialog("", f, func() tea.Cmd { return t.start(*v) })
+	req := msg.req
+	in := FormInput{Projects: t.cfg.Projects, Templates: msg.templates}
+	open := t.openDialog("", f, func() tea.Cmd {
+		req.Opts = *v
+		tmpl, ok := templates.Find(msg.templates, v.Template)
+		if !ok {
+			return t.start(*v)
+		}
+		return t.askRefs(req, tmpl)
+	})
+	t.dialog.preview = func() string { return previewText(in, *v) }
+	if len(msg.templates) > 0 {
+		w, h := t.formSize() // narrower now that the preview takes half
+		_, _ = f.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	}
+	return tea.Batch(append(cmds, open)...)
+}
+
+// askRefs asks for the issue / PR the template needs, then resolves.
+func (t *Tab) askRefs(req NewRequest, tmpl templates.Template) tea.Cmd {
+	f, get := RefsForm(t.theme, t.keys, tmpl, req.Refs)
+	if f == nil {
+		return t.resolveTemplate(req, tmpl)
+	}
+	return t.openDialog("", f, func() tea.Cmd {
+		req.Refs = get()
+		return t.resolveTemplate(req, tmpl)
+	})
+}
+
+// resolveTemplate asks the context providers for the template's variables
+// in a command; templateResolved continues the flow.
+func (t *Tab) resolveTemplate(req NewRequest, tmpl templates.Template) tea.Cmd {
+	t.busy++
+	reg, projects := t.providers, t.cfg.Projects
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
+		defer cancel()
+		vals, missing, errs := templates.Resolve(ctx, reg, tmpl, TemplateInput(projects, req.Opts, req.Refs, req.Vars))
+		return templateResolvedMsg{req: req, tmpl: tmpl, vals: vals, missing: missing, errs: errs}
+	}
+}
+
+func (t *Tab) templateResolved(msg templateResolvedMsg) tea.Cmd {
+	t.busy--
+	var cmds []tea.Cmd
+	for _, err := range msg.errs {
+		cmds = append(cmds, info(err.Error()+"; fill it in below"))
+	}
+	f, get := VarsForm(t.theme, t.keys, msg.tmpl, msg.missing)
+	if f == nil {
+		return tea.Batch(append(cmds, t.confirmPrompt(msg.req, msg.tmpl, msg.vals))...)
+	}
+	open := t.openDialog("", f, func() tea.Cmd {
+		vals := maps.Clone(msg.vals)
+		maps.Copy(vals, get())
+		return t.confirmPrompt(msg.req, msg.tmpl, vals)
+	})
+	return tea.Batch(append(cmds, open)...)
+}
+
+// confirmPrompt shows the rendered prompt, editable, then starts.
+func (t *Tab) confirmPrompt(req NewRequest, tmpl templates.Template, vals map[string]string) tea.Cmd {
+	o := req.Opts
+	o.Prompt = RenderPrompt(tmpl, vals)
+	f := PromptForm(t.theme, t.keys, &o.Prompt)
+	return t.openDialog("", f, func() tea.Cmd { return t.start(o) })
 }
 
 func (t *Tab) start(o agent.StartOpts) tea.Cmd {
@@ -818,6 +937,9 @@ type dialog struct {
 	subject string // session the dialog is about, for the header
 	done    func() tea.Cmd
 	aborted func() // optional: the user abandoned the form (esc)
+	// preview, if set, renders text shown beside the form (the new-session
+	// template preview). It runs in View, so it may read the form's values.
+	preview func() string
 }
 
 func (t *Tab) openDialog(subject string, f *huh.Form, done func() tea.Cmd) tea.Cmd {
@@ -829,7 +951,7 @@ func (t *Tab) openDialog(subject string, f *huh.Form, done func() tea.Cmd) tea.C
 func (t *Tab) openDialogOr(subject string, f *huh.Form, done func() tea.Cmd, aborted func()) tea.Cmd {
 	t.dialog = &dialog{form: f, subject: subject, done: done, aborted: aborted}
 	init := f.Init()
-	w, h := t.dialogSize()
+	w, h := t.formSize()
 	_, _ = f.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	return init
 }
@@ -943,7 +1065,7 @@ func (t *Tab) SetSize(width, height int) {
 	t.layoutTranscript()
 	t.resizeTable()
 	if t.dialog != nil {
-		w, h := t.dialogSize()
+		w, h := t.formSize()
 		_, _ = t.dialog.form.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	}
 }
@@ -984,9 +1106,42 @@ func (t *Tab) View() string {
 	return t.split.View(list, t.detail(), true)
 }
 
+// previewMinWidth is the dialog width from which a preview sits beside the
+// form instead of below it.
+const previewMinWidth = 90
+
+// formSize is the size the dialog's form gets: all of the dialog, or the
+// left half when a preview sits beside it.
+func (t *Tab) formSize() (w, h int) {
+	w, h = t.dialogSize()
+	if t.dialog != nil && t.dialog.preview != nil && w >= previewMinWidth {
+		w = w/2 - 1
+	}
+	return w, h
+}
+
 func (t *Tab) dialogView() string {
 	w, h := t.dialogSize()
-	return t.theme.PaneFocused.Render(ui.Box(t.dialog.form.View(), w, h))
+	body := t.dialog.form.View()
+	if t.dialog.preview != nil {
+		if text := t.dialog.preview(); text != "" {
+			fw, _ := t.formSize()
+			pv := t.theme.DetailLabel.Render("preview") + "\n" + text
+			if fw < w {
+				pw := w - fw - 2
+				body = lipgloss.JoinHorizontal(lipgloss.Top,
+					ui.Box(body, fw, h), "  ", ui.Box(wrapText(pv, pw), pw, h))
+			} else {
+				body += "\n\n" + wrapText(pv, w)
+			}
+		}
+	}
+	return t.theme.PaneFocused.Render(ui.Box(body, w, h))
+}
+
+// wrapText wraps s to width cells, keeping its line breaks.
+func wrapText(s string, width int) string {
+	return ansi.Wrap(s, max(width, 1), "")
 }
 
 func (t *Tab) detail() string {

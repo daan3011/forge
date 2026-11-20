@@ -17,6 +17,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/templates"
 )
 
 // deps are the external collaborators of the CLI, swapped for fakes in tests.
@@ -26,6 +27,9 @@ type deps struct {
 	newSessions func(*config.Config, *store.Store) agent.API
 	// runForm runs a Huh form on the terminal; nil means no terminal.
 	runForm func(*huh.Form) error
+	// providers resolve {issue_*} / {pr_*} template variables; nil has
+	// none yet (P2.1 and P3.1 add them).
+	providers *templates.Registry
 	// db is the database path; empty means store.DefaultPath().
 	db string
 	// newTmux builds the tmux driver for a config path; nil means the real
@@ -107,6 +111,9 @@ func newRootCmd(d deps) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
 			case found:
 				opts = append(opts, app.WithActiveProject(name))
+			}
+			if dir, err := templates.Dir(); err == nil {
+				opts = append(opts, app.WithTemplates(dir, d.providers))
 			}
 			model, err := app.New(cfg, opts...)
 			if err != nil {

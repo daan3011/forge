@@ -59,14 +59,41 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - The viewer keys have their own modal scope (`transcript`), so `enter` inside the viewer never reaches Attach. Toggle, expand-all, follow and close are palette commands while the viewer is open.
   - **Tests**: table-driven parser tests on a fixture (split blocks, usage dedup, unknown/malformed lines, result pairing, wrappers, chars/4), cache tests (partial line, append, truncate, replace) and `Locate` tests. There are teatest flows for open → expand → expand all → close → enter attaches, live refresh, missing transcript, and the palette commands. `go test ./internal/sessions/transcript -run TestRealFiles -real ~/.claude/projects` parses every local transcript (63 files here, no errors).
   - **Limits**: subagent transcripts are not shown. The offset cache lives in memory per forge process; `transcript_offset` is left for the persistent cache in P5.3. A resize re-renders the markdown on the next 2 s poll (plain text until then).
-- [ ] P1.7 Session templates
+- [x] P1.7 Session templates — markdown files in `~/.config/forge/templates/` (`$XDG_CONFIG_HOME` respected). The logic is in `internal/templates`; the form steps are in `internal/tabs/sessions/templateflow.go`.
+  - **Format**: optional YAML front matter with `name` (default: file name), `description` and `variables`. Each variable is a bare name or `{name, description, default}`. The body is the prompt. `{name}` placeholders use lower-case letters, digits and `_`; `\{` gives a literal brace. Any `{var}` in the body counts, declared or not; declaring one only adds a description and a default.
+  - **Defaults**: implement-issue, fix-ci, review-pr, refactor, write-tests and explore are embedded. `EnsureDefaults` writes them only when the folder doesn't exist yet, so edits are kept and deleted defaults stay deleted. Broken files are skipped with an error toast (a warning in `forge new`).
+  - **Variables** are resolved by `templates.Resolve`:
+    - built-ins: `{repo}`, `{branch}` (`agent/<name>`), `{docs}` (`Project.DocsPath()`), and `{issue}` / `{pr}` from the ref
+    - then a `ContextProvider` per ref, from a `Registry` keyed by link kind (`plane_issue`, `github_pr`)
+    - then front-matter defaults
+    - explicit values (form fields, `--var`) always win
+    
+    What's left is asked for in the form, one field per variable (multi-line for `*_body` / `*_log`). The registry is **empty for now**: P2.1 and P3.1 register providers. Until then, the issue/PR title and body are typed in, and that manual fallback stays for sessions with no ticket.
+  - **Form** (`n`):
+    - The template picker sits in the main form, with a live preview beside it. The preview is rendered in the tab's `View`, not as a huh Note, because `Note.DescriptionFunc` runs in a command and races the input fields. It shows the description and the body, with built-ins filled in and the rest left as `{var}`.
+    - With a template chosen, the prompt field is hidden. The steps after it are chained dialogs:
+      1. Issue / PR refs, only those the template uses and the request doesn't already carry.
+      2. Resolve, in a `tea.Cmd`. A provider error shows as an info toast and its variables fall back to fields.
+      3. The missing variables.
+      4. The rendered prompt, editable.
+    - Esc at any step cancels. `sessions.default_template` is pre-selected.
+    - `NewRequest{Opts, Refs, Vars}` is the entry point P1.9 / P2.8 call with a ref or a failing log. `StartOpts` is unchanged.
+  - **`forge new`**: new flags `--template`, `--issue`, `--pr` and `--var name=value` (repeatable). Without a terminal, missing variables are an error that names them. An explicit `--prompt` wins over the template, which is then only recorded. An unknown template name is an error.
+  - **Palette**: "Edit templates" (global) creates the folder if needed, then opens it in `$VISUAL` / `$EDITOR` via `tea.ExecProcess`.
+  - **Tests**:
+    - table tests for parse / render / load / defaults / resolve
+    - teatest done-when (`TestImplementIssueFillsPromptFromProvider`): a fake `plane_issue` provider, implement-issue + PROJ-123, and the prompt holds its title and body
+    - a manual-variables flow and cancel
+    - CLI flag tests and the palette command
 - [ ] P1.8 Waiting notifications
 - [ ] P1.9 Session ↔ issue/PR links
+  - Note (from P1.7): StartSessionFrom opens the form with `sessionstab.NewRequest{Refs: {plane_issue|github_pr: ref}}`, so the template skips asking for it.
 - [ ] P1.10 Auto-archive
 
 ## Phase 2 — GitHub
 
 - [ ] P2.1 PR list & sections
+  - TODO (from P1.7): register a `templates.ContextProvider` for `github_pr` (fills `{pr_title}`, `{pr_body}`) through `app.WithTemplates` / `deps.providers`.
 - [ ] P2.2 PR detail pane
 - [ ] P2.3 PR quick actions
 - [ ] P2.4 Review queue & diff
@@ -78,6 +105,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 ## Phase 3 — Plane
 
 - [ ] P3.1 Plane client
+  - TODO (from P1.7): register a `templates.ContextProvider` for `plane_issue` (fills `{issue_title}`, `{issue_body}`) through `app.WithTemplates` / `deps.providers`.
 - [ ] P3.2 Issue list view
 - [ ] P3.3 Kanban board
 - [ ] P3.4 Create & edit

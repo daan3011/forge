@@ -17,6 +17,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/tabs"
+	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
 )
@@ -42,6 +43,12 @@ type Deps struct {
 	Sessions sessions.API
 	// Live delivers `forge hook` pings (P1.4); nil when nothing listens.
 	Live <-chan live.Ping
+	// TemplatesDir is the session templates folder (P1.7), created with
+	// the defaults on first use; "" offers no templates.
+	TemplatesDir string
+	// Providers resolve {issue_*} / {pr_*} template variables; nil has
+	// none, so those are asked for in the form.
+	Providers *templates.Registry
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

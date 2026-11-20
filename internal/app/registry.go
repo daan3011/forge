@@ -80,6 +80,14 @@ func (m Model) paletteItems() []item {
 			run: func(m Model) (Model, tea.Cmd) { return m.openSessions() },
 		},
 	}
+	if m.templatesDir != "" {
+		dir := m.templatesDir
+		items = append(items, item{
+			id: "templates_edit", title: "Edit templates", group: groupCommands,
+			detail: "session templates in $EDITOR",
+			run:    func(m Model) (Model, tea.Cmd) { return m, editTemplates(dir) },
+		})
+	}
 
 	// Commands of the active tab.
 	if len(m.tabs) > 0 {
