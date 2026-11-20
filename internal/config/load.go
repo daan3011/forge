@@ -19,10 +19,10 @@ var defaultTemplate []byte
 // Template returns the commented default config written on first run.
 func Template() []byte { return append([]byte(nil), defaultTemplate...) }
 
-// Path returns the config file location: $XDG_CONFIG_HOME/forge/config.yaml,
-// or ~/.config/forge/config.yaml. It deliberately ignores os.UserConfigDir,
-// which points at ~/Library/Application Support on macOS.
-func Path() (string, error) {
+// Dir returns forge's config directory: $XDG_CONFIG_HOME/forge, or
+// ~/.config/forge. It deliberately ignores os.UserConfigDir, which points at
+// ~/Library/Application Support on macOS.
+func Dir() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -31,7 +31,26 @@ func Path() (string, error) {
 		}
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "forge", "config.yaml"), nil
+	return filepath.Join(dir, "forge"), nil
+}
+
+// Path returns the config file location: Dir()/config.yaml.
+func Path() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "config.yaml"), nil
+}
+
+// TmuxConfPath returns the config file of forge's tmux server:
+// Dir()/tmux.conf.
+func TmuxConfPath() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "tmux.conf"), nil
 }
 
 // EnsureExists writes the default template to path if no file is there yet.

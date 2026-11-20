@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/daan3011/forge/internal/shell"
 )
 
 // runner runs one tmux invocation (global flags included in args), feeding
@@ -53,8 +55,9 @@ type Option func(*Exec)
 // throwaway name; never pass "default".
 func WithSocket(name string) Option { return func(e *Exec) { e.socket = name } }
 
-// WithConfig passes -f path to tmux (default: tmux's own lookup, i.e. the
-// user's ~/.tmux.conf). It only matters when a command starts the server.
+// WithConfig sets the config file passed as -f to every invocation; it is
+// read by whichever call starts the server. Without it forge passes
+// /dev/null, so tmux never falls back to ~/.tmux.conf or /etc/tmux.conf.
 func WithConfig(path string) Option { return func(e *Exec) { e.config = path } }
 
 // WithBinary overrides the tmux executable (default "tmux" on $PATH).
@@ -77,26 +80,64 @@ func New(opts ...Option) *Exec {
 // Socket is the socket name every call uses.
 func (e *Exec) Socket() string { return e.socket }
 
-// global is the flags that start every invocation.
-func (e *Exec) global() []string {
-	g := []string{"-L", e.socket}
-	if e.config != "" {
-		g = append(g, "-f", e.config)
+// Config is the config file forge's server is started with.
+func (e *Exec) Config() string {
+	if e.config == "" {
+		return os.DevNull
 	}
-	return g
+	return e.config
+}
+
+// base is the flags that start every invocation on forge's server: its own
+// socket and its own config file, so the server never reads ~/.tmux.conf.
+// Every command for forge's server is built from it.
+func (e *Exec) base() []string {
+	return []string{"-L", e.socket, "-f", e.Config()}
 }
 
 func (e *Exec) tmux(ctx context.Context, args ...string) (string, error) {
-	return e.r.run(ctx, e.bin, append(e.global(), args...), "")
+	return e.r.run(ctx, e.bin, append(e.base(), args...), "")
 }
 
 // tmuxIn is tmux with stdin.
 func (e *Exec) tmuxIn(ctx context.Context, stdin string, args ...string) (string, error) {
-	return e.r.run(ctx, e.bin, append(e.global(), args...), stdin)
+	return e.r.run(ctx, e.bin, append(e.base(), args...), stdin)
 }
 
-// KillServer stops forge's tmux server (every agent window). Used by tests
-// on throwaway sockets; a server that isn't running is not an error.
+// outer runs tmux against the server named by $TMUX: the user's own tmux,
+// when forge runs inside it. It is the one exception to base(): only the
+// popup path uses it, and the command shown in that popup is built from
+// base() again.
+func (e *Exec) outer(ctx context.Context, args ...string) (string, error) {
+	return e.r.run(ctx, e.bin, args, "")
+}
+
+// Version is the tmux version (`tmux -V`). Output it can't parse counts as
+// a new version.
+func (e *Exec) Version(ctx context.Context) (Version, error) {
+	out, err := e.tmux(ctx, "-V")
+	if err != nil {
+		return Version{}, err
+	}
+	if v, ok := parseVersion(out); ok {
+		return v, nil
+	}
+	return Version{Major: 99}, nil
+}
+
+// ListAll implements Driver.
+func (e *Exec) ListAll(ctx context.Context) ([]Target, error) {
+	out, err := e.tmux(ctx, "list-windows", "-a", "-F", allWindowsFormat)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return parseTargets(out)
+}
+
+// KillServer implements Driver.
 func (e *Exec) KillServer(ctx context.Context) error {
 	if _, err := e.tmux(ctx, "kill-server"); err != nil && !errors.Is(err, ErrNotFound) {
 		return err
@@ -304,26 +345,104 @@ func (e *Exec) CapturePane(ctx context.Context, t Target, lines int) (string, er
 	return LastLines(out, lines), nil
 }
 
+// popupMinVersion is the first tmux with display-popup.
+var popupMinVersion = Version{Major: 3, Minor: 2}
+
+// OuterMdWarning is Attachment.Warning when the outer tmux binds M-d itself.
+const OuterMdWarning = "your ~/.tmux.conf binds M-d; your tmux will catch it before forge's popup. " +
+	"Remove that binding (e.g. `unbind -n M-d`) and reload your tmux config."
+
+// attachMode decides how to show a window: switch the client when forge runs
+// inside its own server, a popup of the outer tmux when inside another one
+// that supports it, otherwise exec an attach in the current terminal.
+// popupOK is only called in the outer-tmux case.
+func attachMode(tmuxEnv, socket string, popupOK func() bool) AttachMode {
+	switch {
+	case onSocket(tmuxEnv, socket):
+		return AttachSwitched
+	case tmuxEnv != "" && popupOK():
+		return AttachPopup
+	default:
+		return AttachExec
+	}
+}
+
 // Attach implements Driver.
-func (e *Exec) Attach(ctx context.Context, t Target) (*exec.Cmd, error) {
+func (e *Exec) Attach(ctx context.Context, t Target) (Attachment, error) {
 	_, ok, err := e.window(ctx, t)
 	if err != nil {
-		return nil, err
+		return Attachment{}, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, t)
+		return Attachment{}, fmt.Errorf("%w: %s", ErrNotFound, t)
 	}
-	if onSocket(e.getenv("TMUX"), e.socket) {
+	popupOK := func() bool {
+		v, err := e.Version(ctx)
+		return err == nil && v.AtLeast(popupMinVersion.Major, popupMinVersion.Minor)
+	}
+	switch attachMode(e.getenv("TMUX"), e.socket, popupOK) {
+	case AttachSwitched:
 		_, err := e.tmux(ctx, "select-window", "-t", t.String(), ";", "switch-client", "-t", sessionTarget(t.Session))
-		return nil, err
+		return Attachment{Mode: AttachSwitched}, err
+	case AttachPopup:
+		return e.popup(ctx, t), nil
+	default:
+		return Attachment{Mode: AttachExec, Cmd: e.attachCmd(ctx, t)}, nil
 	}
-	args := append(e.global(), "select-window", "-t", t.String(), ";", "attach-session", "-t", sessionTarget(t.Session))
-	// ctx bounds the lookup above, not the attach: it lasts until detach.
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), e.bin, args...)
-	// From inside the user's own tmux, attaching would be refused as
-	// nesting; forge's server is a different one, so drop the markers.
-	cmd.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool {
+}
+
+// attachArgs selects t and attaches to its session (after base()).
+func (e *Exec) attachArgs(t Target) []string {
+	return append(e.base(), "select-window", "-t", t.String(), ";", "attach-session", "-t", sessionTarget(t.Session))
+}
+
+// attachCmd attaches in the current terminal, for tea.ExecProcess.
+func (e *Exec) attachCmd(ctx context.Context, t Target) *exec.Cmd {
+	// ctx bounds the lookup, not the attach: it lasts until detach.
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), e.bin, e.attachArgs(t)...)
+	// From inside the user's own tmux (only on tmux < 3.2, else it's a popup)
+	// attaching would be refused as nesting; forge's server is a different
+	// one, so drop the markers.
+	cmd.Env = withoutTmuxEnv(os.Environ())
+	return cmd
+}
+
+// popup shows t in a display-popup of the outer tmux. display-popup blocks
+// until the popup closes, so the caller runs Cmd in the background while
+// forge stays on screen behind it.
+func (e *Exec) popup(ctx context.Context, t Target) Attachment {
+	bin := e.bin
+	if p, err := exec.LookPath(bin); err == nil {
+		bin = p
+	}
+	script := "env -u TMUX -u TMUX_PANE " + shell.Join(append([]string{bin}, e.attachArgs(t)...)...)
+	// The popup belongs to the outer server, so this command is the one place
+	// that keeps $TMUX and has no -L.
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), e.bin, "display-popup", "-E", "-w", "90%", "-h", "90%", script)
+	a := Attachment{Mode: AttachPopup, Cmd: cmd}
+	if e.outerBindsMd(ctx) {
+		a.Warning = OuterMdWarning
+	}
+	return a
+}
+
+// outerBindsMd reports whether the outer tmux binds M-d in its root table,
+// which would catch the key before the popup's forge client sees it.
+func (e *Exec) outerBindsMd(ctx context.Context) bool {
+	out, err := e.outer(ctx, "list-keys", "-T", "root", "M-d")
+	if err != nil {
+		return false
+	}
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, "M-d") {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutTmuxEnv(env []string) []string {
+	return slices.DeleteFunc(env, func(kv string) bool {
 		return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=")
 	})
-	return cmd, nil
 }

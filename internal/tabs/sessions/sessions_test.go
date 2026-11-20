@@ -15,6 +15,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
@@ -30,6 +31,40 @@ type fakeSvc struct {
 	kills    []agent.KillOpts
 	previews int
 	dirty    bool
+
+	windows  []tmux.Target
+	restarts int
+	conf     string
+	resets   int
+}
+
+func (f *fakeSvc) TmuxWindows(context.Context) ([]tmux.Target, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.windows), nil
+}
+
+func (f *fakeSvc) RestartTmux(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.restarts++
+	f.windows = nil
+	return nil
+}
+
+func (f *fakeSvc) TmuxConfig() string { return f.conf }
+
+func (f *fakeSvc) ResetTmuxConfig() (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resets++
+	return f.conf + ".bak.20261120-140509", nil
+}
+
+func (f *fakeSvc) tmuxCounts() (restarts, resets int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.restarts, f.resets
 }
 
 func newFakeSvc(rows ...agent.Row) *fakeSvc {
@@ -154,6 +189,8 @@ func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		toast = "err: " + msg.Err.Error()
 	case tea.WindowSizeMsg:
 		return h, nil
+	case runMsg:
+		return h, msg()
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return h, tea.Quit
@@ -176,6 +213,9 @@ func (h *host) View() tea.View {
 	h.mu.Unlock()
 	return tea.NewView(v)
 }
+
+// runMsg makes the host run a command, standing in for the palette.
+type runMsg func() tea.Cmd
 
 // screen drives a host under teatest.
 type screen struct {
@@ -457,4 +497,126 @@ func TestAgo(t *testing.T) {
 	if Ago(now, time.Time{}) != "—" {
 		t.Error("zero time")
 	}
+}
+
+func tmuxCommand(t *testing.T, tab *Tab, id string) func() tea.Cmd {
+	t.Helper()
+	for _, c := range tab.Commands() {
+		if c.ID == id {
+			return c.Run
+		}
+	}
+	t.Fatalf("no palette command %q", id)
+	return nil
+}
+
+func TestTmuxRestartAsksWhenAgentsRun(t *testing.T) {
+	svc := newFakeSvc(row("alpha", store.StatusWorking))
+	svc.conf = "/cfg/forge/tmux.conf"
+	svc.windows = []tmux.Target{{Session: "forge", Window: "alpha"}, {Session: "forge", Window: "beta"}}
+	tab := newTab(svc)
+	sc := newScreen(t, &host{tab: tab})
+	tm := sc.tm
+	sc.wait(t, "alpha")
+
+	tm.Send(runMsg(tmuxCommand(t, tab, "tmux_restart")))
+	sc.wait(t, "Restart forge's tmux server?", "alpha, beta")
+	tm.Send(press("n"))
+	sc.until(t, "dialog to close", func(frame string, _ []string) bool {
+		return !strings.Contains(frame, "Restart forge's tmux server?")
+	})
+	tm.Send(runMsg(tmuxCommand(t, tab, "tmux_restart")))
+	sc.wait(t, "Restart forge's tmux server?")
+	tm.Send(press("y"))
+	sc.toast(t, "ok: forge tmux server restarted — stopped sessions resume")
+
+	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	if restarts, _ := svc.tmuxCounts(); restarts != 1 {
+		t.Errorf("restarts = %d, want 1 (declined once)", restarts)
+	}
+}
+
+func TestTmuxRestartWithoutAgentsJustRestarts(t *testing.T) {
+	svc := newFakeSvc()
+	svc.conf = "/cfg/forge/tmux.conf"
+	tab := newTab(svc)
+	tab.Update(tab.Refresh()())
+	msg := tmuxCommand(t, tab, "tmux_restart")()()
+	_, cmd := tab.Update(msg)
+	if tab.dialog != nil {
+		t.Fatal("asked although no agent runs")
+	}
+	_, cmd = tab.Update(cmd())
+	if restarts, _ := svc.tmuxCounts(); restarts != 1 {
+		t.Errorf("restarts = %d", restarts)
+	}
+	found := false
+	for _, m := range drain(cmd) {
+		if s, ok := m.(ui.SuccessMsg); ok && strings.Contains(s.Text, "/cfg/forge/tmux.conf") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no success toast naming the config")
+	}
+}
+
+func TestTmuxEditConfigOffersRestart(t *testing.T) {
+	svc := newFakeSvc(row("alpha", store.StatusWorking))
+	svc.conf = "/cfg/forge/tmux.conf"
+	svc.windows = []tmux.Target{{Session: "forge", Window: "alpha"}}
+	tab := newTab(svc)
+	if cmd := tmuxCommand(t, tab, "tmux_config")(); cmd == nil {
+		t.Fatal("edit should exec the editor")
+	}
+	sc := newScreen(t, &host{tab: tab})
+	tm := sc.tm
+	sc.wait(t, "alpha")
+	// tea.ExecProcess reports back with tmuxEditedMsg once the editor exits.
+	tm.Send(tmuxEditedMsg{})
+	sc.wait(t, "to apply the new config?")
+	tm.Send(press("n"))
+	sc.toast(t, "info: new tmux config applies after a restart")
+	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	if restarts, _ := svc.tmuxCounts(); restarts != 0 {
+		t.Errorf("restarts = %d", restarts)
+	}
+}
+
+func TestTmuxResetConfig(t *testing.T) {
+	svc := newFakeSvc(row("alpha", store.StatusWorking))
+	svc.conf = "/cfg/forge/tmux.conf"
+	tab := newTab(svc)
+	sc := newScreen(t, &host{tab: tab})
+	tm := sc.tm
+	sc.wait(t, "alpha")
+	tm.Send(runMsg(tmuxCommand(t, tab, "tmux_config_reset")))
+	sc.wait(t, "Reset forge's tmux config to the default?")
+	tm.Send(press("y"))
+	sc.toast(t, "info: tmux config reset to forge's default — old file kept as tmux.conf.bak.20261120-140509")
+	// No agents run: the server restarts without asking.
+	sc.toast(t, "ok: tmux config saved")
+	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	if restarts, resets := svc.tmuxCounts(); restarts != 1 || resets != 1 {
+		t.Errorf("restarts, resets = %d, %d", restarts, resets)
+	}
+}
+
+// drain runs cmd and any batch it returns, collecting the messages.
+func drain(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if b, ok := msg.(tea.BatchMsg); ok {
+		var out []tea.Msg
+		for _, c := range b {
+			out = append(out, drain(c)...)
+		}
+		return out
+	}
+	return []tea.Msg{msg}
 }

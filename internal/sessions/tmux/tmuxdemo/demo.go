@@ -1,14 +1,13 @@
 // Package tmuxdemo is the `forge demo tmux` program: it starts bash in a
 // window on forge's tmux server, previews it with capture-pane, and attaches
-// on Enter. Detach (Alt+d with the recommended ~/.tmux.conf, or prefix d)
-// to land back here.
+// on Enter (in a popup when run inside your own tmux). Alt+d detaches back
+// here.
 package tmuxdemo
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -37,7 +36,7 @@ type (
 		alive bool
 	}
 	pollMsg     struct{ gen int }
-	attachMsg   struct{ cmd *exec.Cmd } // nil: switched in place
+	attachMsg   struct{ a tmux.Attachment }
 	detachedMsg struct{ err error }
 	killedMsg   struct{}
 	errMsg      struct{ err error }
@@ -55,6 +54,7 @@ type Model struct {
 	alive   bool
 	preview string
 	status  string
+	warning string
 	err     error
 	gen     int // invalidates stale polls after restart/kill
 	w, h    int
@@ -147,14 +147,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview, m.alive = msg.text, msg.alive
 		return m, poll(m.gen)
 	case attachMsg:
-		if msg.cmd == nil {
+		m.warning = msg.a.Warning
+		switch msg.a.Mode {
+		case tmux.AttachSwitched:
 			m.status = "switched this tmux client to " + m.target.String()
 			return m, nil
+		case tmux.AttachPopup:
+			// display-popup blocks until the popup closes; forge keeps the
+			// terminal and stays visible behind it.
+			m.status = "opened " + m.target.String() + " in a popup of your tmux — Alt+d closes it"
+			cmd := msg.a.Cmd
+			return m, func() tea.Msg { return detachedMsg{cmd.Run()} }
+		default:
+			return m, tea.ExecProcess(msg.a.Cmd, func(err error) tea.Msg { return detachedMsg{err} })
 		}
-		return m, tea.ExecProcess(msg.cmd, func(err error) tea.Msg { return detachedMsg{err} })
 	case detachedMsg:
 		m.err = msg.err
 		m.status = "back in forge ✓ (detached from " + m.target.String() + ")"
+		m.gen++ // the preview refresh below restarts polling
 		return m, m.capture()
 	case killedMsg:
 		m.ready, m.alive, m.preview = false, false, ""
@@ -185,11 +195,11 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			c, cancel := ctx()
 			defer cancel()
-			cmd, err := d.Attach(c, t)
+			a, err := d.Attach(c, t)
 			if err != nil {
 				return errMsg{err}
 			}
-			return attachMsg{cmd}
+			return attachMsg{a}
 		}
 	case key.Matches(msg, k.Restart):
 		m.ready = false
@@ -233,6 +243,9 @@ func (m Model) render() string {
 	status := th.Body.Render(m.status)
 	if m.err != nil {
 		status = ui.Tint(th.Error, "error: "+m.err.Error())
+	}
+	if m.warning != "" {
+		status += "\n" + ui.Tint(th.Error, "warning: "+m.warning)
 	}
 	preview := m.preview
 	if preview == "" {

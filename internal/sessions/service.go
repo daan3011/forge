@@ -80,6 +80,10 @@ type Config struct {
 	NewID func() (string, error)
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// TmuxConf is the config file forge's tmux server starts with, and
+	// TmuxColors the colours its default is rendered with.
+	TmuxConf   string
+	TmuxColors tmux.ConfigColors
 }
 
 // Service starts, lists, previews and kills agent sessions. It does blocking
@@ -426,6 +430,31 @@ func (s *Service) Delete(ctx context.Context, x store.Session) error {
 	return os.RemoveAll(s.SessionDir(x.Name))
 }
 
+// TmuxWindows lists every agent window on forge's tmux server; none when
+// the server isn't running.
+func (s *Service) TmuxWindows(ctx context.Context) ([]tmux.Target, error) {
+	return s.c.Tmux.ListAll(ctx)
+}
+
+// RestartTmux stops forge's tmux server and every agent window on it; the
+// next session start brings it back with the current config. The stopped
+// sessions read as dead on the next list refresh and stay resumable.
+func (s *Service) RestartTmux(ctx context.Context) error {
+	return s.c.Tmux.KillServer(ctx)
+}
+
+// TmuxConfig is the config file forge's tmux server uses.
+func (s *Service) TmuxConfig() string { return s.c.TmuxConf }
+
+// ResetTmuxConfig replaces the tmux config with forge's default, keeping
+// the old file as a timestamped backup whose path it returns.
+func (s *Service) ResetTmuxConfig() (backup string, err error) {
+	if s.c.TmuxConf == "" {
+		return "", errors.New("sessions: no tmux config path")
+	}
+	return tmux.ResetConfig(s.c.TmuxConf, s.c.TmuxColors, s.c.Now())
+}
+
 // API is what the UI (the Sessions tab, `forge new`) needs from the session
 // service; *Service implements it and tests fake it.
 type API interface {
@@ -434,6 +463,15 @@ type API interface {
 	Preview(ctx context.Context, x store.Session, lines int) (string, error)
 	Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error)
 	Delete(ctx context.Context, x store.Session) error
+	TmuxControl
+}
+
+// TmuxControl manages forge's tmux server and its config file.
+type TmuxControl interface {
+	TmuxWindows(ctx context.Context) ([]tmux.Target, error)
+	RestartTmux(ctx context.Context) error
+	TmuxConfig() string
+	ResetTmuxConfig() (backup string, err error)
 }
 
 var _ API = (*Service)(nil)

@@ -6,8 +6,8 @@
 // [A-Za-z0-9_-] so they can never contain tmux target syntax, and every
 // target is written in exact-match form ("=session:=window").
 //
-// Detaching back to forge uses whatever the user's ~/.tmux.conf binds (the
-// spec recommends `bind -n M-d detach-client`); forge does not inject keys.
+// The server is started with forge's own config file (`-f`, see
+// EnsureConfig), never ~/.tmux.conf: no prefix, M-d detaches back to forge.
 package tmux
 
 import (
@@ -98,13 +98,41 @@ type Driver interface {
 	// CapturePane returns the last lines lines of the window's pane (the
 	// visible screen if lines <= 0), without trailing blank lines.
 	CapturePane(ctx context.Context, t Target, lines int) (string, error)
-	// Attach shows the window to the user. Inside a client of forge's own
-	// tmux server it switches that client and returns nil. Otherwise it
-	// returns a command to run with tea.ExecProcess; it exits when the user
-	// detaches. Its stdio is left unset for the caller (ExecProcess fills it).
-	// ctx bounds only the lookup and switch; cancelling it later does not
-	// kill the returned command.
-	Attach(ctx context.Context, t Target) (*exec.Cmd, error)
+	// Attach shows the window to the user; see AttachMode for the three
+	// ways. ctx bounds only the lookup and switch; cancelling it later does
+	// not kill the returned command.
+	Attach(ctx context.Context, t Target) (Attachment, error)
+	// ListAll returns every agent window on the server; no server gives
+	// nil, nil.
+	ListAll(ctx context.Context) ([]Target, error)
+	// KillServer stops the server and every window on it; a server that
+	// isn't running is not an error.
+	KillServer(ctx context.Context) error
+}
+
+// AttachMode is how Attach shows a window.
+type AttachMode int
+
+const (
+	// AttachSwitched means forge runs inside its own tmux server; the client was
+	// switched in place and there is nothing to run.
+	AttachSwitched AttachMode = iota
+	// AttachExec means: run Cmd with tea.ExecProcess; it attaches in the current
+	// terminal and exits when the user detaches. Its stdio is left unset.
+	AttachExec
+	// AttachPopup means forge runs inside the user's own tmux; Cmd opens the
+	// window in a display-popup of that tmux and exits when the popup
+	// closes. Run it without releasing the terminal (forge stays visible
+	// behind the popup).
+	AttachPopup
+)
+
+// Attachment is the result of Attach.
+type Attachment struct {
+	Mode AttachMode
+	Cmd  *exec.Cmd // nil for AttachSwitched
+	// Warning, if set, is a one-line notice to show the user.
+	Warning string
 }
 
 // SanitizeName maps s to a safe tmux name: runs of characters outside

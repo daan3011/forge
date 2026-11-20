@@ -3,6 +3,8 @@ package tmux
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"reflect"
 	"slices"
 	"strings"
@@ -58,26 +60,51 @@ func (r *recorder) argv() [][]string {
 	return out
 }
 
-func TestEveryCallUsesForgeSocket(t *testing.T) {
+func TestEveryCallUsesForgeSocketAndConfig(t *testing.T) {
 	ctx := context.Background()
-	e, r := newRec(reply{sub: "has-session", stderr: "can't find session: p"})
-	tg := Target{Session: "p", Window: "w"}
-	_, _ = e.EnsureSession(ctx, "p")
-	_, _ = e.NewWindow(ctx, "p", "w", "/tmp", []string{"bash"}, nil)
-	_, _ = e.ListWindows(ctx, "p")
-	_, _ = e.WindowAlive(ctx, tg)
-	_ = e.KillWindow(ctx, tg)
-	_ = e.SendKeys(ctx, tg, "hi", true)
-	_, _ = e.CapturePane(ctx, tg, 5)
-	_, _ = e.Attach(ctx, tg)
-	_ = e.KillServer(ctx)
-	if len(r.calls) == 0 {
-		t.Fatal("no calls recorded")
-	}
-	for _, c := range r.calls {
-		if c.bin != "tmux" || len(c.args) < 2 || c.args[0] != "-L" || c.args[1] != "forge" {
-			t.Errorf("call without -L forge: %s %v", c.bin, c.args)
-		}
+	for _, tc := range []struct {
+		name string
+		opts []Option
+		conf string
+	}{
+		{"configured", []Option{WithConfig("/home/me/.config/forge/tmux.conf")}, "/home/me/.config/forge/tmux.conf"},
+		{"default never reads ~/.tmux.conf", nil, os.DevNull},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &recorder{replies: []reply{
+				{sub: "has-session", stderr: "can't find session: p"},
+				{sub: "list-windows -t", out: "@1\t2\tw\t0\t\tbash\n"},
+			}}
+			e := New(append(tc.opts, withRunner(r), WithGetenv(func(string) string { return "" }))...)
+			tg := Target{Session: "p", Window: "w"}
+			_, _ = e.EnsureSession(ctx, "p")
+			_, _ = e.NewWindow(ctx, "p", "w2", "/tmp", []string{"bash"}, nil)
+			_, _ = e.ListWindows(ctx, "p")
+			_, _ = e.ListAll(ctx)
+			_, _ = e.WindowAlive(ctx, tg)
+			_ = e.KillWindow(ctx, tg)
+			_ = e.SendKeys(ctx, tg, "hi", true)
+			_ = e.PasteText(ctx, tg, "hi")
+			_, _ = e.CapturePane(ctx, tg, 5)
+			_, _ = e.Version(ctx)
+			_ = e.KillServer(ctx)
+			a, err := e.Attach(ctx, tg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(r.calls) < 12 {
+				t.Fatalf("only %d calls recorded", len(r.calls))
+			}
+			want := []string{"-L", "forge", "-f", tc.conf}
+			for _, c := range r.calls {
+				if c.bin != "tmux" || len(c.args) < 4 || !reflect.DeepEqual(c.args[:4], want) {
+					t.Errorf("call without %q: %s %q", want, c.bin, c.args)
+				}
+			}
+			if !reflect.DeepEqual(a.Cmd.Args[1:5], want) {
+				t.Errorf("attach cmd = %q", a.Cmd.Args)
+			}
+		})
 	}
 }
 
@@ -90,7 +117,7 @@ func TestEnsureSession(t *testing.T) {
 		if err != nil || name != "my-proj" {
 			t.Fatalf("= %q, %v", name, err)
 		}
-		want := [][]string{{"-L", "forge", "has-session", "-t", "=my-proj:"}}
+		want := [][]string{{"-L", "forge", "-f", "/dev/null", "has-session", "-t", "=my-proj:"}}
 		if !reflect.DeepEqual(r.argv(), want) {
 			t.Errorf("calls = %q", r.argv())
 		}
@@ -102,7 +129,7 @@ func TestEnsureSession(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []string{
-			"-L", "forge", "new-session", "-d", "-s", "proj", "-n", "_forge", ";",
+			"-L", "forge", "-f", "/dev/null", "new-session", "-d", "-s", "proj", "-n", "_forge", ";",
 			"set-option", "-gw", "remain-on-exit", "on", ";",
 			"set-option", "-gw", "allow-rename", "off", ";",
 			"set-option", "-gw", "automatic-rename", "off",
@@ -151,7 +178,7 @@ func TestNewWindowArgs(t *testing.T) {
 		t.Errorf("target = %+v", tg)
 	}
 	want := []string{
-		"-L", "forge", "new-window", "-d", "-t", "=proj:", "-n", "Fix-login", "-P", "-F", "#{window_id}",
+		"-L", "forge", "-f", "/dev/null", "new-window", "-d", "-t", "=proj:", "-n", "Fix-login", "-P", "-F", "#{window_id}",
 		"-c", "/work/tree", "-e", "A=x=y", "-e", "Z=1", "--", "claude", "--session-id", "a b",
 	}
 	if len(r.calls) != 2 || !reflect.DeepEqual(r.calls[1].args, want) {
@@ -187,8 +214,8 @@ func TestSendKeysArgs(t *testing.T) {
 		enter bool
 		want  []string
 	}{
-		{"-n ; echo", false, []string{"-L", "forge", "send-keys", "-t", "=p:=w", "-l", "--", "-n ; echo"}},
-		{"ls", true, []string{"-L", "forge", "send-keys", "-t", "=p:=w", "-l", "--", "ls", ";", "send-keys", "-t", "=p:=w", "Enter"}},
+		{"-n ; echo", false, []string{"-L", "forge", "-f", "/dev/null", "send-keys", "-t", "=p:=w", "-l", "--", "-n ; echo"}},
+		{"ls", true, []string{"-L", "forge", "-f", "/dev/null", "send-keys", "-t", "=p:=w", "-l", "--", "ls", ";", "send-keys", "-t", "=p:=w", "Enter"}},
 	}
 	for _, tt := range tests {
 		e, r := newRec()
@@ -212,7 +239,7 @@ func TestCapturePane(t *testing.T) {
 	if got != "$ echo hi\nhi\n$" {
 		t.Errorf("got %q", got)
 	}
-	want := []string{"-L", "forge", "capture-pane", "-p", "-J", "-t", "=p:=w", "-S", "-3"}
+	want := []string{"-L", "forge", "-f", "/dev/null", "capture-pane", "-p", "-J", "-t", "=p:=w", "-S", "-3"}
 	if !reflect.DeepEqual(r.calls[0].args, want) {
 		t.Errorf("args = %q", r.calls[0].args)
 	}
@@ -257,26 +284,41 @@ func TestAttach(t *testing.T) {
 	ctx := context.Background()
 	tg := Target{Session: "proj", Window: "agent"}
 	list := reply{sub: "list-windows", out: "@1\t2\tagent\t0\t\tclaude\n"}
-
-	t.Run("outside tmux returns exec cmd", func(t *testing.T) {
-		t.Setenv("TMUX", "/tmp/tmux-501/default,1,0")
-		t.Setenv("TMUX_PANE", "%1")
-		r := &recorder{replies: []reply{list}}
-		e := New(withRunner(r), WithGetenv(func(string) string { return "" }))
-		cmd, err := e.Attach(ctx, tg)
-		if err != nil || cmd == nil {
-			t.Fatalf("= %v, %v", cmd, err)
-		}
-		want := []string{"tmux", "-L", "forge", "select-window", "-t", "=proj:=agent", ";", "attach-session", "-t", "=proj:"}
-		if !reflect.DeepEqual(cmd.Args, want) {
-			t.Errorf("args = %q", cmd.Args)
-		}
-		for _, kv := range cmd.Env {
+	const (
+		userTmux  = "/private/tmp/tmux-501/default,1,0"
+		forgeTmux = "/private/tmp/tmux-501/forge,9,0"
+	)
+	newAt := func(tmuxEnv string, replies ...reply) (*Exec, *recorder) {
+		r := &recorder{replies: append([]reply{list}, replies...)}
+		return New(withRunner(r), WithConfig("/cfg dir/it's tmux.conf"),
+			WithGetenv(func(string) string { return tmuxEnv })), r
+	}
+	noTmuxEnv := func(t *testing.T, env []string) {
+		t.Helper()
+		for _, kv := range env {
 			if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") {
 				t.Errorf("env keeps %s", kv)
 			}
 		}
-		if cmd.Stdin != nil || cmd.Stdout != nil {
+	}
+
+	t.Run("no TMUX execs attach", func(t *testing.T) {
+		t.Setenv("TMUX", userTmux) // forge's own env; must not leak into the attach
+		t.Setenv("TMUX_PANE", "%1")
+		e, r := newAt("")
+		a, err := e.Attach(ctx, tg)
+		if err != nil || a.Mode != AttachExec || a.Cmd == nil {
+			t.Fatalf("= %+v, %v", a, err)
+		}
+		want := []string{
+			"tmux", "-L", "forge", "-f", "/cfg dir/it's tmux.conf",
+			"select-window", "-t", "=proj:=agent", ";", "attach-session", "-t", "=proj:",
+		}
+		if !reflect.DeepEqual(a.Cmd.Args, want) {
+			t.Errorf("args = %q", a.Cmd.Args)
+		}
+		noTmuxEnv(t, a.Cmd.Env)
+		if a.Cmd.Stdin != nil || a.Cmd.Stdout != nil {
 			t.Error("stdio should be left for tea.ExecProcess")
 		}
 		if len(r.calls) != 1 {
@@ -288,36 +330,139 @@ func TestAttach(t *testing.T) {
 		r := &recorder{replies: []reply{list}}
 		e := New(withRunner(r), WithBinary("true"), WithGetenv(func(string) string { return "" }))
 		c, cancel := context.WithCancel(ctx)
-		cmd, err := e.Attach(c, tg)
+		a, err := e.Attach(c, tg)
 		cancel()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := cmd.Run(); err != nil {
+		if err := a.Cmd.Run(); err != nil {
 			t.Errorf("attach cmd killed by cancelled ctx: %v", err)
 		}
 	})
 
-	t.Run("inside user's tmux still execs", func(t *testing.T) {
-		r := &recorder{replies: []reply{list}}
-		e := New(withRunner(r), WithGetenv(func(string) string { return "/tmp/tmux-501/default,1,0" }))
-		cmd, err := e.Attach(ctx, tg)
-		if err != nil || cmd == nil {
-			t.Fatalf("= %v, %v", cmd, err)
+	t.Run("forge socket switches client", func(t *testing.T) {
+		e, r := newAt(forgeTmux)
+		a, err := e.Attach(ctx, tg)
+		if err != nil || a.Mode != AttachSwitched || a.Cmd != nil {
+			t.Fatalf("= %+v, %v; want switched", a, err)
 		}
-	})
-
-	t.Run("on forge socket switches client", func(t *testing.T) {
-		r := &recorder{replies: []reply{list}}
-		e := New(withRunner(r), WithGetenv(func(string) string { return "/private/tmp/tmux-501/forge,9,0" }))
-		cmd, err := e.Attach(ctx, tg)
-		if err != nil || cmd != nil {
-			t.Fatalf("= %v, %v; want nil cmd", cmd, err)
+		want := []string{
+			"-L", "forge", "-f", "/cfg dir/it's tmux.conf",
+			"select-window", "-t", "=proj:=agent", ";", "switch-client", "-t", "=proj:",
 		}
-		want := []string{"-L", "forge", "select-window", "-t", "=proj:=agent", ";", "switch-client", "-t", "=proj:"}
 		if len(r.calls) != 2 || !reflect.DeepEqual(r.calls[1].args, want) {
 			t.Errorf("calls = %q", r.argv())
 		}
+	})
+
+	t.Run("other tmux opens a popup", func(t *testing.T) {
+		e, r := newAt(userTmux, reply{sub: "-V", out: "tmux 3.8\n"}, reply{sub: "list-keys", stderr: "unknown key: M-d"})
+		a, err := e.Attach(ctx, tg)
+		if err != nil || a.Mode != AttachPopup || a.Cmd == nil {
+			t.Fatalf("= %+v, %v; want popup", a, err)
+		}
+		args := a.Cmd.Args
+		if slices.Contains(args, "-L") {
+			t.Errorf("popup must go to the outer tmux, not -L: %q", args)
+		}
+		if want := []string{"tmux", "display-popup", "-E", "-w", "90%", "-h", "90%"}; !reflect.DeepEqual(args[:len(want)], want) {
+			t.Errorf("args = %q", args)
+		}
+		script := args[len(args)-1]
+		if !strings.HasPrefix(script, "env -u TMUX -u TMUX_PANE '") {
+			t.Errorf("script = %q", script)
+		}
+		for _, sub := range []string{
+			`'-L' 'forge' '-f' '/cfg dir/it'\''s tmux.conf'`,
+			`'select-window' '-t' '=proj:=agent' ';' 'attach-session' '-t' '=proj:'`,
+		} {
+			if !strings.Contains(script, sub) {
+				t.Errorf("script %q lacks %q", script, sub)
+			}
+		}
+		if a.Cmd.Env != nil {
+			t.Error("popup needs the inherited $TMUX to reach the outer server")
+		}
+		if a.Warning != "" {
+			t.Errorf("warning = %q", a.Warning)
+		}
+		if got := r.calls[len(r.calls)-1].args; !reflect.DeepEqual(got, []string{"list-keys", "-T", "root", "M-d"}) {
+			t.Errorf("outer check = %q", got)
+		}
+	})
+
+	t.Run("popup script survives sh", func(t *testing.T) {
+		e, _ := newAt(userTmux, reply{sub: "-V", out: "tmux 3.8"})
+		a, err := e.Attach(ctx, tg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Echo the words sh sees after "env -u TMUX -u TMUX_PANE".
+		words := strings.TrimPrefix(a.Cmd.Args[len(a.Cmd.Args)-1], "env -u TMUX -u TMUX_PANE ")
+		out, err := exec.CommandContext(ctx, "sh", "-c", `printf '%s\n' `+words).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+		want := []string{
+			"-L", "forge", "-f", "/cfg dir/it's tmux.conf",
+			"select-window", "-t", "=proj:=agent", ";", "attach-session", "-t", "=proj:",
+		}
+		if len(got) != len(want)+1 || !reflect.DeepEqual(got[1:], want) {
+			t.Errorf("sh saw %q", got)
+		}
+	})
+
+	t.Run("outer M-d binding warns", func(t *testing.T) {
+		tests := []struct {
+			name string
+			keys reply
+			want string
+		}{
+			{"bound", reply{sub: "list-keys", out: "bind-key -T root M-d detach-client\n"}, OuterMdWarning},
+			{"success, empty output", reply{sub: "list-keys", out: ""}, ""},
+			{"success, blank lines", reply{sub: "list-keys", out: "\n\n"}, ""},
+			{"list-keys fails", reply{sub: "list-keys", stderr: "unknown key: M-d"}, ""},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				e, _ := newAt(userTmux, reply{sub: "-V", out: "tmux 3.4"}, tt.keys)
+				a, err := e.Attach(ctx, tg)
+				if err != nil || a.Mode != AttachPopup {
+					t.Fatalf("= %+v, %v", a, err)
+				}
+				if a.Warning != tt.want {
+					t.Errorf("warning = %q, want %q", a.Warning, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("M-d check only on the popup path", func(t *testing.T) {
+		for _, env := range []string{"", forgeTmux} {
+			e, r := newAt(env, reply{sub: "list-keys", out: "bind-key -T root M-d detach-client"})
+			a, _ := e.Attach(ctx, tg)
+			if a.Warning != "" {
+				t.Errorf("TMUX=%q: warning %q", env, a.Warning)
+			}
+			for _, c := range r.calls {
+				if slices.Contains(c.args, "list-keys") || slices.Contains(c.args, "-V") {
+					t.Errorf("TMUX=%q ran %q", env, c.args)
+				}
+			}
+		}
+	})
+
+	t.Run("old tmux nests with TMUX unset", func(t *testing.T) {
+		e, _ := newAt(userTmux, reply{sub: "-V", out: "tmux 3.1c"})
+		a, err := e.Attach(ctx, tg)
+		if err != nil || a.Mode != AttachExec || a.Cmd == nil {
+			t.Fatalf("= %+v, %v; want exec", a, err)
+		}
+		if !slices.Contains(a.Cmd.Args, "attach-session") || !slices.Contains(a.Cmd.Args, "-f") {
+			t.Errorf("args = %q", a.Cmd.Args)
+		}
+		noTmuxEnv(t, a.Cmd.Env)
 	})
 
 	t.Run("missing window", func(t *testing.T) {
@@ -326,6 +471,32 @@ func TestAttach(t *testing.T) {
 			t.Errorf("err = %v", err)
 		}
 	})
+}
+
+func TestAttachMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     string
+		popupOK bool
+		want    AttachMode
+	}{
+		{"no tmux", "", true, AttachExec},
+		{"forge socket", "/tmp/tmux-501/forge,1,0", true, AttachSwitched},
+		{"other socket", "/tmp/tmux-501/default,1,0", true, AttachPopup},
+		{"other socket, old tmux", "/tmp/tmux-501/default,1,0", false, AttachExec},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asked := false
+			got := attachMode(tt.env, "forge", func() bool { asked = true; return tt.popupOK })
+			if got != tt.want {
+				t.Errorf("= %v, want %v", got, tt.want)
+			}
+			if asked != (tt.want == AttachPopup || tt.name == "other socket, old tmux") {
+				t.Errorf("popupOK asked = %v", asked)
+			}
+		})
+	}
 }
 
 func TestInvalidTargetsNeverRunTmux(t *testing.T) {
@@ -366,12 +537,12 @@ func TestPasteText(t *testing.T) {
 	if slices.Contains(got.args, text) {
 		t.Errorf("text leaked into argv: %q", got.args)
 	}
-	buf := got.args[4]
+	buf := got.args[6]
 	if !strings.HasPrefix(buf, "forge-paste-") {
 		t.Fatalf("buffer name = %q", buf)
 	}
 	want := []string{
-		"-L", "forge", "load-buffer", "-b", buf, "-", ";",
+		"-L", "forge", "-f", "/dev/null", "load-buffer", "-b", buf, "-", ";",
 		"paste-buffer", "-p", "-d", "-b", buf, "-t", "=p:=w", ";",
 		"send-keys", "-t", "=p:=w", "Enter",
 	}

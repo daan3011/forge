@@ -20,6 +20,10 @@ type Fake struct {
 	// SwitchInPlace makes Attach behave as if forge ran inside a client of
 	// its own tmux server: it records the switch and returns a nil command.
 	SwitchInPlace bool
+	// Popup makes Attach behave as if forge ran inside the user's own tmux:
+	// it returns an AttachPopup whose command runs `true`, with Warning.
+	Popup   bool
+	Warning string
 
 	mu       sync.Mutex
 	sessions map[string][]*fakeWindow // in creation order
@@ -200,18 +204,48 @@ func (f *Fake) CapturePane(_ context.Context, t tmux.Target, lines int) (string,
 }
 
 // Attach implements tmux.Driver. Outside SwitchInPlace it returns a command
-// running `true`, so tea.ExecProcess returns at once (an instant detach).
-func (f *Fake) Attach(ctx context.Context, t tmux.Target) (*exec.Cmd, error) {
+// running `true`, so it returns at once (an instant detach).
+func (f *Fake) Attach(ctx context.Context, t tmux.Target) (tmux.Attachment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, err := f.mustFind(t); err != nil {
-		return nil, err
+		return tmux.Attachment{}, err
 	}
 	f.attached = append(f.attached, t)
-	if f.SwitchInPlace {
-		return nil, nil
+	switch {
+	case f.SwitchInPlace:
+		return tmux.Attachment{Mode: tmux.AttachSwitched}, nil
+	case f.Popup:
+		cmd := exec.CommandContext(context.WithoutCancel(ctx), "true")
+		return tmux.Attachment{Mode: tmux.AttachPopup, Cmd: cmd, Warning: f.Warning}, nil
 	}
-	return exec.CommandContext(context.WithoutCancel(ctx), "true"), nil
+	return tmux.Attachment{Mode: tmux.AttachExec, Cmd: exec.CommandContext(context.WithoutCancel(ctx), "true")}, nil
+}
+
+// ListAll implements tmux.Driver.
+func (f *Fake) ListAll(context.Context) ([]tmux.Target, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	names := make([]string, 0, len(f.sessions))
+	for s := range f.sessions {
+		names = append(names, s)
+	}
+	slices.Sort(names)
+	var out []tmux.Target
+	for _, s := range names {
+		for _, w := range f.sessions[s] {
+			out = append(out, tmux.Target{Session: s, Window: w.Name})
+		}
+	}
+	return out, nil
+}
+
+// KillServer implements tmux.Driver: every session and window goes away.
+func (f *Fake) KillServer(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sessions = map[string][]*fakeWindow{}
+	return nil
 }
 
 // SetOutput sets what CapturePane returns for t. Unknown targets are ignored.

@@ -19,6 +19,18 @@ func TestPath(t *testing.T) {
 	}
 }
 
+func TestTmuxConfPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/xdg")
+	if p, _ := TmuxConfPath(); p != "/xdg/forge/tmux.conf" {
+		t.Errorf("with XDG: %q", p)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "/home/me")
+	if p, _ := TmuxConfPath(); p != "/home/me/.config/forge/tmux.conf" {
+		t.Errorf("without XDG: %q", p)
+	}
+}
+
 func TestLoadOrCreate(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

@@ -21,14 +21,20 @@ import (
 
 // newSessionService builds the real session service over forge's tmux
 // server, git worktrees and database.
-func newSessionService(cfg *config.Config, st *store.Store) agent.API {
+func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
+	drv, conf, err := newTmux()
+	if err != nil {
+		return nil, err
+	}
 	return agent.New(agent.Config{
-		Tmux:      tmux.New(),
-		Worktrees: worktree.New(cfg.Sessions.WorktreeRoot, worktree.NewExec()),
-		Store:     agent.StoreFrom(st),
-		Projects:  cfg.Projects,
-		DataDir:   filepath.Join(config.DataHome(), "forge"),
-	})
+		Tmux:       drv,
+		TmuxConf:   conf,
+		TmuxColors: tmuxColors(),
+		Worktrees:  worktree.New(cfg.Sessions.WorktreeRoot, worktree.NewExec()),
+		Store:      agent.StoreFrom(st),
+		Projects:   cfg.Projects,
+		DataDir:    filepath.Join(config.DataHome(), "forge"),
+	}), nil
 }
 
 func newNewCmd(d deps) *cobra.Command {
@@ -83,7 +89,10 @@ interactive form asks for the rest. --prompt - reads the prompt from stdin.`,
 				return err
 			}
 			defer func() { _ = st.Close() }()
-			svc := d.sessions(cfg, st)
+			svc, err := d.sessions(cfg, st)
+			if err != nil {
+				return err
+			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "starting %s…\n", o.Name)
 			res, err := svc.Start(cmd.Context(), o)
 			if err != nil {
