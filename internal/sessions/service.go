@@ -11,6 +11,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/sessions/claude"
+	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
@@ -47,6 +48,8 @@ type Store interface {
 	GetByName(ctx context.Context, name string) (store.Session, error)
 	List(ctx context.Context, f store.SessionFilter) ([]store.Session, error)
 	SetStatus(ctx context.Context, id int64, st store.Status, at time.Time) error
+	SetStatusIf(ctx context.Context, id int64, from, to store.Status, at time.Time) (bool, error)
+	LatestEvent(ctx context.Context, claudeID string) (store.Event, error)
 	ArchiveRemoved(ctx context.Context, id int64, at time.Time) error
 	Delete(ctx context.Context, id int64) error
 	LinksFor(ctx context.Context, ref store.Ref) ([]store.Link, error)
@@ -54,7 +57,12 @@ type Store interface {
 
 type storeAdapter struct {
 	*store.Sessions
-	links *store.Links
+	links  *store.Links
+	events *store.Events
+}
+
+func (a storeAdapter) LatestEvent(ctx context.Context, claudeID string) (store.Event, error) {
+	return a.events.Latest(ctx, claudeID)
 }
 
 func (a storeAdapter) LinksFor(ctx context.Context, ref store.Ref) ([]store.Link, error) {
@@ -63,7 +71,7 @@ func (a storeAdapter) LinksFor(ctx context.Context, ref store.Ref) ([]store.Link
 
 // StoreFrom returns the Store backed by the forge database.
 func StoreFrom(st *store.Store) Store {
-	return storeAdapter{Sessions: st.Sessions(), links: st.Links()}
+	return storeAdapter{Sessions: st.Sessions(), links: st.Links(), events: st.Events()}
 }
 
 // Config wires a Service.
@@ -76,6 +84,10 @@ type Config struct {
 	DataDir string
 	// ClaudeBin is the claude executable; empty means "claude".
 	ClaudeBin string
+	// ForgeBin is the absolute path of the forge binary that Claude Code
+	// hooks in new worktrees call (`forge hook <event>`, P1.4); empty
+	// installs no hooks.
+	ForgeBin string
 	// NewID makes Claude session ids; nil means claude.NewSessionID.
 	NewID func() (string, error)
 	// Now is the clock; nil means time.Now.
@@ -189,6 +201,16 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		return s.c.Worktrees.DeleteBranch(ctx, p, o.Name, true)
 	})
 
+	if s.c.ForgeBin != "" {
+		// The worktree's removal (undo above) takes the settings file along.
+		if err := hooks.Install(wt.Path, s.c.ForgeBin); err != nil {
+			return Started{}, err
+		}
+		if err := s.c.Worktrees.EnsureExcluded(ctx, wt.Path, hooks.SettingsRel); err != nil {
+			return Started{}, fmt.Errorf("git-ignore hook settings: %w", err)
+		}
+	}
+
 	id, err := s.c.NewID()
 	if err != nil {
 		return Started{}, err
@@ -283,7 +305,9 @@ func (s *Service) List(ctx context.Context, project string, archived bool) ([]Ro
 }
 
 // sweep marks live-looking sessions dead when their window is missing or
-// their process exited. P1.4 hooks replace this with real status.
+// their process exited. Hooks (P1.4) report every other status; this
+// catches agents that died without a SessionEnd hook (killed window,
+// crashed claude, tmux server restart).
 func (s *Service) sweep(ctx context.Context, xs []store.Session) (changed bool, err error) {
 	windows := map[string]map[string]tmux.Window{}
 	now := s.c.Now()
@@ -335,6 +359,32 @@ func linkLabel(links []store.Link) string {
 		}
 	}
 	return issue
+}
+
+// ClearWaiting moves a session that is waiting on a permission prompt back
+// to working, for when the TUI sees the prompt has gone from the pane
+// (claude.PermissionPromptVisible) before any hook says so. It does nothing
+// unless the session is still waiting and its latest event is a permission
+// Notification, and never overwrites a status a hook wrote meanwhile.
+func (s *Service) ClearWaiting(ctx context.Context, x store.Session) (bool, error) {
+	if x.Status != store.StatusWaiting {
+		return false, nil
+	}
+	e, err := s.c.Store.LatestEvent(ctx, x.ClaudeSessionID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	if e.Event != hooks.Notification {
+		return false, nil
+	}
+	// An unreadable payload is simply not a permission prompt.
+	if p, perr := hooks.Parse(strings.NewReader(e.Payload)); perr != nil || p.NotificationType != hooks.NotifyPermission {
+		return false, nil
+	}
+	return s.c.Store.SetStatusIf(ctx, x.ID, store.StatusWaiting, store.StatusWorking, s.c.Now())
 }
 
 // Target is the session's tmux window.
@@ -463,6 +513,7 @@ type API interface {
 	Preview(ctx context.Context, x store.Session, lines int) (string, error)
 	Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error)
 	Delete(ctx context.Context, x store.Session) error
+	ClearWaiting(ctx context.Context, x store.Session) (bool, error)
 	TmuxControl
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/sessions/claude"
+	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/tmux/tmuxtest"
 	"github.com/daan3011/forge/internal/sessions/worktree"
@@ -24,13 +25,15 @@ var t0 = time.Date(2026, 11, 20, 9, 0, 0, 0, time.Local)
 
 // fakeWT is an in-memory worktree.Manager.
 type fakeWT struct {
-	root      string
-	trees     map[string]bool // session -> exists
-	branches  map[string]bool // session -> branch exists
-	dirty     map[string]bool
-	createErr error
-	removed   []worktree.RemoveOpts
-	deleted   []string
+	root       string
+	trees      map[string]bool // session -> exists
+	branches   map[string]bool // session -> branch exists
+	dirty      map[string]bool
+	createErr  error
+	removed    []worktree.RemoveOpts
+	deleted    []string
+	excluded   []string // dir/rel passed to EnsureExcluded
+	excludeErr error
 }
 
 func newFakeWT(root string) *fakeWT {
@@ -63,6 +66,11 @@ func (f *fakeWT) Remove(_ context.Context, o worktree.RemoveOpts) (worktree.Remo
 	}
 	delete(f.trees, o.Session)
 	return worktree.Removed{Branch: worktree.Branch(o.Session), BranchMerged: true}, nil
+}
+
+func (f *fakeWT) EnsureExcluded(_ context.Context, dir, rel string) error {
+	f.excluded = append(f.excluded, filepath.Join(dir, rel))
+	return f.excludeErr
 }
 
 func (f *fakeWT) DeleteBranch(_ context.Context, _ config.Project, session string, _ bool) error {
@@ -466,3 +474,114 @@ func TestTmuxControl(t *testing.T) {
 		t.Errorf("reset = %q, %v", backup, err)
 	}
 }
+
+func TestStartInstallsHooks(t *testing.T) {
+	e := newEnv(t)
+	e.svc.c.ForgeBin = "/opt/bin/forge"
+	x := e.start(t, "hooked")
+	b, err := os.ReadFile(filepath.Join(x.Worktree, hooks.SettingsRel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range hooks.Events {
+		if !strings.Contains(string(b), hooks.Command("/opt/bin/forge", ev)) {
+			t.Errorf("no %s hook in\n%s", ev, b)
+		}
+	}
+	if want := filepath.Join(x.Worktree, hooks.SettingsRel); !slices.Equal(e.wt.excluded, []string{want}) {
+		t.Errorf("excluded %q, want %q", e.wt.excluded, want)
+	}
+}
+
+func TestStartWithoutForgeBinInstallsNoHooks(t *testing.T) {
+	e := newEnv(t)
+	x := e.start(t, "plain")
+	if _, err := os.Stat(filepath.Join(x.Worktree, hooks.SettingsRel)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("settings written: %v", err)
+	}
+	if len(e.wt.excluded) != 0 {
+		t.Errorf("excluded %q", e.wt.excluded)
+	}
+}
+
+func TestStartRollsBackWhenExcludeFails(t *testing.T) {
+	e := newEnv(t)
+	e.svc.c.ForgeBin = "/opt/bin/forge"
+	e.wt.excludeErr = errors.New("read-only .git")
+	if _, err := e.svc.Start(context.Background(), StartOpts{Name: "ro", Project: "forge"}); err == nil {
+		t.Fatal("want an error")
+	}
+	if e.wt.trees["ro"] || e.wt.branches["ro"] {
+		t.Error("worktree or branch left behind")
+	}
+	if _, _, _, ok := e.tmux.Started(tmux.Target{Session: "forge", Window: "ro"}); ok {
+		t.Error("window started")
+	}
+}
+
+func TestClearWaiting(t *testing.T) {
+	ctx := context.Background()
+	notif := func(typ string) store.Event {
+		return store.Event{
+			ClaudeSessionID: testID, Event: hooks.Notification,
+			Payload: `{"hook_event_name":"Notification","notification_type":"` + typ + `"}`,
+		}
+	}
+	tests := []struct {
+		name   string
+		status store.Status
+		event  *store.Event
+		want   bool
+		after  store.Status
+	}{
+		{"permission prompt answered", store.StatusWaiting, ptr(notif("permission_prompt")), true, store.StatusWorking},
+		{"elicitation stays waiting", store.StatusWaiting, ptr(notif("elicitation_dialog")), false, store.StatusWaiting},
+		{"no events", store.StatusWaiting, nil, false, store.StatusWaiting},
+		{"later event", store.StatusWaiting, &store.Event{ClaudeSessionID: testID, Event: hooks.PreToolUse}, false, store.StatusWaiting},
+		{"not waiting", store.StatusIdle, ptr(notif("permission_prompt")), false, store.StatusIdle},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			x := e.start(t, "w")
+			if err := e.st.Sessions().SetStatus(ctx, x.ID, tt.status, t0); err != nil {
+				t.Fatal(err)
+			}
+			if tt.event != nil {
+				if _, err := e.st.Events().Append(ctx, *tt.event); err != nil {
+					t.Fatal(err)
+				}
+			}
+			x.Status = tt.status
+			ok, err := e.svc.ClearWaiting(ctx, x)
+			if err != nil || ok != tt.want {
+				t.Fatalf("ClearWaiting = %v, %v; want %v", ok, err, tt.want)
+			}
+			got, _ := e.st.Sessions().Get(ctx, x.ID)
+			if got.Status != tt.after {
+				t.Errorf("status %s, want %s", got.Status, tt.after)
+			}
+		})
+	}
+}
+
+func TestClearWaitingStaleView(t *testing.T) {
+	// The tab saw "waiting", but a hook already moved the session on.
+	ctx := context.Background()
+	e := newEnv(t)
+	x := e.start(t, "w")
+	_, _ = e.st.Events().Append(ctx, store.Event{
+		ClaudeSessionID: testID, Event: hooks.Notification,
+		Payload: `{"notification_type":"permission_prompt"}`,
+	})
+	_ = e.st.Sessions().SetStatus(ctx, x.ID, store.StatusIdle, t0)
+	x.Status = store.StatusWaiting
+	if ok, err := e.svc.ClearWaiting(ctx, x); ok || err != nil {
+		t.Fatalf("ClearWaiting = %v, %v", ok, err)
+	}
+	if got, _ := e.st.Sessions().Get(ctx, x.ID); got.Status != store.StatusIdle {
+		t.Errorf("status %s, want idle", got.Status)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

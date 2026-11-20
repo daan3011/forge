@@ -11,6 +11,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
@@ -43,6 +44,12 @@ func WithStore(s KVStore) Option {
 // agent sessions. Without it the tab explains that sessions are unavailable.
 func WithSessions(s agent.API) Option {
 	return func(m *Model) { m.sessions = s }
+}
+
+// WithLive gives the Sessions tab the pings `forge hook` sends over the
+// live socket, so statuses change as soon as Claude Code reports them.
+func WithLive(pings <-chan live.Ping) Option {
+	return func(m *Model) { m.live = pings }
 }
 
 // WithActiveProject starts on the project with this name, as returned by

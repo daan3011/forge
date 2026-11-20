@@ -23,6 +23,9 @@ func newGit(t *testing.T) *worktree.Exec {
 	return worktree.NewExec(worktree.WithEnv(
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_NOSYSTEM=1",
+		// core.excludesFile defaults to $XDG_CONFIG_HOME/git/ignore even
+		// without a global config.
+		"XDG_CONFIG_HOME="+t.TempDir(),
 		"GIT_AUTHOR_NAME=forge", "GIT_AUTHOR_EMAIL=forge@example.invalid",
 		"GIT_COMMITTER_NAME=forge", "GIT_COMMITTER_EMAIL=forge@example.invalid",
 	))
@@ -387,5 +390,59 @@ func TestRemove(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(f.root, "forge")); err != nil {
 		t.Errorf("repo dir with a live worktree should remain: %v", err)
+	}
+}
+
+func TestEnsureExcluded(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, false)
+	wt := f.create(t, "hooks")
+	const rel = ".claude/settings.local.json"
+	write(t, filepath.Join(wt.Path, rel), "{}")
+	if st := git(t, f.g, wt.Path, "status", "--porcelain"); st == "" {
+		t.Fatal("precondition: the settings file should show as untracked")
+	}
+	for range 2 { // idempotent
+		if err := f.m.EnsureExcluded(ctx, wt.Path, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := git(t, f.g, wt.Path, "status", "--porcelain"); st != "" {
+		t.Errorf("worktree not clean: %q", st)
+	}
+	if ok, err := f.g.CheckIgnore(ctx, wt.Path, rel); err != nil || !ok {
+		t.Errorf("CheckIgnore = %v, %v", ok, err)
+	}
+	exclude, err := f.g.GitPath(ctx, wt.Path, "info/exclude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(b), "/"+rel+"\n"); n != 1 {
+		t.Errorf("pattern written %d times:\n%s", n, b)
+	}
+	if checkout, _ := filepath.EvalSymlinks(f.project.Path); !strings.HasPrefix(exclude, checkout) {
+		t.Errorf("exclude %s is not the shared one under %s", exclude, f.project.Path)
+	}
+	// Tracked files are untouched.
+	if st := git(t, f.g, f.project.Path, "status", "--porcelain"); st != "" {
+		t.Errorf("checkout not clean: %q", st)
+	}
+}
+
+func TestEnsureExcludedAlreadyIgnored(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, false)
+	wt := f.create(t, "ign")
+	// .env.local is in the committed .gitignore: nothing is written.
+	if err := f.m.EnsureExcluded(ctx, wt.Path, ".env.local"); err != nil {
+		t.Fatal(err)
+	}
+	exclude, _ := f.g.GitPath(ctx, wt.Path, "info/exclude")
+	if b, _ := os.ReadFile(exclude); strings.Contains(string(b), ".env.local") {
+		t.Errorf("wrote an exclude for an ignored file:\n%s", b)
 	}
 }

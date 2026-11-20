@@ -120,6 +120,10 @@ type Manager interface {
 	List(ctx context.Context, project config.Project) ([]Worktree, error)
 	Remove(ctx context.Context, opts RemoveOpts) (Removed, error)
 	DeleteBranch(ctx context.Context, project config.Project, session string, force bool) error
+	// EnsureExcluded makes rel (relative to the worktree dir) git-ignored
+	// by adding it to the repo's local exclude file unless it already is.
+	// Tracked files and global git config are never touched.
+	EnsureExcluded(ctx context.Context, dir, rel string) error
 }
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)

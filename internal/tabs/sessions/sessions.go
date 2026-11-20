@@ -4,16 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/refresh"
+
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/claude"
+	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs"
@@ -35,11 +42,20 @@ const (
 	actionTimeout  = 2 * time.Minute // worktree creation fetches from origin
 )
 
+// promptMisses is how many captures in a row must lack the permission
+// prompt before a waiting session is moved back to working (one could be a
+// redraw mid-frame).
+const promptMisses = 2
+
+// statusCol is the index of the Status column.
+const statusCol = 1
+
 // Column order puts what matters most first: narrow panes drop columns from
-// the right. Name is flexible but never narrower than 16 cells.
+// the right. Name is flexible but never narrower than 16 cells. Status is
+// "<flame> <status>".
 var columns = []ui.Column{
 	{Title: "Name", Flex: true, Width: 16},
-	{Title: "Status", Width: 9},
+	{Title: "Status", Width: 10},
 	{Title: "Activity", Width: 8},
 	{Title: "Project", Width: 10},
 	{Title: "Branch", Width: 18},
@@ -53,6 +69,7 @@ type Tab struct {
 	keys  *ui.KeyMap
 	cfg   *config.Config
 	svc   agent.API
+	live  <-chan live.Ping // forge hook pings; nil when not listening
 	anim  *anim.Engine
 	now   func() time.Time
 	tick  func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
@@ -66,9 +83,11 @@ type Tab struct {
 	project  *config.Project
 	archived bool // showing the archive
 	rows     map[string]agent.Row
+	list     []agent.Row // rows in display order
 	updated  time.Time
 	listGen  int // bumps on project/view change; stale lists are dropped
 	fetching bool
+	dirty    bool   // a ping arrived during a refresh: refresh again after
 	busy     int    // start/kill/delete actions in flight
 	pending  string // select this session once it shows up in the list
 
@@ -79,6 +98,10 @@ type Tab struct {
 	previewFor  string
 	previewErr  error
 	previewBusy bool
+
+	// capture-pane fallback for permission prompts (see checkPrompt)
+	promptMiss int
+	clearTried string // clearKey of the last waiting spell ClearWaiting declined
 
 	dialog *dialog
 }
@@ -107,16 +130,51 @@ func New(d tabkit.Deps) *Tab {
 		keys:   d.Keys,
 		cfg:    cfg,
 		svc:    d.Sessions,
+		live:   d.Live,
 		anim:   d.Engine(),
 		now:    time.Now,
 		tick:   tea.Tick,
 		split:  ui.NewSplitPane(d.Theme),
-		table:  ui.NewTable(d.Theme, d.Keys, columns),
+		table:  ui.NewTable(d.Theme, d.Keys, nil),
 		filter: ui.NewFilter(d.Theme, d.Keys),
 		rows:   map[string]agent.Row{},
 	}
+	cols := slices.Clone(columns)
+	cols[statusCol].Render = t.renderStatus
+	t.table = ui.NewTable(d.Theme, d.Keys, cols)
 	t.table.SetEmptyView(func(w, h int) string { return anim.EmptyForge(w, h, d.Theme) })
 	return t
+}
+
+// flameStatus maps a session status to its anim.Flame icon.
+func flameStatus(st store.Status) anim.Status {
+	switch st {
+	case store.StatusWorking:
+		return anim.StatusWorking
+	case store.StatusWaiting:
+		return anim.StatusWaiting
+	case store.StatusError:
+		return anim.StatusError
+	case store.StatusDead, store.StatusArchived:
+		return anim.StatusDead
+	}
+	return anim.StatusIdle // idle, starting
+}
+
+// flame is st's status icon at the current animation frame.
+func (t *Tab) flame(st store.Status) string {
+	return anim.Flame(flameStatus(st), t.anim.Frame(), t.anim.Settings(), t.theme)
+}
+
+// renderStatus draws a Status cell: the flame, then the status word in its
+// colour on the row's background.
+func (t *Tab) renderStatus(cell string, width int, row lipgloss.Style) string {
+	st := store.Status(cell)
+	word := t.theme.SessionStatus(cell).Inherit(row)
+	if width < 3 {
+		return row.Render(t.flame(st))
+	}
+	return row.Render(t.flame(st)) + row.Render(" ") + word.Render(ansi.Truncate(cell, width-2, "…"))
 }
 
 // --- messages ---------------------------------------------------------------
@@ -129,6 +187,19 @@ type listedMsg struct {
 }
 
 type previewTickMsg struct{ gen int }
+
+// pingMsg is a `forge hook` ping from the live socket; ok is false once the
+// socket is closed.
+type pingMsg struct {
+	ping live.Ping
+	ok   bool
+}
+
+type clearedMsg struct {
+	name    string
+	changed bool
+	err     error
+}
 
 type previewMsg struct {
 	gen  int
@@ -161,11 +232,13 @@ func (previewMsg) TargetTab() string     { return Title }
 func (startedMsg) TargetTab() string     { return Title }
 func (killedMsg) TargetTab() string      { return Title }
 func (deletedMsg) TargetTab() string     { return Title }
+func (pingMsg) TargetTab() string        { return Title }
+func (clearedMsg) TargetTab() string     { return Title }
 
 // --- tea plumbing -------------------------------------------------------------
 
 // Init implements tabs.Tab.
-func (t *Tab) Init() tea.Cmd { return t.Refresh() }
+func (t *Tab) Init() tea.Cmd { return tea.Batch(t.Refresh(), t.waitPing()) }
 
 // Update implements tabs.Tab.
 func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
@@ -185,6 +258,16 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.killed(msg)
 	case deletedMsg:
 		return t, t.deleted(msg)
+	case pingMsg:
+		return t, t.pinged(msg)
+	case clearedMsg:
+		if msg.err != nil {
+			return t, errCmd(fmt.Errorf("sessions: %w", msg.err))
+		}
+		if msg.changed {
+			return t, t.liveRefresh()
+		}
+		return t, nil
 	}
 	if cmd, ok := t.updateTmux(msg); ok {
 		return t, cmd
@@ -261,10 +344,80 @@ func (t *Tab) listed(msg listedMsg) tea.Cmd {
 			t.pending = ""
 		}
 	}
-	return t.selectionChanged()
+	cmd := t.selectionChanged()
+	if t.dirty {
+		t.dirty = false
+		cmd = tea.Batch(cmd, t.Refresh())
+	}
+	return cmd
+}
+
+// --- live updates ---------------------------------------------------------------
+
+// waitPing waits for the next `forge hook` ping. It blocks in its own
+// goroutine, never in Update; every pingMsg re-arms it.
+func (t *Tab) waitPing() tea.Cmd {
+	ch := t.live
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		p, ok := <-ch
+		return pingMsg{ping: p, ok: ok}
+	}
+}
+
+// pinged shows a hook's status at once, then reloads the list from the
+// database (which has the full picture) without piling up refreshes.
+func (t *Tab) pinged(msg pingMsg) tea.Cmd {
+	if !msg.ok {
+		return nil // socket closed: forge is exiting
+	}
+	p := msg.ping
+	if r, ok := t.rows[p.Session]; ok && p.Status != "" && !t.archived {
+		if p.Changed {
+			r.Status, r.LastActivityAt = store.Status(p.Status), t.now()
+		}
+		for i := range t.list {
+			if t.list[i].Name == r.Name {
+				t.list[i] = r
+			}
+		}
+		t.setRows(t.list)
+	}
+	return tea.Batch(t.waitPing(), t.liveRefresh())
+}
+
+// liveRefresh reloads the list now, or right after the refresh in flight
+// (which may have read the database before the change).
+func (t *Tab) liveRefresh() tea.Cmd {
+	if t.fetching {
+		t.dirty = true
+		return nil
+	}
+	return t.Refresh()
+}
+
+// sortRows orders rows as the store does: waiting sessions first, otherwise
+// keeping the given order.
+func sortRows(rows []agent.Row) []agent.Row {
+	out := slices.Clone(rows)
+	slices.SortStableFunc(out, func(a, b agent.Row) int {
+		aw, bw := a.Status == store.StatusWaiting, b.Status == store.StatusWaiting
+		switch {
+		case aw && !bw:
+			return -1
+		case bw && !aw:
+			return 1
+		}
+		return 0
+	})
+	return out
 }
 
 func (t *Tab) setRows(rows []agent.Row) {
+	rows = sortRows(rows)
+	t.list = rows
 	t.rows = make(map[string]agent.Row, len(rows))
 	cells := make([][]string, len(rows))
 	now := t.now()
@@ -345,6 +498,7 @@ func (t *Tab) selectionChanged() tea.Cmd {
 	t.selected = name
 	t.previewGen++
 	t.previewBusy = false
+	t.promptMiss = 0
 	if t.previewFor != name {
 		t.clearPreview()
 	}
@@ -355,8 +509,8 @@ func (t *Tab) clearPreview() {
 	t.preview, t.previewFor, t.previewErr = "", "", nil
 }
 
-// live reports whether r's pane is worth polling.
-func live(r agent.Row) bool {
+// isLive reports whether r's pane is worth polling.
+func isLive(r agent.Row) bool {
 	return r.TmuxWindow != "" && r.Status != store.StatusDead && r.Status != store.StatusArchived
 }
 
@@ -385,11 +539,45 @@ func (t *Tab) previewed(msg previewMsg) tea.Cmd {
 	t.previewBusy = false
 	t.preview, t.previewFor, t.previewErr = msg.text, msg.name, msg.err
 	r, ok := t.current()
-	if !ok || r.Name != msg.name || !t.visible || !live(r) {
+	if !ok || r.Name != msg.name || !t.visible || !isLive(r) {
 		return nil // dead panes don't change; stop polling
 	}
 	gen := t.previewGen
-	return t.tick(PreviewInterval, func(time.Time) tea.Msg { return previewTickMsg{gen: gen} })
+	next := t.tick(PreviewInterval, func(time.Time) tea.Msg { return previewTickMsg{gen: gen} })
+	if msg.err != nil {
+		return next
+	}
+	return tea.Batch(next, t.checkPrompt(r, msg.text))
+}
+
+// clearKey identifies one waiting spell of a session.
+func clearKey(r agent.Row) string {
+	return r.Name + "@" + r.StatusChangedAt.String()
+}
+
+// checkPrompt is the capture-pane fallback for permission prompts: Claude
+// Code sends no hook when a prompt is answered, so a session would read
+// "waiting" until its next tool call. When the selected waiting session's
+// pane has shown no permission prompt for promptMisses captures in a row,
+// ask the service to move it back to working (it checks the session really
+// is waiting on a permission prompt).
+func (t *Tab) checkPrompt(r agent.Row, pane string) tea.Cmd {
+	if r.Status != store.StatusWaiting || clearKey(r) == t.clearTried || claude.PermissionPromptVisible(pane) {
+		t.promptMiss = 0
+		return nil
+	}
+	if t.promptMiss++; t.promptMiss < promptMisses {
+		return nil
+	}
+	t.promptMiss = 0
+	t.clearTried = clearKey(r)
+	svc, x := t.svc, r.Session
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), previewTimeout)
+		defer cancel()
+		changed, err := svc.ClearWaiting(ctx, x)
+		return clearedMsg{name: x.Name, changed: changed, err: err}
+	}
 }
 
 // detailFields is the number of lines above the preview in the detail pane
@@ -688,9 +876,22 @@ func (t *Tab) slide() {
 	}
 }
 
-// Animating implements tabs.Animator: true while the divider springs.
+// Animating implements tabs.Animator: true while the divider springs or a
+// listed agent's flame moves (working, or waiting with pulses on).
 func (t *Tab) Animating() bool {
-	return t.sliding && !t.divider.Settled(t.anim.Frame())
+	if t.sliding && !t.divider.Settled(t.anim.Frame()) {
+		return true
+	}
+	if t.dialog != nil {
+		return false
+	}
+	s := t.anim.Settings()
+	for _, row := range t.table.VisibleRows() {
+		if r, ok := t.rows[row[0]]; ok && anim.FlameAnimating(flameStatus(r.Status), s) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetSize implements tabs.Tab.
@@ -764,7 +965,7 @@ func (t *Tab) detail() string {
 		target = r.TmuxSession + ":" + r.TmuxWindow
 	}
 	lines := []string{
-		th.DetailTitle.Render(r.Name) + "  " + th.SessionStatus(string(r.Status)).Render(string(r.Status)),
+		th.DetailTitle.Render(r.Name) + "  " + t.flame(r.Status) + " " + th.SessionStatus(string(r.Status)).Render(string(r.Status)),
 		label("project", r.Project),
 		label("branch", r.Branch+" (from "+dash(r.BaseBranch)+")"),
 		label("worktree", dash(r.Worktree)),

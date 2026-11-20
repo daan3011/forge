@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/artifacts"
 	contexttab "github.com/daan3011/forge/internal/tabs/context"
@@ -79,6 +80,7 @@ type Model struct {
 	hasSaved     bool
 	fetchDelay   time.Duration // simulated latency of placeholder fetches
 	sessions     agent.API     // from WithSessions
+	live         <-chan live.Ping
 }
 
 // paletteMode is which picker the palette overlay shows, if any.
@@ -104,7 +106,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 	}
 	d := tabkit.Deps{
 		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
-		Config: cfg, Sessions: m.sessions,
+		Config: cfg, Sessions: m.sessions, Live: m.live,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),

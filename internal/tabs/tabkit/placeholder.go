@@ -15,6 +15,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
@@ -39,6 +40,8 @@ type Deps struct {
 	// Sessions starts and manages agent sessions; nil when forge runs
 	// without its database (tests, previews).
 	Sessions sessions.API
+	// Live delivers `forge hook` pings (P1.4); nil when nothing listens.
+	Live <-chan live.Ping
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

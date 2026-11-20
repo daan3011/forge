@@ -19,6 +19,11 @@ type Column struct {
 	Title string
 	Width int
 	Flex  bool
+	// Render, if set, draws the column's body cells (not the header): the
+	// raw cell text, the column width and the row's style (normal or
+	// selected) in, exactly width styled cells out. The raw text is still
+	// what the filter matches. Use it for icons and per-value colours.
+	Render func(cell string, width int, row lipgloss.Style) string
 }
 
 // Table is a selectable list of rows with fixed and flexible columns. Cells
@@ -189,12 +194,50 @@ func (t *Table) View() string {
 		if i == t.cursor && t.focused {
 			style = t.theme.TableSelected
 		}
-		lines = append(lines, style.Render(t.renderCells(t.visible[i])))
+		lines = append(lines, t.renderRow(t.visible[i], style))
 	}
 	for len(lines) < t.height {
 		lines = append(lines, strings.Repeat(" ", t.width))
 	}
 	return strings.Join(lines[:t.height], "\n")
+}
+
+// renderRow renders a body row in style. Rows with custom-rendered columns
+// are styled cell by cell, so a cell's own colours don't end the row's
+// background early.
+func (t *Table) renderRow(cells []string, style lipgloss.Style) string {
+	custom := false
+	for i, w := range t.widths {
+		custom = custom || (w > 0 && t.cols[i].Render != nil)
+	}
+	if !custom {
+		return style.Render(t.renderCells(cells))
+	}
+	var b strings.Builder
+	used := 0
+	for i, w := range t.widths {
+		if w == 0 {
+			continue
+		}
+		if used > 0 {
+			b.WriteString(style.Render(strings.Repeat(" ", colGap)))
+			used += colGap
+		}
+		cell := ""
+		if i < len(cells) {
+			cell = cells[i]
+		}
+		if r := t.cols[i].Render; r != nil {
+			b.WriteString(fit(r(cell, w, style), w))
+		} else {
+			b.WriteString(style.Render(fit(cell, w)))
+		}
+		used += w
+	}
+	if pad := t.width - used; pad > 0 {
+		b.WriteString(style.Render(strings.Repeat(" ", pad)))
+	}
+	return b.String()
 }
 
 // renderCells lays cells out at the computed widths, padded to the full width.
