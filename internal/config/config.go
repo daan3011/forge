@@ -35,6 +35,9 @@ type Project struct {
 	Path           string `yaml:"path"`
 	PlaneProjectID string `yaml:"plane_project_id"`
 	DocsDir        string `yaml:"docs_dir"`
+	// WorktreeCopy lists files (globs relative to Path, e.g. ".env.local")
+	// copied from the checkout into every new agent worktree.
+	WorktreeCopy []string `yaml:"worktree_copy"`
 }
 
 // Owner returns the owner half of Repo ("owner/name").

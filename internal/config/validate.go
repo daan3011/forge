@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -93,6 +94,11 @@ func (c *Config) Validate() error {
 			add(k+".path", "is required")
 		} else if !filepath.IsAbs(p.Path) {
 			add(k+".path", "must be absolute or start with ~/, got %q", p.Path)
+		}
+		for j, g := range p.WorktreeCopy {
+			if msg := checkCopyPattern(g); msg != "" {
+				add(fmt.Sprintf("%s.worktree_copy[%d]", k, j), "%s, got %q", msg, g)
+			}
 		}
 	}
 
@@ -296,4 +302,20 @@ func tagNames(t reflect.Type) []string {
 		}
 	}
 	return names
+}
+
+// checkCopyPattern returns why g is not a valid worktree_copy entry, or "".
+func checkCopyPattern(g string) string {
+	switch {
+	case g == "":
+		return "must not be empty"
+	case filepath.IsAbs(g):
+		return "must be relative to the project path"
+	case slices.Contains(strings.Split(filepath.ToSlash(g), "/"), ".."):
+		return "must not contain \"..\""
+	}
+	if _, err := filepath.Match(g, ""); err != nil {
+		return "invalid glob"
+	}
+	return ""
 }
