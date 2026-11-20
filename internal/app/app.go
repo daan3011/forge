@@ -3,6 +3,7 @@
 package app
 
 import (
+	"errors"
 	"math"
 	"os"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
@@ -85,6 +87,7 @@ type Model struct {
 	live         <-chan live.Ping
 	templatesDir string              // from WithTemplates
 	providers    *templates.Registry // from WithTemplates
+	browser      browser.Opener      // from WithBrowser
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -117,7 +120,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 	d := tabkit.Deps{
 		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
 		Config: cfg, Sessions: m.sessions, Live: m.live,
-		TemplatesDir: m.templatesDir, Providers: m.providers,
+		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
@@ -322,6 +325,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tabs.SessionPingMsg:
 		return m.handleSessionPing(msg)
+
+	case tabs.StartSessionMsg:
+		return m.handleStartSession(msg)
 
 	case tea.FocusMsg:
 		m.focused = true
@@ -619,9 +625,27 @@ func (m Model) handleTick(msg refresh.TickMsg) (Model, tea.Cmd) {
 		if !isAuto || !slices.Contains(ar.Sources(), msg.Source) || !m.refreshesNow(i) {
 			continue
 		}
-		cmds = append(cmds, t.Refresh())
+		if sr, ok := t.(tabs.SourceRefresher); ok {
+			cmds = append(cmds, sr.RefreshSource(msg.Source))
+		} else {
+			cmds = append(cmds, t.Refresh())
+		}
 	}
 	return m, tea.Batch(cmds...)
+}
+
+// handleStartSession switches to the tab that owns sessions and opens its
+// new-session form for the source (tabs.StartSessionFrom, P1.9).
+func (m Model) handleStartSession(msg tabs.StartSessionMsg) (Model, tea.Cmd) {
+	for i, t := range m.tabs {
+		ss, ok := t.(tabs.SessionStarter)
+		if !ok {
+			continue
+		}
+		m, switchCmd := m.switchTo(i)
+		return m, tea.Batch(switchCmd, ss.StartSession(msg.Source))
+	}
+	return m, func() tea.Msg { return ui.ErrMsg{Err: errors.New("sessions are unavailable")} }
 }
 
 // handleRateLimit records the GitHub rate limit and backs the GitHub

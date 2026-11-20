@@ -48,6 +48,21 @@ func (e *BranchExistsError) Error() string {
 // Is makes errors.Is(err, ErrBranchExists) true.
 func (e *BranchExistsError) Is(target error) bool { return target == ErrBranchExists }
 
+// BranchCheckedOutError reports a branch that is checked out in another
+// worktree (possibly the main checkout) at Path; git refuses to check a
+// branch out twice.
+type BranchCheckedOutError struct {
+	Branch string
+	Path   string
+}
+
+func (e *BranchCheckedOutError) Error() string {
+	return fmt.Sprintf("worktree: branch %s is checked out at %s", e.Branch, e.Path)
+}
+
+// Is makes errors.Is(err, ErrBranchCheckedOut) true.
+func (e *BranchCheckedOutError) Is(target error) bool { return target == ErrBranchCheckedOut }
+
 // DirtyError lists the uncommitted changes that blocked a Remove.
 type DirtyError struct {
 	Path  string
@@ -78,8 +93,13 @@ type CreateOpts struct {
 	Project config.Project
 	Session string
 	Base    string // base branch, e.g. "main"
+	// Branch is the branch to check out; empty means agent/<session>.
+	// A custom branch is used as found: an existing local branch is checked
+	// out, a branch only on origin (a PR head) gets a local tracking
+	// branch, and otherwise a new branch is made from Base.
+	Branch string
 	// ReuseBranch checks out an existing agent/<session> branch instead of
-	// failing with ErrBranchExists.
+	// failing with ErrBranchExists. Custom branches are always reused.
 	ReuseBranch bool
 }
 
@@ -88,9 +108,16 @@ type Created struct {
 	Path       string
 	Branch     string
 	StartPoint string // ref the branch was created from; empty when reused
-	Reused     bool
-	Copied     []string // worktree_copy files copied, relative to the worktree
-	Skipped    []string // worktree_copy patterns or files not copied
+	Reused     bool   // an existing local branch was checked out
+	// BranchCreated is set when Create made a new branch from Base. It is
+	// false for a reused local branch and for a tracking branch of an
+	// existing remote branch, which forge must never delete.
+	BranchCreated bool
+	// Tracking is the remote branch the new local branch tracks, e.g.
+	// "origin/feature"; empty unless the branch came from origin.
+	Tracking string
+	Copied   []string // worktree_copy files copied, relative to the worktree
+	Skipped  []string // worktree_copy patterns or files not copied
 	// FetchErr is set when fetching the base failed and the local base was
 	// used instead (e.g. offline).
 	FetchErr error
@@ -119,7 +146,8 @@ type Manager interface {
 	Create(ctx context.Context, opts CreateOpts) (Created, error)
 	List(ctx context.Context, project config.Project) ([]Worktree, error)
 	Remove(ctx context.Context, opts RemoveOpts) (Removed, error)
-	DeleteBranch(ctx context.Context, project config.Project, session string, force bool) error
+	// DeleteBranch deletes a local branch; force deletes it even unmerged.
+	DeleteBranch(ctx context.Context, project config.Project, branch string, force bool) error
 	// EnsureExcluded makes rel (relative to the worktree dir) git-ignored
 	// by adding it to the repo's local exclude file unless it already is.
 	// Tracked files and global git config are never touched.
@@ -134,6 +162,15 @@ var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 func CheckName(session string) error {
 	if !nameRe.MatchString(session) {
 		return fmt.Errorf("%w: session %q", ErrInvalidName, session)
+	}
+	return nil
+}
+
+// CheckBranch reports ErrInvalidName for branch names that could be read
+// as flags or that git would refuse.
+func CheckBranch(branch string) error {
+	if err := checkBase(branch); err != nil {
+		return fmt.Errorf("%w: branch %q", ErrInvalidName, branch)
 	}
 	return nil
 }

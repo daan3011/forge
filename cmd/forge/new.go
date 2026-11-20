@@ -10,9 +10,11 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/spf13/cobra"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/github"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/worktree"
@@ -21,6 +23,11 @@ import (
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 )
+
+// githubPulls looks up the PRs opened from session branches through `gh
+// auth` (P1.9). The TUI points its OnResponse at the program so GitHub's
+// rate limit backs the refresh off; the client is made on first use.
+var githubPulls = github.NewREST(api.ClientOptions{})
 
 // newSessionService builds the real session service over forge's tmux
 // server, git worktrees and database.
@@ -38,6 +45,7 @@ func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
 		Projects:   cfg.Projects,
 		DataDir:    filepath.Join(config.DataHome(), "forge"),
 		ForgeBin:   forgeBin(),
+		Pulls:      githubPulls,
 	}), nil
 }
 
@@ -70,7 +78,9 @@ interactive form asks for the rest. --prompt - reads the prompt from stdin.
 
 --template fills the first prompt from a session template in
 ~/.config/forge/templates (unless --prompt is given). --issue and --pr name
-the issue / PR it is for; --var name=value fills any other variable.`,
+the issue / PR it is for (the session is linked to them); --var name=value
+fills any other variable. --branch works on an existing branch (e.g. a PR's
+head) or names the new one.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _, _, err := config.LoadOrCreate()
@@ -147,6 +157,7 @@ the issue / PR it is for; --var name=value fills any other variable.`,
 			if err != nil {
 				return err
 			}
+			o = sessionstab.WithRefLinks(cfg, o, map[store.LinkKind]string{store.KindPlaneIssue: issue, store.KindGitHubPR: pr})
 			fmt.Fprintf(cmd.ErrOrStderr(), "starting %s…\n", o.Name)
 			res, err := svc.Start(cmd.Context(), o)
 			if err != nil {
@@ -166,6 +177,7 @@ the issue / PR it is for; --var name=value fills any other variable.`,
 	f.StringVar(&o.Name, "name", "", "session name (letters, digits, - and _)")
 	f.StringVar(&o.Project, "project", "", "project name from the config")
 	f.StringVar(&o.Base, "base", "", "base branch (default main)")
+	f.StringVar(&o.Branch, "branch", "", "branch to work on (default agent/<name>); an existing local or origin branch is checked out")
 	f.StringVar(&o.Template, "template", "", "session template (fills the first prompt)")
 	f.StringVar(&issue, "issue", "", "issue the session is for (template {issue})")
 	f.StringVar(&pr, "pr", "", "pull request the session is for, owner/repo#n (template {pr})")

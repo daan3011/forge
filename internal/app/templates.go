@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
@@ -15,6 +16,11 @@ import (
 // register theirs; nil has none). It also enables "Edit templates".
 func WithTemplates(dir string, providers *templates.Registry) Option {
 	return func(m *Model) { m.templatesDir, m.providers = dir, providers }
+}
+
+// WithBrowser gives tabs a way to open URLs (linked issues and PRs).
+func WithBrowser(b browser.Opener) Option {
+	return func(m *Model) { m.browser = b }
 }
 
 // editTemplates creates the templates folder with the defaults if needed,

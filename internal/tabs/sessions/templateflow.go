@@ -40,7 +40,10 @@ func TemplateInput(projects []config.Project, o agent.StartOpts, refs map[store.
 			in.Project = p
 		}
 	}
-	if o.Name != "" {
+	switch {
+	case strings.TrimSpace(o.Branch) != "":
+		in.Branch = strings.TrimSpace(o.Branch)
+	case o.Name != "":
 		in.Branch = worktree.Branch(o.Name)
 	}
 	return in

@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +86,16 @@ type Plane struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 	// RefreshInterval is how often Plane lists refresh in the background.
 	RefreshInterval Duration `yaml:"refresh_interval"`
+}
+
+// IssueURL is the web URL of the work item with the given key (e.g.
+// PROJ-123), or "" when base_url or workspace_slug isn't configured.
+func (p Plane) IssueURL(key string) string {
+	base := strings.TrimRight(p.BaseURL, "/")
+	if base == "" || p.Workspace == "" || key == "" {
+		return ""
+	}
+	return base + "/" + url.PathEscape(p.Workspace) + "/browse/" + url.PathEscape(key) + "/"
 }
 
 // ResolveAPIKey returns APIKey if set, otherwise the value of the environment

@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions"
@@ -49,6 +50,8 @@ type Deps struct {
 	// Providers resolve {issue_*} / {pr_*} template variables; nil has
 	// none, so those are asked for in the form.
 	Providers *templates.Registry
+	// Browser opens URLs (linked issues and PRs); nil can't open any.
+	Browser browser.Opener
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

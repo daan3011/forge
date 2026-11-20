@@ -48,6 +48,12 @@ type Session struct {
 	ArchivedAt        time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	// BranchCreated is set when forge created Branch; only such branches
+	// may be deleted by forge (P1.9).
+	BranchCreated bool
+	// WorktreeExternal is set when Worktree is not forge's (e.g. the main
+	// checkout); forge never removes it.
+	WorktreeExternal bool
 }
 
 // Archived reports whether the session is in the archive.
@@ -60,7 +66,7 @@ type Sessions struct{ s *Store }
 const sessionInsertCols = `name, claude_session_id, project, repo, base_branch, branch, worktree,
 	tmux_session, tmux_window, template, status, status_changed_at, last_activity_at,
 	transcript_path, transcript_offset, waiting_notified_at, notes, summary, archived_at,
-	created_at, updated_at`
+	created_at, updated_at, branch_created, worktree_external`
 
 const sessionCols = `id, ` + sessionInsertCols
 
@@ -73,7 +79,7 @@ func scanSession(sc interface{ Scan(...any) error }) (Session, error) {
 	err := sc.Scan(&x.ID, &x.Name, &x.ClaudeSessionID, &x.Project, &repo, &base, &branch, &wt,
 		&tsess, &twin, &tmpl, &x.Status, &statusAt, &activity,
 		&tpath, &x.TranscriptOffset, &notified, &notes, &sum, &archived,
-		&created, &updated)
+		&created, &updated, &x.BranchCreated, &x.WorktreeExternal)
 	if err != nil {
 		return Session{}, err
 	}
@@ -101,13 +107,13 @@ func (r *Sessions) Create(ctx context.Context, x Session) (Session, error) {
 	}
 	x.CreatedAt, x.UpdatedAt = now, now
 	res, err := r.s.w.ExecContext(ctx, `INSERT INTO sessions (`+sessionInsertCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		x.Name, x.ClaudeSessionID, x.Project, nullStr(x.Repo), nullStr(x.BaseBranch),
 		nullStr(x.Branch), nullStr(x.Worktree), nullStr(x.TmuxSession), nullStr(x.TmuxWindow),
 		nullStr(x.Template), x.Status, toMillis(x.StatusChangedAt), toMillis(x.LastActivityAt),
 		nullStr(x.TranscriptPath), x.TranscriptOffset, toMillis(x.WaitingNotifiedAt),
 		nullStr(x.Notes), nullStr(x.Summary), toMillis(x.ArchivedAt),
-		toMillis(x.CreatedAt), toMillis(x.UpdatedAt))
+		toMillis(x.CreatedAt), toMillis(x.UpdatedAt), x.BranchCreated, x.WorktreeExternal)
 	if err != nil {
 		return Session{}, wrap("create session", err)
 	}
@@ -195,14 +201,15 @@ func (r *Sessions) Update(ctx context.Context, x Session) error {
 		name = ?, claude_session_id = ?, project = ?, repo = ?, base_branch = ?, branch = ?,
 		worktree = ?, tmux_session = ?, tmux_window = ?, template = ?, status = ?,
 		status_changed_at = ?, last_activity_at = ?, transcript_path = ?, transcript_offset = ?,
-		waiting_notified_at = ?, notes = ?, summary = ?, archived_at = ?, updated_at = ?
+		waiting_notified_at = ?, notes = ?, summary = ?, archived_at = ?, updated_at = ?,
+		branch_created = ?, worktree_external = ?
 		WHERE id = ?`,
 		x.Name, x.ClaudeSessionID, x.Project, nullStr(x.Repo), nullStr(x.BaseBranch),
 		nullStr(x.Branch), nullStr(x.Worktree), nullStr(x.TmuxSession), nullStr(x.TmuxWindow),
 		nullStr(x.Template), x.Status, toMillis(x.StatusChangedAt), toMillis(x.LastActivityAt),
 		nullStr(x.TranscriptPath), x.TranscriptOffset, toMillis(x.WaitingNotifiedAt),
 		nullStr(x.Notes), nullStr(x.Summary), toMillis(x.ArchivedAt),
-		r.s.now().UnixMilli(), x.ID)
+		r.s.now().UnixMilli(), x.BranchCreated, x.WorktreeExternal, x.ID)
 	return mustAffect("update session", res, err)
 }
 

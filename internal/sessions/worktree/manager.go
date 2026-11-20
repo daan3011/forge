@@ -40,8 +40,14 @@ func (w *Worktrees) Create(ctx context.Context, opts CreateOpts) (Created, error
 	if err := checkBase(opts.Base); err != nil {
 		return Created{}, err
 	}
+	branch, custom := Branch(opts.Session), opts.Branch != ""
+	if custom {
+		if err := CheckBranch(opts.Branch); err != nil {
+			return Created{}, err
+		}
+		branch = opts.Branch
+	}
 	path := Path(w.root, p, opts.Session)
-	branch := Branch(opts.Session)
 	if _, err := os.Lstat(path); err == nil {
 		return Created{}, fmt.Errorf("%w: %s", ErrPathExists, path)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -55,7 +61,7 @@ func (w *Worktrees) Create(ctx context.Context, opts CreateOpts) (Created, error
 	stale := false
 	for _, wt := range all {
 		if wt.Branch == branch && !wt.Prunable {
-			return Created{}, fmt.Errorf("%w: %s at %s", ErrBranchCheckedOut, branch, wt.Path)
+			return Created{}, &BranchCheckedOutError{Branch: branch, Path: wt.Path}
 		}
 		if wt.Prunable && samePath(wt.Path, path) {
 			stale = true
@@ -73,24 +79,36 @@ func (w *Worktrees) Create(ctx context.Context, opts CreateOpts) (Created, error
 	if err != nil {
 		return Created{}, err
 	}
-	if exists && !opts.ReuseBranch {
+	if exists && !opts.ReuseBranch && !custom {
 		return Created{}, &BranchExistsError{Branch: branch}
+	}
+	upstream := ""
+	if !exists && custom {
+		if upstream, res.FetchErr, err = w.remoteBranch(ctx, p.Path, branch); err != nil {
+			return Created{}, err
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return Created{}, err
 	}
 
-	if exists {
+	switch {
+	case exists:
 		res.Reused = true
 		if err := w.git.WorktreeAddExisting(ctx, p.Path, path, branch); err != nil {
 			return Created{}, err
 		}
-	} else {
+	case upstream != "":
+		res.Tracking = upstream
+		if err := w.git.WorktreeAddTracking(ctx, p.Path, path, branch, upstream); err != nil {
+			return Created{}, err
+		}
+	default:
 		start, fetchErr, err := w.startPoint(ctx, p.Path, opts.Base)
 		if err != nil {
 			return Created{}, err
 		}
-		res.StartPoint, res.FetchErr = start, fetchErr
+		res.StartPoint, res.FetchErr, res.BranchCreated = start, errors.Join(res.FetchErr, fetchErr), true
 		if err := w.git.WorktreeAdd(ctx, p.Path, path, branch, start); err != nil {
 			return Created{}, err
 		}
@@ -98,9 +116,31 @@ func (w *Worktrees) Create(ctx context.Context, opts CreateOpts) (Created, error
 
 	res.Copied, res.Skipped, err = copyFiles(p.Path, path, p.WorktreeCopy)
 	if err != nil {
-		return Created{}, errors.Join(fmt.Errorf("worktree: copy files: %w", err), w.rollback(ctx, p, path, branch, !res.Reused))
+		// Only a branch made just now is deleted again; a tracking branch
+		// is local too, but its commits live on origin, so it goes as well.
+		del := res.BranchCreated || res.Tracking != ""
+		return Created{}, errors.Join(fmt.Errorf("worktree: copy files: %w", err), w.rollback(ctx, p, path, branch, del))
 	}
 	return res, nil
+}
+
+// remoteBranch fetches branch from origin and returns "origin/<branch>" if
+// it exists there, "" if not (or there is no origin). A failed fetch is
+// returned separately and is not fatal.
+func (w *Worktrees) remoteBranch(ctx context.Context, repo, branch string) (upstream string, fetchErr, err error) {
+	hasRemote, err := w.git.HasRemote(ctx, repo, Remote)
+	if err != nil || !hasRemote {
+		return "", nil, err
+	}
+	fetchErr = w.git.FetchBranch(ctx, repo, Remote, branch)
+	ref := Remote + "/" + branch
+	ok, err := w.git.RefExists(ctx, repo, "refs/remotes/"+ref)
+	if err != nil || !ok {
+		// A branch missing on origin also fails the fetch: that is the
+		// normal "new branch" case, not worth reporting.
+		return "", nil, err
+	}
+	return ref, fetchErr, nil
 }
 
 // startPoint fetches base from origin (when there is one) and returns the
@@ -252,13 +292,13 @@ func (w *Worktrees) merged(ctx context.Context, repo, branch, base string) (bool
 	return false, nil
 }
 
-// DeleteBranch implements Manager: deletes agent/<session>. Without force,
-// git refuses unless the branch is merged.
-func (w *Worktrees) DeleteBranch(ctx context.Context, project config.Project, session string, force bool) error {
-	if err := CheckName(session); err != nil {
+// DeleteBranch implements Manager. Without force, git refuses unless the
+// branch is merged.
+func (w *Worktrees) DeleteBranch(ctx context.Context, project config.Project, branch string, force bool) error {
+	if err := CheckBranch(branch); err != nil {
 		return err
 	}
-	return w.git.DeleteBranch(ctx, project.Path, Branch(session), force)
+	return w.git.DeleteBranch(ctx, project.Path, branch, force)
 }
 
 // SessionRef is what Reconcile needs to know about a stored session.

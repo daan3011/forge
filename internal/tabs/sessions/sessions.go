@@ -12,13 +12,12 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"charm.land/lipgloss/v2"
-
+	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/refresh"
-
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/live"
@@ -72,6 +71,8 @@ type Tab struct {
 	cfg   *config.Config
 	svc   agent.API
 	live  <-chan live.Ping // forge hook pings; nil when not listening
+	// browser opens linked issues and PRs (P1.9)
+	browser browser.Opener
 	// session templates (P1.7)
 	tmplDir   string
 	providers *templates.Registry
@@ -96,6 +97,9 @@ type Tab struct {
 	busy     int             // start/kill/delete actions in flight
 	pending  string          // select this session once it shows up in the list
 	resuming map[string]bool // sessions with an attach/resume in flight
+
+	syncing      bool // a PR link sync is running (P1.9)
+	syncErrShown bool // a failed sync was reported once already
 
 	visible     bool
 	selected    string // name of the selected session, for change detection
@@ -129,6 +133,8 @@ var (
 	_ tabs.Animator        = (*Tab)(nil)
 	_ tabs.VisibilityAware = (*Tab)(nil)
 	_ tabs.SessionGoer     = (*Tab)(nil)
+	_ tabs.SessionStarter  = (*Tab)(nil)
+	_ tabs.SourceRefresher = (*Tab)(nil)
 )
 
 // New returns the Sessions tab. Without d.Sessions it shows an empty list
@@ -144,6 +150,7 @@ func New(d tabkit.Deps) *Tab {
 		cfg:       cfg,
 		svc:       d.Sessions,
 		live:      d.Live,
+		browser:   d.Browser,
 		tmplDir:   d.TemplatesDir,
 		providers: d.Providers,
 		anim:      d.Engine(),
@@ -240,7 +247,7 @@ type templateResolvedMsg struct {
 }
 
 type startedMsg struct {
-	name string
+	opts agent.StartOpts
 	res  agent.Started
 	err  error
 }
@@ -269,7 +276,7 @@ func (clearedMsg) TargetTab() string     { return Title }
 // --- tea plumbing -------------------------------------------------------------
 
 // Init implements tabs.Tab.
-func (t *Tab) Init() tea.Cmd { return tea.Batch(t.Refresh(), t.waitPing()) }
+func (t *Tab) Init() tea.Cmd { return tea.Batch(t.Refresh(), t.waitPing(), t.syncPRs()) }
 
 // Update implements tabs.Tab.
 func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
@@ -295,6 +302,10 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.deleted(msg)
 	case pingMsg:
 		return t, t.pinged(msg)
+	case syncedMsg:
+		return t, t.synced(msg)
+	case openedMsg:
+		return t, t.opened(msg)
 	case transcriptLoadedMsg:
 		return t, t.transcriptLoaded(msg)
 	case transcriptPollMsg:
@@ -338,6 +349,10 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.resumeSelected()
 	case key.Matches(kp, s.Transcript):
 		return t, t.openTranscript()
+	case key.Matches(kp, s.OpenPR):
+		return t, t.openLinked(store.KindGitHubPR)
+	case key.Matches(kp, s.OpenIssue):
+		return t, t.openLinked(store.KindPlaneIssue)
 	case key.Matches(kp, s.New):
 		return t, t.openNew()
 	case key.Matches(kp, s.Kill):
@@ -637,7 +652,7 @@ func (t *Tab) checkPrompt(r agent.Row, pane string) tea.Cmd {
 
 // detailFields is the number of lines above the preview in the detail pane
 // (fields, a blank line and the "output" rule).
-const detailFields = 11
+const detailFields = 12
 
 func (t *Tab) previewLines() int {
 	_, h := t.split.RightSize()
@@ -682,8 +697,12 @@ func (t *Tab) templatesLoaded(msg templatesLoadedMsg) tea.Cmd {
 	if err := errors.Join(msg.errs...); err != nil {
 		cmds = append(cmds, errCmd(err))
 	}
+	vals := msg.req.Opts
+	if _, ok := templates.Find(msg.templates, vals.Template); vals.Template != "" && !ok {
+		vals.Template = t.cfg.Sessions.DefaultTemplate // e.g. a source's review-pr was deleted
+	}
 	f, v, err := NewForm(FormInput{
-		Theme: t.theme, Keys: t.keys, Projects: t.cfg.Projects, Values: msg.req.Opts,
+		Theme: t.theme, Keys: t.keys, Projects: t.cfg.Projects, Values: vals,
 		Templates: msg.templates,
 		Taken:     func(name string) bool { _, ok := t.rows[name]; return ok },
 	})
@@ -696,7 +715,7 @@ func (t *Tab) templatesLoaded(msg templatesLoadedMsg) tea.Cmd {
 		req.Opts = *v
 		tmpl, ok := templates.Find(msg.templates, v.Template)
 		if !ok {
-			return t.start(*v)
+			return t.start(t.withRefLinks(*v, req.Refs))
 		}
 		return t.askRefs(req, tmpl)
 	})
@@ -753,7 +772,7 @@ func (t *Tab) templateResolved(msg templateResolvedMsg) tea.Cmd {
 
 // confirmPrompt shows the rendered prompt, editable, then starts.
 func (t *Tab) confirmPrompt(req NewRequest, tmpl templates.Template, vals map[string]string) tea.Cmd {
-	o := req.Opts
+	o := t.withRefLinks(req.Opts, req.Refs)
 	o.Prompt = RenderPrompt(tmpl, vals)
 	f := PromptForm(t.theme, t.keys, &o.Prompt)
 	return t.openDialog("", f, func() tea.Cmd { return t.start(o) })
@@ -766,16 +785,21 @@ func (t *Tab) start(o agent.StartOpts) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		res, err := svc.Start(ctx, o)
-		return startedMsg{name: o.Name, res: res, err: err}
+		return startedMsg{opts: o, res: res, err: err}
 	}
 }
 
 func (t *Tab) started(msg startedMsg) tea.Cmd {
 	t.busy--
-	if msg.err != nil {
-		return errCmd(startError(msg.name, msg.err))
+	name := msg.opts.Name
+	var inUse *agent.BranchInUseError
+	if errors.As(msg.err, &inUse) {
+		return t.branchInUse(msg.opts, inUse)
 	}
-	cmds := []tea.Cmd{success("session " + msg.name + " started")}
+	if msg.err != nil {
+		return errCmd(startError(name, msg.err))
+	}
+	cmds := []tea.Cmd{success("session " + name + " started")}
 	if msg.res.FetchErr != nil {
 		cmds = append(cmds, info("couldn't fetch origin; branched from the local base"))
 	}
@@ -783,7 +807,7 @@ func (t *Tab) started(msg startedMsg) tea.Cmd {
 		t.archived = false
 		t.resetList()
 	}
-	t.pending = msg.name
+	t.pending = name
 	return tea.Batch(append(cmds, t.forceRefresh())...)
 }
 
@@ -801,9 +825,10 @@ func startError(name string, err error) error {
 // --- kill / delete ----------------------------------------------------------------
 
 const (
-	killWindow = "kill"
-	killRemove = "remove"
-	killCancel = "cancel"
+	killWindow       = "kill"
+	killRemove       = "remove"
+	killRemoveBranch = "remove-branch"
+	killCancel       = "cancel"
 )
 
 func (t *Tab) openKill() tea.Cmd {
@@ -815,15 +840,24 @@ func (t *Tab) openKill() tea.Cmd {
 		return info(r.Name + " is already archived")
 	}
 	choice := killWindow
+	opts := []huh.Option[string]{huh.NewOption("Kill session (keep worktree)", killWindow)}
+	switch {
+	case r.WorktreeExternal:
+		// Not forge's worktree (e.g. the main checkout): never removed.
+		opts = append(opts, huh.NewOption("Kill and archive (worktree left in place)", killRemove))
+	default:
+		opts = append(opts, huh.NewOption("Kill and remove worktree (keep branch, archive)", killRemove))
+		if agent.CanDeleteBranch(r.Session) {
+			// Only branches forge made; never a pre-existing or PR head branch.
+			opts = append(opts, huh.NewOption("Kill, remove worktree and delete branch "+r.Branch+" (unpushed commits are lost)", killRemoveBranch))
+		}
+	}
+	opts = append(opts, huh.NewOption("Cancel", killCancel))
 	f := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().Key("kill").
-			Title("Kill session "+r.Name+"?").
+			Title("Kill session " + r.Name + "?").
 			Description("the row is kept: a killed session can be resumed later").
-			Options(
-				huh.NewOption("Kill session (keep worktree)", killWindow),
-				huh.NewOption("Kill and remove worktree (keep branch, archive)", killRemove),
-				huh.NewOption("Cancel", killCancel),
-			).Value(&choice),
+			Options(opts...).Value(&choice),
 	)).WithTheme(t.theme.Huh()).WithKeyMap(t.keys.HuhKeyMap()).WithShowHelp(false)
 	x := r.Session
 	return t.openDialog(r.Name, f, func() tea.Cmd {
@@ -832,6 +866,8 @@ func (t *Tab) openKill() tea.Cmd {
 			return t.kill(x, agent.KillOpts{})
 		case killRemove:
 			return t.kill(x, agent.KillOpts{RemoveWorktree: true})
+		case killRemoveBranch:
+			return t.kill(x, agent.KillOpts{RemoveWorktree: true, DeleteBranch: true})
 		}
 		return nil
 	})
@@ -868,14 +904,21 @@ func (t *Tab) killed(msg killedMsg) tea.Cmd {
 			if !force {
 				return info(name + " stopped; worktree kept")
 			}
-			return t.kill(x, agent.KillOpts{RemoveWorktree: true, Force: true})
+			o := msg.opts
+			o.Force = true
+			return t.kill(x, o)
 		})
 		return tea.Batch(refresh, open)
 	case msg.err != nil:
 		return tea.Batch(refresh, errCmd(fmt.Errorf("kill %s: %w", name, msg.err)))
 	case msg.res.Archived:
 		text := name + " archived — worktree removed, branch kept"
-		if msg.res.BranchMerged {
+		switch {
+		case msg.session.WorktreeExternal:
+			text = name + " archived — worktree left in place"
+		case msg.res.BranchDeleted:
+			text = name + " archived — worktree and branch " + msg.session.Branch + " removed"
+		case msg.res.BranchMerged:
 			text += " (already merged)"
 		}
 		return tea.Batch(refresh, success(text))
@@ -1174,11 +1217,13 @@ func (t *Tab) detail() string {
 		label("worktree", dash(r.Worktree)),
 		label("tmux", target),
 		label("claude", r.ClaudeSessionID),
-		label("link", dash(r.Link)),
+	}
+	lines = append(lines, t.linkLines(r)...)
+	lines = append(lines,
 		label("created", r.CreatedAt.Format("2006-01-02 15:04")),
 		label("activity", Ago(t.now(), r.LastActivityAt)),
 		"",
-	}
+	)
 	if r.Template != "" {
 		lines[len(lines)-1] = label("template", r.Template) // in place of the blank line
 	}
@@ -1243,14 +1288,14 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{t.keys.Global.Refresh, t.keys.List.Filter, t.keys.Sessions.ArchiveView, t.keys.Sessions.Delete}
 	}
 	s := t.keys.Sessions
-	return []key.Binding{s.Attach, s.Resume, s.Transcript, t.keys.List.Filter, s.ArchiveView, s.Kill, s.New}
+	return []key.Binding{s.Attach, s.Resume, s.Transcript, s.OpenPR, t.keys.List.Filter, s.ArchiveView, s.Kill, s.New}
 }
 
 // FullHelp implements tabs.Tab.
 func (t *Tab) FullHelp() [][]key.Binding {
 	l, in, s, tr := t.keys.List, t.keys.Input, t.keys.Sessions, t.keys.Transcript
 	return [][]key.Binding{
-		{s.Attach, s.Resume, s.Transcript, s.New, s.Kill, s.ArchiveView, s.Delete},
+		{s.Attach, s.Resume, s.Transcript, s.OpenPR, s.OpenIssue, s.New, s.Kill, s.ArchiveView, s.Delete},
 		{tr.Up, tr.Down, tr.PageUp, tr.PageDown, tr.Top, tr.Bottom, tr.Toggle, tr.ToggleAll, tr.Follow, tr.Close},
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, l.ShrinkPane, l.GrowPane},
@@ -1274,6 +1319,8 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "session_attach", Title: "Attach session (resume if needed)", Key: s.Attach, Run: t.attachSelected},
 		{ID: "session_resume", Title: "Resume session in the background", Key: s.Resume, Run: t.resumeSelected},
 		{ID: "session_transcript", Title: "Open session transcript", Key: s.Transcript, Run: t.openTranscript},
+		{ID: "session_open_pr", Title: "Open linked PR in browser", Key: s.OpenPR, Run: func() tea.Cmd { return t.openLinked(store.KindGitHubPR) }},
+		{ID: "session_open_issue", Title: "Open linked issue in browser", Key: s.OpenIssue, Run: func() tea.Cmd { return t.openLinked(store.KindPlaneIssue) }},
 		{ID: "session_new", Title: "New session…", Key: s.New, Run: t.openNew},
 		{ID: "session_kill", Title: "Kill session…", Key: s.Kill, Run: t.openKill},
 		{ID: "session_archive_view", Title: view, Key: s.ArchiveView, Run: t.toggleArchive},
@@ -1327,8 +1374,11 @@ func (t *Tab) LastUpdated() time.Time { return t.updated }
 // Fetching implements tabs.Fetcher: a list refresh or an action is running.
 func (t *Tab) Fetching() bool { return t.fetching || t.busy > 0 }
 
-// Sources implements tabs.AutoRefresher.
-func (t *Tab) Sources() []refresh.Source { return []refresh.Source{refresh.Sessions} }
+// Sources implements tabs.AutoRefresher: the list refreshes on Sessions
+// ticks, PR links sync on GitHub ticks (RefreshSource).
+func (t *Tab) Sources() []refresh.Source {
+	return []refresh.Source{refresh.Sessions, refresh.GitHub}
+}
 
 // RefreshWhenHidden implements tabs.AutoRefresher: statuses keep updating
 // for the Home screen and notifications.

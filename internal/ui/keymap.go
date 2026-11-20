@@ -76,6 +76,8 @@ type SessionKeys struct {
 	Attach      key.Binding // attach, resuming a dead session first
 	Resume      key.Binding // resume a dead session without attaching
 	Transcript  key.Binding // open the transcript viewer
+	OpenPR      key.Binding // open the linked PR (else the issue) in the browser
+	OpenIssue   key.Binding // open the linked issue in the browser
 }
 
 // TranscriptKeys are active while the transcript viewer is open; nothing
@@ -161,6 +163,8 @@ func DefaultKeyMap() *KeyMap {
 			Attach:      bind("attach", "enter"),
 			Resume:      bind("background resume", "b"),
 			Transcript:  bind("transcript", "t"),
+			OpenPR:      bind("open linked PR", "o"),
+			OpenIssue:   bind("open linked issue", "O"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -244,6 +248,8 @@ func (k *KeyMap) actions() []action {
 		{"session_attach", scopeSessions, &ss.Attach},
 		{"session_resume", scopeSessions, &ss.Resume},
 		{"session_transcript", scopeSessions, &ss.Transcript},
+		{"session_open_pr", scopeSessions, &ss.OpenPR},
+		{"session_open_issue", scopeSessions, &ss.OpenIssue},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

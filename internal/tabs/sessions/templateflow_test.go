@@ -59,6 +59,7 @@ func pickImplementIssue(t *testing.T, sc *screen, name string) {
 	tm.Send(press("enter")) // name
 	tm.Send(press("enter")) // project
 	tm.Send(press("enter")) // base
+	tm.Send(press("enter")) // branch
 	time.Sleep(200 * time.Millisecond)
 	for range 3 {
 		tm.Send(press("down"))

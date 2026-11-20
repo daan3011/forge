@@ -26,6 +26,9 @@ type Git interface {
 	WorktreeAdd(ctx context.Context, repo, path, branch, startPoint string) error
 	// WorktreeAddExisting adds path checking out an existing branch.
 	WorktreeAddExisting(ctx context.Context, repo, path, branch string) error
+	// WorktreeAddTracking adds path on a new local branch that tracks
+	// upstream (e.g. "origin/feature").
+	WorktreeAddTracking(ctx context.Context, repo, path, branch, upstream string) error
 	WorktreeList(ctx context.Context, repo string) ([]Worktree, error)
 	// WorktreeRemove removes path; force also discards changes and, when
 	// the worktree is locked, the lock.
@@ -149,6 +152,12 @@ func (e *Exec) WorktreeAdd(ctx context.Context, repo, path, branch, startPoint s
 // WorktreeAddExisting implements Git.
 func (e *Exec) WorktreeAddExisting(ctx context.Context, repo, path, branch string) error {
 	_, err := e.Run(ctx, repo, "worktree", "add", "--quiet", "--", path, branch)
+	return err
+}
+
+// WorktreeAddTracking implements Git.
+func (e *Exec) WorktreeAddTracking(ctx context.Context, repo, path, branch, upstream string) error {
+	_, err := e.Run(ctx, repo, "worktree", "add", "--quiet", "--track", "-b", branch, "--", path, upstream)
 	return err
 }
 

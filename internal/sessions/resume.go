@@ -108,6 +108,9 @@ func (s *Service) Resume(ctx context.Context, x store.Session, o ResumeOpts) (re
 	}
 
 	if !isDir(x.Worktree) {
+		if x.WorktreeExternal {
+			return Resumed{}, fmt.Errorf("%w: %s is gone and forge can't recreate it", ErrExternalWorktree, x.Worktree)
+		}
 		if !o.RecreateWorktree {
 			return Resumed{}, &WorktreeMissingError{Path: x.Worktree, Branch: x.Branch}
 		}
@@ -118,13 +121,18 @@ func (s *Service) Resume(ctx context.Context, x store.Session, o ResumeOpts) (re
 		if base == "" {
 			base = DefaultBase
 		}
-		wt, err := s.c.Worktrees.Create(ctx, worktree.CreateOpts{Project: p, Session: x.Name, Base: base, ReuseBranch: true})
+		co := worktree.CreateOpts{Project: p, Session: x.Name, Base: base, ReuseBranch: true}
+		if x.Branch != worktree.Branch(x.Name) {
+			co.Branch = x.Branch // a custom branch: local, else from origin
+		}
+		wt, err := s.c.Worktrees.Create(ctx, co)
 		if err != nil {
 			return Resumed{}, fmt.Errorf("recreate worktree: %w", err)
 		}
-		res.WorktreeRecreated, res.BranchRecreated, res.FetchErr = true, !wt.Reused, wt.FetchErr
-		if wt.Path != x.Worktree || wt.Branch != x.Branch {
-			x.Worktree, x.Branch = wt.Path, wt.Branch
+		res.WorktreeRecreated, res.BranchRecreated, res.FetchErr = true, wt.BranchCreated, wt.FetchErr
+		if wt.Path != x.Worktree || wt.Branch != x.Branch || (wt.BranchCreated && !x.BranchCreated) {
+			// A branch forge had to make again from the base is its own now.
+			x.Worktree, x.Branch, x.BranchCreated = wt.Path, wt.Branch, x.BranchCreated || wt.BranchCreated
 			if err := s.c.Store.Update(ctx, x); err != nil {
 				return Resumed{}, err
 			}
