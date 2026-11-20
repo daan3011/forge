@@ -39,6 +39,10 @@ type fakeGH struct {
 	actErr error                // every action fails with it
 	block  chan struct{}        // when set, actions wait for it to close
 	fresh  map[string]github.PR // PR id -> what PR() returns; missing = an error
+
+	diffs     map[string]string // PR id -> diff; missing = sampleDiff
+	diffErr   error
+	diffCalls []string // PR ids Diff was called for
 }
 
 func (f *fakeGH) PRDetail(_ context.Context, repo string, number int) (github.PRDetail, error) {

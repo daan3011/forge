@@ -117,6 +117,7 @@ type PRClient interface {
 	PRSearcher
 	PRDetailer
 	PRActor
+	PRReviewer
 }
 
 var _ PRClient = (*Client)(nil)

@@ -388,7 +388,10 @@ func mustNew(t *testing.T, cfg *config.Config, opts ...Option) Model {
 
 // fakeGitHub answers every PR search with the same two PRs. PR actions
 // (P2.3) aren't used by these tests; calling one panics.
-type fakeGitHub struct{ github.PRActor }
+type fakeGitHub struct {
+	github.PRActor
+	github.PRReviewer
+}
 
 func (fakeGitHub) SearchPRs(context.Context, string, int) (github.SearchResult, error) {
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
@@ -485,5 +488,59 @@ func TestPRMergeFlow(t *testing.T) {
 	defer act.mu.Unlock()
 	if want := []string{"daan/forge#101 squash"}; !slices.Equal(act.merged, want) {
 		t.Errorf("merged = %v, want %v", act.merged, want)
+	}
+}
+
+// fakeReviewer serves one diff and records reviews.
+type fakeReviewer struct {
+	mu      sync.Mutex
+	reviews []string
+}
+
+func (f *fakeReviewer) Diff(context.Context, string, int) (string, error) {
+	return "diff --git a/retry.go b/retry.go\n--- a/retry.go\n+++ b/retry.go\n@@ -1 +1 @@\n-sendOnce()\n+sendWithRetry()\n" +
+		"diff --git a/retry_test.go b/retry_test.go\nnew file mode 100644\n--- /dev/null\n+++ b/retry_test.go\n@@ -0,0 +1 @@\n+func TestRetry(t *testing.T) {}\n", nil
+}
+
+func (f *fakeReviewer) SubmitReview(_ context.Context, repo string, n int, event, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reviews = append(f.reviews, fmt.Sprintf("%s#%d %s %q", repo, n, event, body))
+	return nil
+}
+
+// TestPRReviewFlow is P2.4's done-when: read a diff and approve the PR
+// without leaving forge.
+func TestPRReviewFlow(t *testing.T) {
+	rev := &fakeReviewer{}
+	tm := teatest.NewTestModel(t, mustNew(t, config.Default(), WithGitHub(fakeGitHub{PRActor: &fakeActor{}, PRReviewer: rev})),
+		teatest.WithInitialTermSize(120, 30))
+	wait := func(s string) {
+		t.Helper()
+		teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return bytes.Contains(b, []byte(s)) },
+			teatest.WithDuration(3*time.Second))
+	}
+	wait("forge")
+	tm.Send(press("2"))
+	wait("#101")
+	tm.Send(press("v"))
+	wait("sendWithRetry()")
+	tm.Send(press("n")) // to the second file; only changed cells redraw, so nothing to wait for
+	tm.Send(press("a"))
+	wait("Approve #101")
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter}) // past the optional body
+	settled := time.Now().Add(300 * time.Millisecond)
+	teatest.WaitFor(t, tm.Output(), func([]byte) bool { return time.Now().After(settled) },
+		teatest.WithDuration(2*time.Second), teatest.WithCheckInterval(50*time.Millisecond))
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter}) // submit
+	wait("approved #101")
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEscape}) // close the viewer
+	tm.Send(press("q"))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+
+	rev.mu.Lock()
+	defer rev.mu.Unlock()
+	if want := []string{`daan/forge#101 APPROVE ""`}; !slices.Equal(rev.reviews, want) {
+		t.Errorf("reviews = %v, want %v", rev.reviews, want)
 	}
 }

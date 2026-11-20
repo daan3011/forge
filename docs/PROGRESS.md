@@ -235,7 +235,34 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Tests**: github actions over a fake transport (paths, bodies, mutations + node id, `Reason` cases), checkout on temp repos (clean, existing local, dirty → worktree, already checked out, fork clean / dirty, errors), clipboard tool choice, status bar activity, tab tests for every key and palette command (row patch vs stale / newer search, busy + double action, guards, merge dialog with allowed methods / decline / confirm / esc, auto-merge, checkout messages, session source), and a teatest merge flow in `internal/app`.
   - **Not verified live**: the queries (`PR`, merge methods) were checked against the live API; the mutations and the merge / update calls were only tested against fakes. Try them on a throwaway PR.
   - **Limits**: auto-merge can only be turned on, not off; `s` on a fork PR starts from its base (the fork branch isn't fetched); the kv_cache keeps the pre-action copy until the next search.
-- [ ] P2.4 Review queue & diff
+- [x] P2.4 Review queue & diff — `v` on a PR (palette: "PR: review diff") opens a full-screen diff viewer; `a` approves, `x` requests changes, `C` comments. Code in `internal/tabs/prs/diffview.go`; client in `internal/github/review.go`; `internal/delta` wraps delta.
+  - **Client** (`github.PRReviewer`, now part of `PRClient`):
+    - `Diff` is REST `GET …/pulls/{n}` with `Accept: application/vnd.github.v3.diff`, from a third lazy go-gh client on the same observing transport, so the rate limit is still reported. It is capped at 20 MiB. GitHub's 406 for huge diffs → `ErrDiffTooLarge`, toasted as "open it in the browser (o)".
+    - `SubmitReview` is `POST …/pulls/{n}/reviews` with `{event, body}`; approve may have no body. `restPut` became `restDo(method, …)`.
+    - `ParseDiff` splits a git diff into `DiffFile`s: paths, status (modified / added / deleted / renamed / binary), +/- counts and text.
+    - The diff fetch was checked against the live API: 27 files on #21, matching GitHub. The review POST was only tested against fakes.
+  - **Viewer**: it takes over the tab below the section bar and captures input, like the transcript.
+    - File list on the left (30%, at least 24 cols, hidden under 60 cols): status letter, path shortened from the left, `+n -m`, with the file in view highlighted.
+    - All files sit in one viewport, a blank line apart, with each file's first line recorded. `n` / `p` jump between files; scrolling updates the current file.
+    - Header: `#n title · base ← head · N files +a -d · file i/N`.
+    - Diffs are fetched in a command and cached in memory per PR + updatedAt (8 entries). Not in kv_cache, because they're big.
+  - **Colours**: rendered in a command for the diff pane's width, and again after a resize; raw text shows until the render lands.
+    - With delta on the PATH: each file goes through `delta --paging=never --width=<pane> --dark|--light`, 4 at a time. Per file, so file offsets stay exact. Passing `--dark` / `--light` also stops delta querying the terminal, which would race Bubble Tea for input. The user's git-config delta settings still apply.
+    - A file delta fails on gets Lip Gloss colours, with one toast per tab.
+    - Without delta: Lip Gloss (`DiffAdd` / `DiffDel` plus the new theme slots `DiffHunk`, `DiffMeta`, `DiffFileHeader`, `DiffFile(Active)`). A file band replaces the `diff --git` / index / ---/+++ lines; tabs become 4 spaces and lines are cut to the width.
+  - **Reviews**: a huh dialog with a body (8 lines; ctrl+e opens `$VISUAL` / `$EDITOR` through huh's external editor) and a confirm that defaults to submit.
+    - The body is required for request changes and comment.
+    - It runs through `runAction`: busy hammer, spark toast ("approved #12"), and the row re-fetched and patched (review decision), which also refreshes the detail pane. The viewer stays open.
+    - Guards: merged / closed PRs, and approve / request changes on your own PR (author = the searches' viewer). Comments are allowed.
+  - **Keys**: `pr_diff` v (scope `tab:prs`). Modal scope `diff` (only these keys are live while the viewer is open, like the transcript): `diff_up/down` k/j, `diff_page_up/down` ctrl+u/ctrl+d (also space), `diff_top/bottom` g/G, `diff_next_file` n, `diff_prev_file` p, `diff_approve` a, `diff_request_changes` x, `diff_comment` C, `diff_open` o, `diff_close` esc/q.
+  - **Palette**: "PR: review diff", plus "PR: approve… / request changes… / comment…" (`diff_*` ids). These also work on the selected PR from the list. While the viewer is open: "Diff: next file / previous file / close".
+  - **Wiring**: `tabkit.Deps.Delta`, `app.WithDelta`, `delta.Exec{Dark: true}` in `cmd/forge`.
+  - **Tests**:
+    - github: `ParseDiff` fixture (modified, added, deleted, rename, binary, mode-only, paths with spaces, a `+-- ` line in a hunk), `Diff` (Accept header; JSON clients keep theirs; 406 / 404), `SubmitReview` bodies and validation, own-PR error text.
+    - delta: argv, stdin through a stand-in script, stderr in errors, missing binary.
+    - tab: open / n / p / scroll / close / cache, modal keys, delta and resize re-render, delta failure fallback, errors, stale results, approve, request changes needing a body, esc, guards, palette, colouriser, `shortenLeft`.
+    - app: teatest done-when `TestPRReviewFlow` (`2` → `v` → `n` → `a` → enter → enter → "approved #101").
+  - **Limits**: no inline (line) comments, only whole-PR reviews. No pending-review drafts. Re-opening after a review refetches the diff (updatedAt changed). delta isn't installed on the dev machine, so the delta path is only tested with fakes and a stand-in script; `brew install git-delta` to try it.
 - [ ] P2.5 Stale PR markers
 - [ ] P2.6 Pipelines list
 - [ ] P2.7 Log tail & rerun
@@ -275,6 +302,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 ## Phase 6 — Workflow glue
 
 - [ ] P6.1 Home screen
+  - Note (from P2.4): the "Review requested" badge = the PR count of the section whose query has `review-requested:@me`. The PRs tab caches it in kv_cache under `prs.sectionKey(project, section)` (a `github.SearchResult`), so Home can read the count without a call.
 - [ ] P6.2 Scratchpad & daily note
   - Note (from P1.10): finished sessions = `archived_at` in the day with their `summary` (first line: the PR and its state).
 - [ ] P6.3 Custom commands

@@ -171,6 +171,13 @@ type Theme struct {
 	DiffDel         lipgloss.Style // -deletions
 	PRTime          lipgloss.Style // updated / created ages
 
+	// PR diff viewer (P2.4), when delta isn't installed.
+	DiffHunk       lipgloss.Style // @@ -1,4 +1,5 @@
+	DiffMeta       lipgloss.Style // index, mode, ---/+++ and "\ No newline" lines
+	DiffFileHeader lipgloss.Style // the band naming each file
+	DiffFile       lipgloss.Style // a file in the file list
+	DiffFileActive lipgloss.Style // the file in view
+
 	// PR detail pane (P2.2).
 	DetailBand      lipgloss.Style // the title on a raised band
 	DetailTab       lipgloss.Style // Overview / Checks / Activity
@@ -270,6 +277,12 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		DiffAdd:         lipgloss.NewStyle().Foreground(p.Success),
 		DiffDel:         lipgloss.NewStyle().Foreground(p.Error),
 		PRTime:          base,
+
+		DiffHunk:       lipgloss.NewStyle().Foreground(p.Accent),
+		DiffMeta:       lipgloss.NewStyle().Foreground(p.Muted),
+		DiffFileHeader: lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
+		DiffFile:       base,
+		DiffFileActive: lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true),
 
 		DetailBand:      lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		DetailTab:       lipgloss.NewStyle().Foreground(p.Muted).Padding(0, 1),

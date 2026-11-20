@@ -125,6 +125,7 @@ keybinds:
   # pr_auto_merge: ["M"]           # enable auto-merge
   # pr_toggle_draft: ["d"]         # draft <-> ready for review
   # pr_session: ["s"]              # start a forge session for the PR
+  # pr_diff: ["v"]                 # full-screen diff viewer to review the PR
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
@@ -136,6 +137,20 @@ keybinds:
   # transcript_toggle_all: ["e"]
   # transcript_follow: ["f"]      # keep the newest entry in view
   # transcript_close: ["esc", "q"]
+  # PR diff viewer (only these keys are live while it is open)
+  # diff_up: ["k", "up"]
+  # diff_down: ["j", "down"]
+  # diff_page_up: ["ctrl+u", "pgup"]
+  # diff_page_down: ["ctrl+d", "pgdown", "space"]
+  # diff_top: ["g", "home"]
+  # diff_bottom: ["G", "end"]
+  # diff_next_file: ["n"]
+  # diff_prev_file: ["p"]
+  # diff_approve: ["a"]            # approve (optional body)
+  # diff_request_changes: ["x"]    # request changes (body required)
+  # diff_comment: ["C"]            # comment (body required)
+  # diff_open: ["o"]               # open the PR in the browser
+  # diff_close: ["esc", "q"]
   # Text inputs (filter, palette)
   # cancel: ["esc"]
   # accept: ["enter"]

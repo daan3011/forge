@@ -18,6 +18,7 @@ import (
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions"
@@ -93,6 +94,13 @@ type Tab struct {
 	busy       map[string]string    // PR id -> running action, e.g. "merging #12"
 	patched    map[string]github.PR // PR id -> copy re-fetched after an action
 	lastMethod string               // merge method last used
+
+	// The diff viewer (P2.4); nil when closed.
+	diff        *diffView
+	diffID      int // bumps per opened viewer
+	diffs       diffCache
+	delta       delta.Renderer
+	deltaWarned bool // a delta failure was toasted once
 }
 
 var (
@@ -121,7 +129,7 @@ func newTab(d tabkit.Deps) *Tab {
 		now:      time.Now,
 		sessions: d.Sessions,
 		tick:     tea.Tick,
-		browser:  d.Browser, clip: d.Clipboard, checkout: d.Checkout,
+		browser:  d.Browser, clip: d.Clipboard, checkout: d.Checkout, delta: d.Delta,
 		busy: map[string]string{}, patched: map[string]github.PR{},
 		split:  ui.NewSplitPane(d.Theme),
 		filter: ui.NewFilter(d.Theme, d.Keys),
@@ -230,7 +238,7 @@ func (t *Tab) byKey(k string) *section {
 // re-renders Markdown.
 func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	cmd := t.update(msg)
-	return t, tea.Batch(cmd, t.syncDetail(), t.ensureRendered())
+	return t, tea.Batch(cmd, t.syncDetail(), t.ensureRendered(), t.ensureDiffRendered())
 }
 
 func (t *Tab) update(msg tea.Msg) tea.Cmd {
@@ -238,6 +246,9 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return cmd
 	}
 	if cmd, ok := t.updateActions(msg); ok {
+		return cmd
+	}
+	if cmd, ok := t.updateDiffMsg(msg); ok {
 		return cmd
 	}
 	switch msg := msg.(type) {
@@ -253,6 +264,9 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	kp, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
+	}
+	if t.diff != nil {
+		return t.updateDiff(kp)
 	}
 	if t.filter.Active() {
 		t.updateFilter(kp)
@@ -298,6 +312,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.toggleDraft()
 	case key.Matches(kp, pk.Session):
 		return t.startSession()
+	case key.Matches(kp, pk.Diff):
+		return t.openDiff()
 	default:
 		return t.table.Update(kp)
 	}
@@ -581,6 +597,9 @@ func (t *Tab) slide() {
 
 // Animating implements tabs.Animator: true while the divider springs.
 func (t *Tab) Animating() bool {
+	if t.diff != nil && !t.diff.loaded && t.dialog == nil && t.anim.Settings().Motion() {
+		return true // the hammer while fetching the diff
+	}
 	return t.sliding && !t.divider.Settled(t.anim.Frame())
 }
 
@@ -590,6 +609,7 @@ func (t *Tab) SetSize(width, height int) {
 	t.split.SetSize(width, max(height-1, 0))
 	t.resizeTable()
 	t.sizeDialog()
+	t.layoutDiff()
 }
 
 func (t *Tab) resizeTable() {
@@ -627,6 +647,9 @@ func (t *Tab) View() string {
 	if t.dialog != nil {
 		w, h := t.dialogSize()
 		return bar + "\n" + t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), w, h))
+	}
+	if t.diff != nil {
+		return bar + "\n" + t.diffViewString()
 	}
 	lw, _ := t.split.LeftSize()
 	list := t.searchBox(lw)
@@ -703,21 +726,25 @@ func (t *Tab) ShortHelp() []key.Binding {
 	switch {
 	case t.dialog != nil:
 		return t.keys.FormHelp()
+	case t.diff != nil:
+		return t.diffHelp()
 	case t.filter.Active():
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	}
 	pk := t.keys.PRs
-	return []key.Binding{pk.PrevSection, pk.NextSection, pk.DetailPrev, pk.DetailNext, pk.RepoFilter, t.keys.List.Filter, pk.Open, pk.Checkout, pk.Merge}
+	return []key.Binding{pk.PrevSection, pk.NextSection, pk.DetailPrev, pk.DetailNext, pk.RepoFilter, t.keys.List.Filter, pk.Diff, pk.Open, pk.Checkout, pk.Merge}
 }
 
 // FullHelp implements tabs.Tab.
 func (t *Tab) FullHelp() [][]key.Binding {
-	l, in, pk := t.keys.List, t.keys.Input, t.keys.PRs
+	l, in, pk, df := t.keys.List, t.keys.Input, t.keys.PRs, t.keys.Diff
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{pk.NextSection, pk.PrevSection, l.Filter, pk.RepoFilter, l.ShrinkPane, l.GrowPane},
 		{pk.DetailNext, pk.DetailPrev, pk.DetailDown, pk.DetailUp},
-		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session},
+		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session, pk.Diff},
+		{df.Down, df.Up, df.PageDown, df.PageUp, df.Top, df.Bottom, df.NextFile, df.PrevFile},
+		{df.Approve, df.RequestChanges, df.Comment, df.Open, df.Close},
 		{pk.UpdateBranch, pk.Merge, pk.AutoMerge, pk.ToggleDraft},
 		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
 	}
@@ -728,12 +755,30 @@ func (t *Tab) Commands() []tabs.Command {
 	l, pk := t.keys.List, t.keys.PRs
 	// Commands run outside Update, so they catch the detail pane up here.
 	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return t.syncDetail() } }
-	cmds := []tabs.Command{
+	var cmds []tabs.Command
+	if t.diff != nil {
+		cmds = t.diffCommands()
+	}
+	reviewCmd := func(id, title, event string, k key.Binding) tabs.Command {
+		c := tabs.Command{ID: id, Title: title, Run: func() tea.Cmd { return t.openReview(event) }}
+		if t.diff != nil {
+			c.Key = k // the review keys only work in the viewer
+		}
+		return c
+	}
+	df := t.keys.Diff
+	cmds = append(cmds,
+		tabs.Command{ID: "pr_diff", Title: "PR: review diff", Key: pk.Diff, Run: t.openDiff},
+		reviewCmd("diff_approve", "PR: approve…", github.ReviewEventApprove, df.Approve),
+		reviewCmd("diff_request_changes", "PR: request changes…", github.ReviewEventRequestChanges, df.RequestChanges),
+		reviewCmd("diff_comment", "PR: comment…", github.ReviewEventComment, df.Comment),
+	)
+	cmds = append(cmds, []tabs.Command{
 		{ID: "filter", Title: "Filter PRs", Key: l.Filter, Run: do(t.startFilter)},
 		{ID: "pr_next_section", Title: "PRs: next section", Key: pk.NextSection, Run: do(func() { t.switchSection(t.active + 1) })},
 		{ID: "pr_prev_section", Title: "PRs: previous section", Key: pk.PrevSection, Run: do(func() { t.switchSection(t.active - 1) })},
 		{ID: "pr_repo_filter", Title: "PRs: filter by repo…", Key: pk.RepoFilter, Run: t.openRepoFilter},
-	}
+	}...)
 	if t.repo != "" {
 		cmds = append(cmds, tabs.Command{ID: "pr_repo_clear", Title: "PRs: show all repos", Run: do(func() { t.setRepo(allRepos) })})
 	}
@@ -814,7 +859,7 @@ func (t *Tab) Select(id string) tea.Cmd {
 }
 
 // CapturingInput implements tabs.InputCapturer.
-func (t *Tab) CapturingInput() bool { return t.dialog != nil || t.filter.Active() }
+func (t *Tab) CapturingInput() bool { return t.dialog != nil || t.filter.Active() || t.diff != nil }
 
 // LastUpdated implements tabs.Updater: when the shown section was fetched.
 func (t *Tab) LastUpdated() time.Time {

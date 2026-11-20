@@ -106,6 +106,9 @@ func (t *Tab) actionDone(msg actionDoneMsg) tea.Cmd {
 // until a search returns the PR at least as new.
 func (t *Tab) patchPR(p github.PR) {
 	t.patched[p.ID()] = p
+	if t.diff != nil && t.diff.pr.ID() == p.ID() {
+		t.diff.pr = p
+	}
 	for _, s := range t.sections {
 		if t.applyPatches(&s.res) {
 			t.rowsChanged(s)

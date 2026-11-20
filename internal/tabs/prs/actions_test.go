@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -67,6 +68,26 @@ func (f *fakeGH) SetDraft(_ context.Context, repo string, n int, draft bool) err
 	return f.act("draft %s#%d %v", repo, n, draft)
 }
 
+// --- fakeGH's PRReviewer --------------------------------------------------------
+
+func (f *fakeGH) Diff(_ context.Context, repo string, n int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := fmt.Sprintf("%s#%d", repo, n)
+	f.diffCalls = append(f.diffCalls, id)
+	if f.diffErr != nil {
+		return "", f.diffErr
+	}
+	if d, ok := f.diffs[id]; ok {
+		return d, nil
+	}
+	return sampleDiff, nil
+}
+
+func (f *fakeGH) SubmitReview(_ context.Context, repo string, n int, event, body string) error {
+	return f.act("review %s#%d %s %q", repo, n, event, body)
+}
+
 // --- harness ---------------------------------------------------------------------
 
 type actionRig struct {
@@ -108,6 +129,9 @@ func (r *actionRig) feed(cmd tea.Cmd) (toasts, []tea.Msg) {
 	for len(queue) > 0 {
 		msg := queue[0]
 		queue = queue[1:]
+		if t := reflect.TypeOf(msg); t != nil && strings.HasSuffix(t.PkgPath(), "bubbles/v2/cursor") {
+			continue // a text area's blink would tick forever
+		}
 		switch m := msg.(type) {
 		case ui.ErrMsg:
 			out.errs = append(out.errs, m.Err.Error())

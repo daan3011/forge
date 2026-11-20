@@ -17,6 +17,7 @@ import (
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
 	agent "github.com/daan3011/forge/internal/sessions"
@@ -93,6 +94,7 @@ type Model struct {
 	github       github.PRClient     // from WithGitHub
 	checkout     checkout.Checker    // from WithCheckout
 	clipboard    clipboard.Copier    // from WithClipboard
+	delta        delta.Renderer      // from WithDelta
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -126,7 +128,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
 		Config: cfg, Sessions: m.sessions, Live: m.live,
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
-		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard,
+		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
