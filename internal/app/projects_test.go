@@ -205,8 +205,8 @@ func TestStartupProject(t *testing.T) {
 			}
 			// Placeholder tabs render the project they were given.
 			want := strings.ReplaceAll(tt.want, "<all>", "all projects")
-			m.tabs[1].SetSize(100, 30)
-			if view := ansi.Strip(m.tabs[1].View()); !strings.Contains(view, "project: "+want) {
+			m.tabs[2].SetSize(100, 30) // Pipelines (PRs is no longer a placeholder)
+			if view := ansi.Strip(m.tabs[2].View()); !strings.Contains(view, "project: "+want) {
 				t.Fatalf("tab did not get %s:\n%s", want, view)
 			}
 		})

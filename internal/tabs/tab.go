@@ -49,6 +49,12 @@ type Updater interface {
 	LastUpdated() time.Time
 }
 
+// StatusDetailer is implemented by tabs with their own status bar text,
+// such as the PRs tab's "@login · PR 3/12 (fetched 12)".
+type StatusDetailer interface {
+	StatusDetail() string
+}
+
 // AutoRefresher is implemented by tabs that refresh in the background. The
 // root model calls Refresh on every tick of one of Sources while the tab is
 // visible; hidden tabs are paused unless RefreshWhenHidden (Home, Sessions)

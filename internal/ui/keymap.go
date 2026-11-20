@@ -20,6 +20,7 @@ type KeyMap struct {
 	List     ListKeys
 	Input    InputKeys
 	Sessions SessionKeys
+	PRs      PRKeys
 	// Transcript drives the transcript viewer (P1.6), which takes over
 	// the Sessions tab while open.
 	Transcript TranscriptKeys
@@ -79,6 +80,13 @@ type SessionKeys struct {
 	Transcript  key.Binding // open the transcript viewer
 	OpenPR      key.Binding // open the linked PR (else the issue) in the browser
 	OpenIssue   key.Binding // open the linked issue in the browser
+}
+
+// PRKeys are the PRs tab's actions (P2.1).
+type PRKeys struct {
+	NextSection key.Binding
+	PrevSection key.Binding
+	RepoFilter  key.Binding // pick a repo to narrow every section to
 }
 
 // TranscriptKeys are active while the transcript viewer is open; nothing
@@ -168,6 +176,11 @@ func DefaultKeyMap() *KeyMap {
 			OpenPR:      bind("open linked PR", "o"),
 			OpenIssue:   bind("open linked issue", "O"),
 		},
+		PRs: PRKeys{
+			NextSection: bind("next section", "l", "right"),
+			PrevSection: bind("prev section", "h", "left"),
+			RepoFilter:  bind("filter by repo", "f"),
+		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
 			Down:      bind("next entry", "j", "down"),
@@ -211,6 +224,7 @@ const (
 	scopeMain     = "main" // global + list keys, active together
 	scopeInput    = "input"
 	scopeSessions = "tab:sessions"
+	scopePRs      = "tab:prs"
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
 	scopeTranscript = "transcript"
@@ -221,7 +235,7 @@ const (
 func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
-	g, l, in, ss, tr := &k.Global, &k.List, &k.Input, &k.Sessions, &k.Transcript
+	g, l, in, ss, pr, tr := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -253,6 +267,9 @@ func (k *KeyMap) actions() []action {
 		{"session_transcript", scopeSessions, &ss.Transcript},
 		{"session_open_pr", scopeSessions, &ss.OpenPR},
 		{"session_open_issue", scopeSessions, &ss.OpenIssue},
+		{"pr_next_section", scopePRs, &pr.NextSection},
+		{"pr_prev_section", scopePRs, &pr.PrevSection},
+		{"pr_repo_filter", scopePRs, &pr.RepoFilter},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

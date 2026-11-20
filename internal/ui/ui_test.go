@@ -91,6 +91,9 @@ func TestColumnWidths(t *testing.T) {
 		{"no flex pads last", []Column{{Width: 3}, {Width: 3}}, 10, []int{3, 6}},
 		{"too narrow drops right", []Column{{Width: 10}, {Width: 10}}, 12, []int{10, 1}},
 		{"zero", []Column{{Width: 3}}, 0, []int{0}},
+		{"hidden takes no space", []Column{{Width: 5}, {Hidden: true, Width: 9}, {Flex: true}}, 30, []int{5, 0, 24}},
+		{"hidden last, no flex", []Column{{Width: 3}, {Hidden: true}}, 10, []int{10, 0}},
+		{"hidden while too narrow", []Column{{Width: 10}, {Width: 10}, {Hidden: true}}, 12, []int{10, 1, 0}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

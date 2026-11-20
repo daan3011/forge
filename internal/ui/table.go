@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,10 +20,15 @@ type Column struct {
 	Title string
 	Width int
 	Flex  bool
+	// Hidden columns are never drawn and take no space; the filter still
+	// matches them (ids, branch names, authors).
+	Hidden bool
 	// Render, if set, draws the column's body cells (not the header): the
 	// raw cell text, the column width and the row's style (normal or
 	// selected) in, exactly width styled cells out. The raw text is still
-	// what the filter matches. Use it for icons and per-value colours.
+	// what the filter matches. Use it for icons and per-value colours. In a
+	// table with a row height above 1 it returns one line per row line,
+	// joined by "\n"; missing lines are blank.
 	Render func(cell string, width int, row lipgloss.Style) string
 }
 
@@ -42,7 +48,20 @@ type Table struct {
 	widths  []int
 	focused bool
 	empty   func(width, height int) string // see SetEmptyView
+	rowH    int                            // lines per row; see SetRowHeight
 }
+
+// SetRowHeight makes every body row n lines tall (n < 1 means 1). A cell's
+// text is split on "\n", one part per line, each fitted to the column.
+func (t *Table) SetRowHeight(n int) {
+	t.rowH = max(n, 1)
+	t.clamp()
+}
+
+func (t *Table) rowHeight() int { return max(t.rowH, 1) }
+
+// pageRows is how many rows fit in the body.
+func (t *Table) pageRows() int { return t.bodyHeight() / t.rowHeight() }
 
 // SetEmptyView draws the body of a table that has no rows at all (not one
 // whose filter matches nothing), such as anim.EmptyForge. nil restores the
@@ -131,7 +150,7 @@ func (t *Table) Update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	l := t.keys.List
-	half := max(t.bodyHeight()/2, 1)
+	half := max(t.pageRows()/2, 1)
 	switch {
 	case key.Matches(kp, l.Up):
 		t.SetCursor(t.cursor - 1)
@@ -153,7 +172,7 @@ func (t *Table) bodyHeight() int { return max(t.height-1, 0) }
 
 func (t *Table) clamp() {
 	t.cursor = min(max(t.cursor, 0), max(len(t.visible)-1, 0))
-	h := t.bodyHeight()
+	h := t.pageRows()
 	if h == 0 {
 		t.offset = t.cursor
 		return
@@ -188,13 +207,13 @@ func (t *Table) View() string {
 		}
 		lines = append(lines, t.theme.TableEmpty.Render(fit(empty, t.width)))
 	}
-	end := min(t.offset+t.bodyHeight(), len(t.visible))
+	end := min(t.offset+t.pageRows(), len(t.visible))
 	for i := t.offset; i < end; i++ {
 		style := t.theme.TableRow
 		if i == t.cursor && t.focused {
 			style = t.theme.TableSelected
 		}
-		lines = append(lines, t.renderRow(t.visible[i], style))
+		lines = append(lines, t.renderRow(t.visible[i], style)...)
 	}
 	for len(lines) < t.height {
 		lines = append(lines, strings.Repeat(" ", t.width))
@@ -202,42 +221,67 @@ func (t *Table) View() string {
 	return strings.Join(lines[:t.height], "\n")
 }
 
-// renderRow renders a body row in style. Rows with custom-rendered columns
-// are styled cell by cell, so a cell's own colours don't end the row's
-// background early.
-func (t *Table) renderRow(cells []string, style lipgloss.Style) string {
+// renderRow renders a body row in style, one string per row line. Rows
+// with custom-rendered columns are styled cell by cell, so a cell's own
+// colours don't end the row's background early.
+func (t *Table) renderRow(cells []string, style lipgloss.Style) []string {
+	h := t.rowHeight()
 	custom := false
 	for i, w := range t.widths {
 		custom = custom || (w > 0 && t.cols[i].Render != nil)
 	}
-	if !custom {
-		return style.Render(t.renderCells(cells))
+	if !custom && h == 1 {
+		return []string{style.Render(t.renderCells(cells))}
 	}
-	var b strings.Builder
-	used := 0
+	// parts[i][l] is column i's text on row line l, already styled and fit.
+	parts := make([][]string, len(t.widths))
 	for i, w := range t.widths {
 		if w == 0 {
 			continue
-		}
-		if used > 0 {
-			b.WriteString(style.Render(strings.Repeat(" ", colGap)))
-			used += colGap
 		}
 		cell := ""
 		if i < len(cells) {
 			cell = cells[i]
 		}
+		var raw []string
 		if r := t.cols[i].Render; r != nil {
-			b.WriteString(fit(r(cell, w, style), w))
+			raw = strings.Split(r(cell, w, style), "\n")
 		} else {
-			b.WriteString(style.Render(fit(cell, w)))
+			raw = strings.Split(cell, "\n")
+			for l := range raw {
+				raw[l] = style.Render(fit(raw[l], w))
+			}
 		}
-		used += w
+		parts[i] = make([]string, h)
+		for l := range h {
+			if l < len(raw) {
+				parts[i][l] = fit(raw[l], w)
+			} else {
+				parts[i][l] = style.Render(strings.Repeat(" ", w))
+			}
+		}
 	}
-	if pad := t.width - used; pad > 0 {
-		b.WriteString(style.Render(strings.Repeat(" ", pad)))
+	out := make([]string, h)
+	for l := range h {
+		var b strings.Builder
+		used := 0
+		for i, w := range t.widths {
+			if w == 0 {
+				continue
+			}
+			if used > 0 {
+				b.WriteString(style.Render(strings.Repeat(" ", colGap)))
+				used += colGap
+			}
+			b.WriteString(parts[i][l])
+			used += w
+		}
+		if pad := t.width - used; pad > 0 {
+			b.WriteString(style.Render(strings.Repeat(" ", pad)))
+		}
+		out[l] = b.String()
 	}
-	return b.String()
+	return out
 }
 
 // renderCells lays cells out at the computed widths, padded to the full width.
@@ -276,18 +320,28 @@ func fit(s string, width int) string {
 // (width 0) from the right.
 func columnWidths(cols []Column, total int) []int {
 	widths := make([]int, len(cols))
-	if len(cols) == 0 || total <= 0 {
+	shown := 0
+	for _, c := range cols {
+		if !c.Hidden {
+			shown++
+		}
+	}
+	if shown == 0 || total <= 0 {
 		return widths
 	}
-	remaining := total - colGap*(len(cols)-1)
-	flex := 0
+	remaining := total - colGap*(shown-1)
+	flex, last := 0, -1
 	for i, c := range cols {
-		if c.Flex {
-			flex++
+		switch {
+		case c.Hidden:
 			continue
+		case c.Flex:
+			flex++
+		default:
+			widths[i] = c.Width
+			remaining -= c.Width
 		}
-		widths[i] = c.Width
-		remaining -= c.Width
+		last = i
 	}
 	if flex > 0 {
 		share, extra := 0, 0
@@ -295,7 +349,7 @@ func columnWidths(cols []Column, total int) []int {
 			share, extra = remaining/flex, remaining%flex
 		}
 		for i, c := range cols {
-			if !c.Flex {
+			if !c.Flex || c.Hidden {
 				continue
 			}
 			widths[i] = max(share, c.Width)
@@ -307,16 +361,20 @@ func columnWidths(cols []Column, total int) []int {
 		}
 	} else if remaining > 0 {
 		// No flex columns: give the slack to the last column.
-		widths[len(widths)-1] += remaining
+		widths[last] += remaining
 		remaining = 0
 	}
 	// Too narrow: shrink from the right until everything fits. A column shrunk
 	// to zero is skipped when rendering, which also frees its gap.
+	first := slices.IndexFunc(cols, func(c Column) bool { return !c.Hidden })
 	for i := len(widths) - 1; remaining < 0 && i >= 0; i-- {
+		if cols[i].Hidden {
+			continue
+		}
 		take := min(widths[i], -remaining)
 		widths[i] -= take
 		remaining += take
-		if widths[i] == 0 && i > 0 {
+		if widths[i] == 0 && i > first {
 			remaining += colGap
 		}
 	}

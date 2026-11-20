@@ -88,6 +88,7 @@ type Model struct {
 	templatesDir string              // from WithTemplates
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
+	github       github.PRSearcher   // from WithGitHub
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -121,6 +122,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
 		Config: cfg, Sessions: m.sessions, Live: m.live,
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
+		GitHub: m.github,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
@@ -699,6 +701,18 @@ func (m Model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// activeDetail is the active tab's own status bar text.
+func (m Model) activeDetail() string {
+	if len(m.tabs) == 0 {
+		return ""
+	}
+	d, ok := m.tabs[m.active].(tabs.StatusDetailer)
+	if !ok {
+		return ""
+	}
+	return d.StatusDetail()
+}
+
 func (m Model) activeFetching() bool {
 	if len(m.tabs) == 0 {
 		return false
@@ -765,6 +779,7 @@ func (m Model) render() string {
 			Spinner:  anim.HammerFrame(m.anim.Frame(), m.anim.Settings(), m.theme),
 			Rate:     m.rateBadge(),
 			Waiting:  m.waiting,
+			Detail:   m.activeDetail(),
 			Keys:     m.statusKeys(active),
 		}),
 	)

@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 
+	"github.com/daan3011/forge/internal/github"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/browser"
@@ -21,6 +23,12 @@ func WithTemplates(dir string, providers *templates.Registry) Option {
 // WithBrowser gives tabs a way to open URLs (linked issues and PRs).
 func WithBrowser(b browser.Opener) Option {
 	return func(m *Model) { m.browser = b }
+}
+
+// WithGitHub sets the client the PRs tab searches with (P2.1). Without it
+// the tab says GitHub isn't available.
+func WithGitHub(g github.PRSearcher) Option {
+	return func(m *Model) { m.github = g }
 }
 
 // editTemplates creates the templates folder with the defaults if needed,

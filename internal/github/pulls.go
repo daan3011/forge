@@ -8,10 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 // PR states as forge shows them.
@@ -41,60 +38,11 @@ type PullFinder interface {
 	PullsForBranch(ctx context.Context, repo, branch string) ([]Pull, error)
 }
 
-// REST is the PullFinder backed by the GitHub REST API through go-gh, which
-// reuses `gh auth`. The client is made on first use, so a missing login
-// only fails the calls, not startup.
-type REST struct {
-	opts api.ClientOptions
-	// OnResponse, if set, sees every HTTP response (also failed ones), so
-	// the caller can report the rate limit with Observe.
-	OnResponse func(*http.Response)
-
-	once   sync.Once
-	client *api.RESTClient
-	err    error
-}
-
-var _ PullFinder = (*REST)(nil)
-
-// NewREST returns a REST client. Zero options use gh's host and token.
-func NewREST(opts api.ClientOptions) *REST { return &REST{opts: opts} }
-
-func (r *REST) rest() (*api.RESTClient, error) {
-	r.once.Do(func() {
-		opts := r.opts
-		base := opts.Transport
-		if base == nil {
-			base = http.DefaultTransport
-		}
-		opts.Transport = observer{base: base, on: func(resp *http.Response) {
-			if r.OnResponse != nil {
-				r.OnResponse(resp)
-			}
-		}}
-		r.client, r.err = api.NewRESTClient(opts)
-	})
-	return r.client, r.err
-}
-
-type observer struct {
-	base http.RoundTripper
-	on   func(*http.Response)
-}
-
-func (o observer) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := o.base.RoundTrip(req)
-	if resp != nil {
-		o.on(resp)
-	}
-	return resp, err
-}
-
 // maxPulls is how many PRs per branch are fetched.
 const maxPulls = 10
 
 // PullsForBranch implements PullFinder.
-func (r *REST) PullsForBranch(ctx context.Context, repo, branch string) ([]Pull, error) {
+func (r *Client) PullsForBranch(ctx context.Context, repo, branch string) ([]Pull, error) {
 	owner, _, ok := strings.Cut(repo, "/")
 	if !ok || owner == "" || branch == "" {
 		return nil, fmt.Errorf("github: pulls for %q on %q: need owner/repo and a branch", branch, repo)

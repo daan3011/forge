@@ -14,6 +14,7 @@ import (
 
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/live"
@@ -52,6 +53,9 @@ type Deps struct {
 	Providers *templates.Registry
 	// Browser opens URLs (linked issues and PRs); nil can't open any.
 	Browser browser.Opener
+	// GitHub runs the PRs tab searches (P2.1); nil shows that GitHub
+	// isn't available.
+	GitHub github.PRSearcher
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

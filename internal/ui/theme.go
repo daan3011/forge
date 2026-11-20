@@ -39,6 +39,7 @@ type Palette struct {
 	Text      color.Color // "text": primary text
 	OnAccent  color.Color // "onaccent": text drawn on the accent colour
 	Error     color.Color // "error": errors
+	Success   color.Color // "patina": passing checks, approvals, added lines
 }
 
 func darkPalette() Palette {
@@ -53,6 +54,7 @@ func darkPalette() Palette {
 		Text:      lipgloss.Color("#e8e2d9"),
 		OnAccent:  Charcoal,
 		Error:     lipgloss.Color("#e5484d"),
+		Success:   lipgloss.Color("#7fb069"),
 	}
 }
 
@@ -68,6 +70,7 @@ func lightPalette() Palette {
 		Text:      lipgloss.Color("#2b2724"),
 		OnAccent:  lipgloss.Color("#fff6e0"),
 		Error:     lipgloss.Color("#c62828"),
+		Success:   lipgloss.Color("#3f7d3a"),
 	}
 }
 
@@ -85,6 +88,7 @@ func (p *Palette) apply(overrides map[string]string) {
 		"text":     &p.Text,
 		"onaccent": &p.OnAccent,
 		"error":    &p.Error,
+		"patina":   &p.Success,
 	}
 	for name, hex := range overrides {
 		if slot, ok := slots[name]; ok && hex != "" {
@@ -153,6 +157,19 @@ type Theme struct {
 	TranscriptDetail  lipgloss.Style // expanded tool input / result
 	TranscriptNotice  lipgloss.Style // /commands, compactions
 	TranscriptCursor  lipgloss.Style // gutter bar at the selected entry
+
+	// PRs tab (P2.1).
+	SectionActive   lipgloss.Style // active section in the section bar
+	SectionInactive lipgloss.Style
+	SectionSep      lipgloss.Style // "│" and the search glyph
+	SearchBox       lipgloss.Style // rounded box around the section query
+	SearchIcon      lipgloss.Style
+	SearchQuery     lipgloss.Style
+	PRRepo          lipgloss.Style // line 1 of a PR row: owner/repo · #n
+	PRTitle         lipgloss.Style // line 2: the title
+	DiffAdd         lipgloss.Style // +additions
+	DiffDel         lipgloss.Style // -deletions
+	PRTime          lipgloss.Style // updated / created ages
 
 	PaletteBox            lipgloss.Style
 	PalettePrompt         lipgloss.Style
@@ -234,6 +251,18 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		TranscriptNotice:  lipgloss.NewStyle().Foreground(p.Border).Italic(true),
 		TranscriptCursor:  lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 
+		SectionActive:   lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true).Padding(0, 1),
+		SectionInactive: lipgloss.NewStyle().Foreground(p.Muted).Padding(0, 1),
+		SectionSep:      lipgloss.NewStyle().Foreground(p.Border),
+		SearchBox:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
+		SearchIcon:      lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		SearchQuery:     lipgloss.NewStyle().Foreground(p.Muted),
+		PRRepo:          lipgloss.NewStyle().Foreground(Mix(p.Accent, p.Muted, 0.45)),
+		PRTitle:         base,
+		DiffAdd:         lipgloss.NewStyle().Foreground(p.Success),
+		DiffDel:         lipgloss.NewStyle().Foreground(p.Error),
+		PRTime:          base,
+
 		PaletteBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
 		PalettePrompt:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		PaletteGroup:          lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
@@ -284,6 +313,51 @@ func (t *Theme) LinkState(state string) lipgloss.Style {
 		return s.Foreground(t.Border)
 	}
 	return s.Foreground(t.Muted)
+}
+
+// PRIcon is a PR's state icon and its style: open, draft, merged or closed
+// (the github.State* values).
+func (t *Theme) PRIcon(state string) (string, lipgloss.Style) {
+	s := lipgloss.NewStyle()
+	switch state {
+	case "draft":
+		return "◌", s.Foreground(t.Muted)
+	case "merged":
+		return "⊕", s.Foreground(t.Link).Bold(true)
+	case "closed":
+		return "⊘", s.Foreground(t.Border)
+	}
+	return "⑂", s.Foreground(t.Accent).Bold(true)
+}
+
+// ReviewIcon is the icon and style of a PR's review decision
+// (APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, "" for none).
+func (t *Theme) ReviewIcon(decision string) (string, lipgloss.Style) {
+	s := lipgloss.NewStyle()
+	switch decision {
+	case "APPROVED":
+		return "✓", s.Foreground(t.Success).Bold(true)
+	case "CHANGES_REQUESTED":
+		return "✗", s.Foreground(t.Error).Bold(true)
+	case "REVIEW_REQUIRED":
+		return "●", s.Foreground(t.Highlight)
+	}
+	return "·", s.Foreground(t.Muted)
+}
+
+// CIIcon is the icon and style of a PR's check rollup (SUCCESS, FAILURE,
+// ERROR, PENDING, EXPECTED, "" for no checks).
+func (t *Theme) CIIcon(state string) (string, lipgloss.Style) {
+	s := lipgloss.NewStyle()
+	switch state {
+	case "SUCCESS":
+		return "✓", s.Foreground(t.Success).Bold(true)
+	case "FAILURE", "ERROR":
+		return "✗", s.Foreground(t.Error).Bold(true)
+	case "PENDING", "EXPECTED":
+		return "●", s.Foreground(t.Highlight)
+	}
+	return "·", s.Foreground(t.Muted)
 }
 
 // Huh is the Huh form theme in forge colours. It reads the theme each time a

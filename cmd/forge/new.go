@@ -24,10 +24,20 @@ import (
 	"github.com/daan3011/forge/internal/ui"
 )
 
-// githubPulls looks up the PRs opened from session branches through `gh
-// auth` (P1.9). The TUI points its OnResponse at the program so GitHub's
-// rate limit backs the refresh off; the client is made on first use.
-var githubPulls = github.NewREST(api.ClientOptions{})
+// githubPulls is forge's one GitHub client, through `gh auth`: it finds
+// the PRs opened from session branches (P1.9), runs the PRs tab searches
+// and resolves {pr_*} template variables (P2.1). The TUI points its
+// OnResponse at the program so GitHub's rate limit backs the refresh off;
+// the client is made on first use.
+var githubPulls = github.NewClient(api.ClientOptions{})
+
+// defaultProviders resolves template variables from links: {pr_title} and
+// {pr_body} through GitHub. Plane issues come with P3.1.
+func defaultProviders() *templates.Registry {
+	r := templates.NewRegistry()
+	r.Register(store.KindGitHubPR, templates.ProviderFunc(githubPulls.PRContext))
+	return r
+}
 
 // newSessionService builds the real session service over forge's tmux
 // server, git worktrees and database.

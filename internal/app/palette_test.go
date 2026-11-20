@@ -351,11 +351,8 @@ func TestPaletteEntityJump(t *testing.T) {
 		t.Fatalf("active = %d, want 1 (PRs)", m.active)
 	}
 	view := ansi.Strip(m.render())
-	if !strings.Contains(view, "Title: sample: Bump dependencies") {
+	if !strings.Contains(view, "daan/forge · #98") || !strings.Contains(view, "PR 2/2") {
 		t.Fatalf("entity should be selected:\n%s", view)
-	}
-	if _, ok := m.tabs[1].(*tabkit.Placeholder); !ok {
-		t.Fatal("PRs tab should be a placeholder")
 	}
 }
 
