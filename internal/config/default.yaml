@@ -117,6 +117,14 @@ keybinds:
   # pr_detail_prev: ["["]          # detail pane: previous tab
   # pr_detail_down: ["J"]          # scroll the detail pane down
   # pr_detail_up: ["K"]            # scroll the detail pane up
+  # pr_open: ["o"]                 # open the PR in the browser
+  # pr_copy_url: ["y"]             # copy the PR's URL
+  # pr_checkout: ["c"]             # check out locally (a worktree when the checkout is dirty)
+  # pr_update_branch: ["u"]        # merge the base branch into the PR
+  # pr_merge: ["m"]                # merge (pick a method, confirm)
+  # pr_auto_merge: ["M"]           # enable auto-merge
+  # pr_toggle_draft: ["d"]         # draft <-> ready for review
+  # pr_session: ["s"]              # start a forge session for the PR
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

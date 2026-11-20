@@ -13,6 +13,7 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/spf13/cobra"
 
+	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	agent "github.com/daan3011/forge/internal/sessions"
@@ -37,6 +38,13 @@ func defaultProviders() *templates.Registry {
 	r := templates.NewRegistry()
 	r.Register(store.KindGitHubPR, templates.ProviderFunc(githubPulls.PRContext))
 	return r
+}
+
+// newCheckout checks PRs out in the project checkout, or in a worktree
+// under the sessions' worktree root when the checkout is dirty (P2.3).
+func newCheckout(cfg *config.Config) *checkout.Checkout {
+	g := worktree.NewExec()
+	return checkout.New(g, worktree.New(cfg.Sessions.WorktreeRoot, g))
 }
 
 // newSessionService builds the real session service over forge's tmux

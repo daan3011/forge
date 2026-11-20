@@ -14,6 +14,8 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/checkout"
+	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
@@ -89,6 +91,8 @@ type Model struct {
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
 	github       github.PRClient     // from WithGitHub
+	checkout     checkout.Checker    // from WithCheckout
+	clipboard    clipboard.Copier    // from WithClipboard
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -122,7 +126,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
 		Config: cfg, Sessions: m.sessions, Live: m.live,
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
-		GitHub: m.github,
+		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
@@ -717,8 +721,22 @@ func (m Model) activeFetching() bool {
 	if len(m.tabs) == 0 {
 		return false
 	}
+	if m.activeBusy() != "" {
+		return true
+	}
 	f, ok := m.tabs[m.active].(tabs.Fetcher)
 	return ok && f.Fetching()
+}
+
+// activeBusy is the visible tab's running action (tabs.Busier), or "".
+func (m Model) activeBusy() string {
+	if len(m.tabs) == 0 {
+		return ""
+	}
+	if b, ok := m.tabs[m.active].(tabs.Busier); ok {
+		return b.Busy()
+	}
+	return ""
 }
 
 func (m Model) activeUpdated() time.Time {
@@ -776,6 +794,7 @@ func (m Model) render() string {
 			Updated:  m.activeUpdated(),
 			Now:      m.now,
 			Fetching: m.activeFetching(),
+			Activity: m.activeBusy(),
 			Spinner:  anim.HammerFrame(m.anim.Frame(), m.anim.Settings(), m.theme),
 			Rate:     m.rateBadge(),
 			Waiting:  m.waiting,

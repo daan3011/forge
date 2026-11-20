@@ -41,22 +41,24 @@ const (
 // PR is a pull request as the PR list shows it. It is also the cache
 // format, so fields keep their JSON names.
 type PR struct {
-	Repo           string    `json:"repo"` // owner/name
-	Number         int       `json:"number"`
-	Title          string    `json:"title"`
-	Author         string    `json:"author"` // login; "" for a deleted user
-	URL            string    `json:"url"`
-	State          string    `json:"state"` // StateOpen, StateDraft, StateMerged or StateClosed
-	Draft          bool      `json:"draft"`
-	ReviewDecision string    `json:"review_decision"`
-	CI             string    `json:"ci"`
-	Mergeable      string    `json:"mergeable"`
-	Additions      int       `json:"additions"`
-	Deletions      int       `json:"deletions"`
-	HeadRef        string    `json:"head_ref"`
-	BaseRef        string    `json:"base_ref"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	Repo           string `json:"repo"` // owner/name
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	Author         string `json:"author"` // login; "" for a deleted user
+	URL            string `json:"url"`
+	State          string `json:"state"` // StateOpen, StateDraft, StateMerged or StateClosed
+	Draft          bool   `json:"draft"`
+	ReviewDecision string `json:"review_decision"`
+	CI             string `json:"ci"`
+	Mergeable      string `json:"mergeable"`
+	Additions      int    `json:"additions"`
+	Deletions      int    `json:"deletions"`
+	HeadRef        string `json:"head_ref"`
+	BaseRef        string `json:"base_ref"`
+	// CrossRepo is set for a PR from a fork, whose head isn't on origin.
+	CrossRepo bool      `json:"cross_repo"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ID is the link id of the PR: "owner/repo#12".
@@ -105,17 +107,21 @@ func BuildQuery(section, repo string) string {
 	return strings.Join(fields, " ")
 }
 
+// prFields are the PullRequest fields a list row needs, shared by the
+// search and the single-PR refresh (P2.3).
+const prFields = `number title url isDraft state reviewDecision mergeable
+        additions deletions createdAt updatedAt headRefName baseRefName isCrossRepository
+        author { login }
+        repository { nameWithOwner }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }`
+
 const searchQuery = `query ForgePRSearch($q: String!, $first: Int!) {
   viewer { login }
   search(type: ISSUE, query: $q, first: $first) {
     issueCount
     nodes {
       ... on PullRequest {
-        number title url isDraft state reviewDecision mergeable
-        additions deletions createdAt updatedAt headRefName baseRefName
-        author { login }
-        repository { nameWithOwner }
-        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+        ` + prFields + `
       }
     }
   }
@@ -162,6 +168,7 @@ type gqlPull struct {
 	UpdatedAt      time.Time `json:"updatedAt"`
 	HeadRefName    string    `json:"headRefName"`
 	BaseRefName    string    `json:"baseRefName"`
+	IsCross        bool      `json:"isCrossRepository"`
 	Author         *struct {
 		Login string `json:"login"`
 	} `json:"author"`
@@ -188,28 +195,35 @@ func ParseSearch(r io.Reader) (SearchResult, error) {
 	}
 	res := SearchResult{Total: raw.Search.IssueCount, Viewer: raw.Viewer.Login, PRs: []PR{}}
 	for _, n := range raw.Search.Nodes {
-		if n.Number == 0 || n.Repository == nil {
-			continue
+		if p, ok := n.pr(); ok {
+			res.PRs = append(res.PRs, p)
 		}
-		p := PR{
-			Repo: n.Repository.NameWithOwner, Number: n.Number, Title: n.Title, URL: n.URL,
-			Draft: n.IsDraft, State: gqlState(n.State, n.IsDraft),
-			ReviewDecision: n.ReviewDecision, Mergeable: n.Mergeable,
-			Additions: n.Additions, Deletions: n.Deletions,
-			HeadRef: n.HeadRefName, BaseRef: n.BaseRefName,
-			CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
-		}
-		if n.Author != nil {
-			p.Author = n.Author.Login
-		}
-		if len(n.Commits.Nodes) > 0 {
-			if r := n.Commits.Nodes[0].Commit.StatusCheckRollup; r != nil {
-				p.CI = r.State
-			}
-		}
-		res.PRs = append(res.PRs, p)
 	}
 	return res, nil
+}
+
+// pr converts a node; false for nodes that aren't pull requests.
+func (n gqlPull) pr() (PR, bool) {
+	if n.Number == 0 || n.Repository == nil {
+		return PR{}, false
+	}
+	p := PR{
+		Repo: n.Repository.NameWithOwner, Number: n.Number, Title: n.Title, URL: n.URL,
+		Draft: n.IsDraft, State: gqlState(n.State, n.IsDraft),
+		ReviewDecision: n.ReviewDecision, Mergeable: n.Mergeable,
+		Additions: n.Additions, Deletions: n.Deletions,
+		HeadRef: n.HeadRefName, BaseRef: n.BaseRefName, CrossRepo: n.IsCross,
+		CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
+	}
+	if n.Author != nil {
+		p.Author = n.Author.Login
+	}
+	if len(n.Commits.Nodes) > 0 {
+		if r := n.Commits.Nodes[0].Commit.StatusCheckRollup; r != nil {
+			p.CI = r.State
+		}
+	}
+	return p, true
 }
 
 func gqlState(state string, draft bool) string {

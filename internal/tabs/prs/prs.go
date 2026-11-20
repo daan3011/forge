@@ -14,6 +14,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 
+	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/checkout"
+	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
@@ -63,6 +66,10 @@ type Tab struct {
 	sessions sessions.API
 	// tick arms the detail debounce (tea.Tick; tests replace it).
 	tick func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
+	// Quick actions (P2.3); each may be nil.
+	browser  browser.Opener
+	clip     clipboard.Copier
+	checkout checkout.Checker
 
 	split   ui.SplitPane
 	divider anim.Spring
@@ -77,11 +84,15 @@ type Tab struct {
 	active   int
 	repo     string // repo filter ("owner/name"); "" = all repos
 	dialog   *huh.Form
-	picked   *string // the repo dialog's value
-	authErr  bool    // the last fetch failed for want of a gh login
-	errShown bool    // a fetch error was toasted since the last Refresh
+	onDone   func() tea.Cmd // runs when the dialog is completed
+	authErr  bool           // the last fetch failed for want of a gh login
+	errShown bool           // a fetch error was toasted since the last Refresh
 
 	det detailState // the detail pane (P2.2)
+
+	busy       map[string]string    // PR id -> running action, e.g. "merging #12"
+	patched    map[string]github.PR // PR id -> copy re-fetched after an action
+	lastMethod string               // merge method last used
 }
 
 var (
@@ -94,6 +105,7 @@ var (
 	_ tabs.AutoRefresher  = (*Tab)(nil)
 	_ tabs.Animator       = (*Tab)(nil)
 	_ tabs.StatusDetailer = (*Tab)(nil)
+	_ tabs.Busier         = (*Tab)(nil)
 )
 
 // New returns the PRs tab. Init loads every section cache-first.
@@ -109,9 +121,11 @@ func newTab(d tabkit.Deps) *Tab {
 		now:      time.Now,
 		sessions: d.Sessions,
 		tick:     tea.Tick,
-		split:    ui.NewSplitPane(d.Theme),
-		filter:   ui.NewFilter(d.Theme, d.Keys),
-		det:      newDetailState(),
+		browser:  d.Browser, clip: d.Clipboard, checkout: d.Checkout,
+		busy: map[string]string{}, patched: map[string]github.PR{},
+		split:  ui.NewSplitPane(d.Theme),
+		filter: ui.NewFilter(d.Theme, d.Keys),
+		det:    newDetailState(),
 	}
 	t.split.SetRatio(listRatio)
 	t.table = ui.NewTable(d.Theme, d.Keys, t.columns())
@@ -223,6 +237,9 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	if cmd, ok := t.updateDetail(msg); ok {
 		return cmd
 	}
+	if cmd, ok := t.updateActions(msg); ok {
+		return cmd
+	}
 	switch msg := msg.(type) {
 	case tabkit.CacheLoadedMsg:
 		t.cacheLoaded(msg)
@@ -265,6 +282,22 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		t.resize(t.split.Grow)
 	case key.Matches(kp, l.ShrinkPane):
 		t.resize(t.split.Shrink)
+	case key.Matches(kp, pk.Open):
+		return t.openInBrowser()
+	case key.Matches(kp, pk.CopyURL):
+		return t.copyURL()
+	case key.Matches(kp, pk.Checkout):
+		return t.checkoutPR()
+	case key.Matches(kp, pk.UpdateBranch):
+		return t.updateBranch()
+	case key.Matches(kp, pk.Merge):
+		return t.openMerge()
+	case key.Matches(kp, pk.AutoMerge):
+		return t.openAutoMerge()
+	case key.Matches(kp, pk.ToggleDraft):
+		return t.toggleDraft()
+	case key.Matches(kp, pk.Session):
+		return t.startSession()
 	default:
 		return t.table.Update(kp)
 	}
@@ -280,6 +313,7 @@ func (t *Tab) cacheLoaded(msg tabkit.CacheLoadedMsg) {
 	if json.Unmarshal(msg.Value, &res) != nil {
 		return // unreadable cache: wait for the fetch
 	}
+	t.applyPatches(&res)
 	s.res, s.loaded, s.updated = res, true, msg.FetchedAt
 	t.rowsChanged(s)
 }
@@ -307,6 +341,7 @@ func (t *Tab) fetched(msg tabkit.FetchedMsg) tea.Cmd {
 		return errCmd(fmt.Errorf("prs: %w", err))
 	}
 	t.authErr = false
+	t.applyPatches(&res)
 	s.res, s.loaded, s.fresh, s.updated = res, true, true, msg.At
 	t.rowsChanged(s)
 	if msg.CacheErr != nil {
@@ -463,13 +498,20 @@ func (t *Tab) openRepoFilter() tea.Cmd {
 	for _, r := range t.repoChoices() {
 		opts = append(opts, huh.NewOption(r, r))
 	}
-	t.picked = &picked
-	t.dialog = huh.NewForm(huh.NewGroup(
+	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().Key("repo").
 			Title("Show PRs from which repo?").
 			Description("applies to every section · / searches").
-			Options(opts...).Value(t.picked),
-	)).WithTheme(t.theme.Huh()).WithKeyMap(t.keys.HuhKeyMap()).WithShowHelp(false)
+			Options(opts...).Value(&picked),
+	))
+	return t.openDialog(form, func() tea.Cmd { t.setRepo(picked); return nil })
+}
+
+// openDialog shows form over the tab; done runs once it is completed (not
+// when it is aborted).
+func (t *Tab) openDialog(form *huh.Form, done func() tea.Cmd) tea.Cmd {
+	t.dialog = form.WithTheme(t.theme.Huh()).WithKeyMap(t.keys.HuhKeyMap()).WithShowHelp(false)
+	t.onDone = done
 	init := t.dialog.Init()
 	t.sizeDialog()
 	return init
@@ -482,11 +524,14 @@ func (t *Tab) updateDialog(msg tea.Msg) tea.Cmd {
 	_, cmd := t.dialog.Update(msg)
 	switch t.dialog.State {
 	case huh.StateCompleted:
-		t.dialog = nil
-		t.setRepo(*t.picked)
-		return nil
+		done := t.onDone
+		t.dialog, t.onDone = nil, nil
+		if done == nil {
+			return nil
+		}
+		return done()
 	case huh.StateAborted:
-		t.dialog = nil
+		t.dialog, t.onDone = nil, nil
 		return nil
 	}
 	return cmd
@@ -662,7 +707,7 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	}
 	pk := t.keys.PRs
-	return []key.Binding{pk.PrevSection, pk.NextSection, pk.DetailPrev, pk.DetailNext, pk.RepoFilter, t.keys.List.Filter}
+	return []key.Binding{pk.PrevSection, pk.NextSection, pk.DetailPrev, pk.DetailNext, pk.RepoFilter, t.keys.List.Filter, pk.Open, pk.Checkout, pk.Merge}
 }
 
 // FullHelp implements tabs.Tab.
@@ -672,6 +717,8 @@ func (t *Tab) FullHelp() [][]key.Binding {
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{pk.NextSection, pk.PrevSection, l.Filter, pk.RepoFilter, l.ShrinkPane, l.GrowPane},
 		{pk.DetailNext, pk.DetailPrev, pk.DetailDown, pk.DetailUp},
+		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session},
+		{pk.UpdateBranch, pk.Merge, pk.AutoMerge, pk.ToggleDraft},
 		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
 	}
 }
@@ -703,6 +750,14 @@ func (t *Tab) Commands() []tabs.Command {
 		tabs.Command{ID: "pr_detail_activity", Title: "PRs: show activity", Run: do(func() { t.setDetailTab(tabActivity) })},
 		tabs.Command{ID: "pr_detail_down", Title: "PRs: scroll detail down", Key: pk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
 		tabs.Command{ID: "pr_detail_up", Title: "PRs: scroll detail up", Key: pk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
+		tabs.Command{ID: "pr_open", Title: "PR: open in browser", Key: pk.Open, Run: t.openInBrowser},
+		tabs.Command{ID: "pr_copy_url", Title: "PR: copy URL", Key: pk.CopyURL, Run: t.copyURL},
+		tabs.Command{ID: "pr_checkout", Title: "PR: check out locally", Key: pk.Checkout, Run: t.checkoutPR},
+		tabs.Command{ID: "pr_update_branch", Title: "PR: update branch", Key: pk.UpdateBranch, Run: t.updateBranch},
+		tabs.Command{ID: "pr_merge", Title: "PR: merge…", Key: pk.Merge, Run: t.openMerge},
+		tabs.Command{ID: "pr_auto_merge", Title: "PR: enable auto-merge…", Key: pk.AutoMerge, Run: t.openAutoMerge},
+		tabs.Command{ID: "pr_toggle_draft", Title: "PR: toggle draft / ready", Key: pk.ToggleDraft, Run: t.toggleDraft},
+		tabs.Command{ID: "pr_session", Title: "PR: start a forge session", Key: pk.Session, Run: t.startSession},
 	)
 }
 

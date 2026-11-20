@@ -93,6 +93,15 @@ type PRKeys struct {
 	DetailPrev key.Binding
 	DetailDown key.Binding
 	DetailUp   key.Binding
+	// Quick actions on the selected PR (P2.3).
+	Open         key.Binding
+	CopyURL      key.Binding
+	Checkout     key.Binding
+	UpdateBranch key.Binding
+	Merge        key.Binding
+	AutoMerge    key.Binding
+	ToggleDraft  key.Binding
+	Session      key.Binding
 }
 
 // TranscriptKeys are active while the transcript viewer is open; nothing
@@ -190,6 +199,15 @@ func DefaultKeyMap() *KeyMap {
 			DetailPrev:  bind("prev detail tab", "["),
 			DetailDown:  bind("scroll detail down", "J"),
 			DetailUp:    bind("scroll detail up", "K"),
+
+			Open:         bind("open in browser", "o"),
+			CopyURL:      bind("copy URL", "y"),
+			Checkout:     bind("check out", "c"),
+			UpdateBranch: bind("update branch", "u"),
+			Merge:        bind("merge", "m"),
+			AutoMerge:    bind("auto-merge", "M"),
+			ToggleDraft:  bind("toggle draft", "d"),
+			Session:      bind("start session", "s"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -284,6 +302,14 @@ func (k *KeyMap) actions() []action {
 		{"pr_detail_prev", scopePRs, &pr.DetailPrev},
 		{"pr_detail_down", scopePRs, &pr.DetailDown},
 		{"pr_detail_up", scopePRs, &pr.DetailUp},
+		{"pr_open", scopePRs, &pr.Open},
+		{"pr_copy_url", scopePRs, &pr.CopyURL},
+		{"pr_checkout", scopePRs, &pr.Checkout},
+		{"pr_update_branch", scopePRs, &pr.UpdateBranch},
+		{"pr_merge", scopePRs, &pr.Merge},
+		{"pr_auto_merge", scopePRs, &pr.AutoMerge},
+		{"pr_toggle_draft", scopePRs, &pr.ToggleDraft},
+		{"pr_session", scopePRs, &pr.Session},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

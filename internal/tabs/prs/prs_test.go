@@ -34,6 +34,11 @@ type fakeGH struct {
 	details   map[string]github.PRDetail // PR id -> detail; missing = pr()'s defaults
 	detailErr error
 	detailed  []string // PR ids PRDetail was called for
+
+	acts   []string             // quick actions called, e.g. "merge acme/x#1 squash"
+	actErr error                // every action fails with it
+	block  chan struct{}        // when set, actions wait for it to close
+	fresh  map[string]github.PR // PR id -> what PR() returns; missing = an error
 }
 
 func (f *fakeGH) PRDetail(_ context.Context, repo string, number int) (github.PRDetail, error) {
@@ -214,6 +219,8 @@ func press(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "down":
 		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "left":
+		return tea.KeyPressMsg{Code: tea.KeyLeft}
 	}
 	return tea.KeyPressMsg{Code: rune(s[0]), Text: s}
 }

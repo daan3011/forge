@@ -8,6 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/checkout"
+	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
@@ -29,6 +31,17 @@ func WithBrowser(b browser.Opener) Option {
 // the tab says GitHub isn't available.
 func WithGitHub(g github.PRClient) Option {
 	return func(m *Model) { m.github = g }
+}
+
+// WithCheckout lets the PRs tab check PRs out locally (P2.3).
+func WithCheckout(c checkout.Checker) Option {
+	return func(m *Model) { m.checkout = c }
+}
+
+// WithClipboard lets tabs copy text with the system clipboard; without it
+// they use OSC 52.
+func WithClipboard(c clipboard.Copier) Option {
+	return func(m *Model) { m.clipboard = c }
 }
 
 // editTemplates creates the templates folder with the defaults if needed,

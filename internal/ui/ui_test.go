@@ -285,6 +285,13 @@ func TestStatusBarRefreshState(t *testing.T) {
 			gone:  []string{"updated"},
 		},
 		{
+			name:  "activity replaces refreshing",
+			width: 100,
+			info:  StatusInfo{Fetching: true, Spinner: "⣾", Activity: "merging #12", Updated: now.Add(-3 * time.Minute)},
+			want:  []string{"⣾ merging #12…"},
+			gone:  []string{"updated", "refreshing"},
+		},
+		{
 			name:  "done shows age",
 			width: 100,
 			info:  StatusInfo{Updated: now.Add(-3 * time.Minute)},
