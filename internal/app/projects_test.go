@@ -56,8 +56,11 @@ func TestProjectSwitcherFlow(t *testing.T) {
 	if projectName(final.project) != "beta" {
 		t.Fatalf("project = %s, want beta", projectName(final.project))
 	}
+	// Every tab gets the project; only the visible one reloads now; hidden
+	// B is paused and catches up when shown.
 	for _, ft := range []*fakeTab{a, b} {
-		if projectName(ft.proj) != "beta" || ft.refreshes == 0 {
+		wantRefresh := ft == a
+		if projectName(ft.proj) != "beta" || (ft.refreshes > 0) != wantRefresh {
 			t.Fatalf("tab %s: project = %s, refreshes = %d", ft.title, projectName(ft.proj), ft.refreshes)
 		}
 		if len(ft.keys) != 0 {

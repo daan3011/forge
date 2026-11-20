@@ -36,6 +36,9 @@ func TestDefault(t *testing.T) {
 	if d.Sessions.WorktreeRoot != "/data/forge/worktrees" {
 		t.Errorf("worktree_root = %q", d.Sessions.WorktreeRoot)
 	}
+	if d.Plane.RefreshInterval.Duration != 2*time.Minute || d.Sessions.RefreshInterval.Duration != 10*time.Second {
+		t.Errorf("refresh intervals: plane %s, sessions %s", d.Plane.RefreshInterval, d.Sessions.RefreshInterval)
+	}
 	if d.Sessions.NotifyAfterMinutes != 5 {
 		t.Errorf("notify_after_minutes = %d", d.Sessions.NotifyAfterMinutes)
 	}
@@ -58,9 +61,12 @@ func TestTemplateMatchesDefault(t *testing.T) {
 }
 
 func TestPartialFileKeepsDefaults(t *testing.T) {
-	cfg, err := Load(writeConfig(t, "github:\n  refresh_interval: 2m\nui:\n  animations: off\n"))
+	cfg, err := Load(writeConfig(t, "github:\n  refresh_interval: 2m\nsessions:\n  refresh_interval: 30s\nui:\n  animations: off\n"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.Sessions.RefreshInterval.Duration != 30*time.Second {
+		t.Errorf("sessions.refresh_interval = %s", cfg.Sessions.RefreshInterval)
 	}
 	if cfg.GitHub.RefreshInterval.Duration != 2*time.Minute {
 		t.Errorf("refresh_interval = %s", cfg.GitHub.RefreshInterval)

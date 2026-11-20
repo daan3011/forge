@@ -7,8 +7,8 @@ import (
 )
 
 // New returns the Artifacts tab. It is a placeholder until P4.5.
-func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
+func New(d tabkit.Deps) tabs.Tab {
+	return tabkit.NewPlaceholder(d, tabkit.PlaceholderSpec{
 		Title:   "Artifacts",
 		Feature: "P4.5",
 		Blurb:   "Design artifacts from your watched folders, with pins, tags and previews.",

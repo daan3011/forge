@@ -65,7 +65,7 @@ var (
 	hexRe  = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 )
 
-// MinRefreshInterval is the smallest allowed github.refresh_interval.
+// MinRefreshInterval is the smallest allowed refresh_interval for any source.
 const MinRefreshInterval = 5 * time.Second
 
 // Validate checks values that YAML types alone cannot. It returns Errors with
@@ -96,8 +96,17 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.GitHub.RefreshInterval.Duration < MinRefreshInterval {
-		add("github.refresh_interval", "must be at least %s, got %s", MinRefreshInterval, c.GitHub.RefreshInterval)
+	for _, r := range []struct {
+		key string
+		d   Duration
+	}{
+		{"github.refresh_interval", c.GitHub.RefreshInterval},
+		{"plane.refresh_interval", c.Plane.RefreshInterval},
+		{"sessions.refresh_interval", c.Sessions.RefreshInterval},
+	} {
+		if r.d.Duration < MinRefreshInterval {
+			add(r.key, "must be at least %s, got %s", MinRefreshInterval, r.d)
+		}
 	}
 	for i, s := range c.GitHub.PRSections {
 		k := fmt.Sprintf("github.pr_sections[%d]", i)

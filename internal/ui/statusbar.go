@@ -21,6 +21,12 @@ type StatusInfo struct {
 	Message string    // latest info message
 	Updated time.Time // zero hides "updated Ns ago"
 	Now     time.Time
+	// Fetching replaces "updated Ns ago" with Spinner and "refreshing".
+	Fetching bool
+	Spinner  string
+	// Rate is the GitHub rate limit badge, set only when it runs low. It sits
+	// next to the tab name and is kept when hints are dropped.
+	Rate string
 	// Keys are the hints shown on the right, most important last: when space
 	// runs out they are dropped from the front.
 	Keys []key.Binding
@@ -42,9 +48,17 @@ func (s StatusBar) View(width int, info StatusInfo) string {
 	}
 
 	left := t.StatusLeft.Render(info.Tab + " · " + project)
+	if info.Rate != "" {
+		if rate := t.StatusWarn.Render(info.Rate); lipgloss.Width(left)+lipgloss.Width(rate) <= width {
+			left += rate
+		}
+	}
 
 	updated := ""
-	if !info.Updated.IsZero() {
+	switch {
+	case info.Fetching:
+		updated = strings.TrimSpace(info.Spinner + " refreshing")
+	case !info.Updated.IsZero():
 		updated = "updated " + FormatAgo(info.Now.Sub(info.Updated))
 	}
 	lw := lipgloss.Width(left)

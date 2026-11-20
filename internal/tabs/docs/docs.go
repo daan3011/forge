@@ -7,8 +7,8 @@ import (
 )
 
 // New returns the Docs tab. It is a placeholder until P4.1.
-func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
+func New(d tabkit.Deps) tabs.Tab {
+	return tabkit.NewPlaceholder(d, tabkit.PlaceholderSpec{
 		Title:      "Docs",
 		Feature:    "P4.1",
 		Blurb:      "Project docs and the decision log from .forge/docs.",

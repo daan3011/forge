@@ -1,18 +1,21 @@
 package sessions
 
 import (
+	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
 )
 
 // New returns the Sessions tab. It is a placeholder until P1.3.
-func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
-		Title:      "Sessions",
-		Feature:    "P1.3",
-		Blurb:      "Named Claude Code sessions, each with a worktree, tmux window and live status.",
-		EntityKind: "Session",
+func New(d tabkit.Deps) tabs.Tab {
+	return tabkit.NewPlaceholder(d, tabkit.PlaceholderSpec{
+		Title:             "Sessions",
+		Feature:           "P1.3",
+		Blurb:             "Named Claude Code sessions, each with a worktree, tmux window and live status.",
+		EntityKind:        "Session",
+		Sources:           []refresh.Source{refresh.Sessions},
+		RefreshWhenHidden: true,
 		Columns: []ui.Column{
 			{Title: "Name", Width: 0, Flex: true},
 			{Title: "Status", Width: 9},

@@ -263,6 +263,74 @@ func TestStatusBarWidth(t *testing.T) {
 	}
 }
 
+func TestStatusBarRefreshState(t *testing.T) {
+	sb := NewStatusBar(NewTheme(true, nil))
+	k := DefaultKeyMap()
+	now := time.Now()
+	hints := []key.Binding{k.Global.Refresh, k.List.Filter, k.Global.Help}
+	tests := []struct {
+		name       string
+		width      int
+		info       StatusInfo
+		want, gone []string
+	}{
+		{
+			name:  "fetching shows spinner instead of age",
+			width: 100,
+			info:  StatusInfo{Fetching: true, Spinner: "⣾", Updated: now.Add(-3 * time.Minute)},
+			want:  []string{"⣾ refreshing"},
+			gone:  []string{"updated"},
+		},
+		{
+			name:  "done shows age",
+			width: 100,
+			info:  StatusInfo{Updated: now.Add(-3 * time.Minute)},
+			want:  []string{"updated 3m ago"},
+			gone:  []string{"refreshing"},
+		},
+		{
+			name:  "rate badge",
+			width: 100,
+			info:  StatusInfo{Rate: "gh 312/5000 · resets 14m"},
+			want:  []string{"gh 312/5000 · resets 14m", "? help"},
+		},
+		{
+			name:  "rate badge outlives hints",
+			width: 50,
+			info:  StatusInfo{Rate: "gh 12/5000"},
+			want:  []string{"gh 12/5000"},
+			gone:  []string{"r refresh"},
+		},
+		{
+			name:  "rate badge dropped when nothing fits",
+			width: 16,
+			info:  StatusInfo{Rate: "gh 12/5000 · resets 14m"},
+			gone:  []string{"gh 12"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := tt.info
+			info.Tab, info.Project, info.Now, info.Keys = "PRs", "forge", now, hints
+			got := sb.View(tt.width, info)
+			if lipgloss.Width(got) != tt.width {
+				t.Fatalf("width = %d, want %d", lipgloss.Width(got), tt.width)
+			}
+			plain := ansi.Strip(got)
+			for _, w := range tt.want {
+				if !strings.Contains(plain, w) {
+					t.Errorf("missing %q in %q", w, plain)
+				}
+			}
+			for _, g := range tt.gone {
+				if strings.Contains(plain, g) {
+					t.Errorf("%q should not be in %q", g, plain)
+				}
+			}
+		})
+	}
+}
+
 func TestTabBar(t *testing.T) {
 	th := NewTheme(true, nil)
 	titles := []string{"Home", "PRs", "Pipelines", "Plane", "Sessions", "Docs", "Artifacts", "Context"}

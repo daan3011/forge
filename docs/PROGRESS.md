@@ -11,7 +11,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 - [x] P0.5 Keymap & help
 - [x] P0.6 Command palette
 - [x] P0.7 Project switcher
-- [ ] P0.8 Background refresh
+- [x] P0.8 Background refresh — tabs load cache-first via `tabkit.LoadCached`/`FetchAndCache`; `internal/refresh` ticks per source. GitHub rate-limit backoff (`github.RateLimitMsg`) is wired but only takes effect once the P2.1 client emits it via `github.Observe`.
 - [ ] P0.9 Forge animations
 
 ## Phase 1 — Agent sessions

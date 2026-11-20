@@ -11,6 +11,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
 )
 
@@ -24,12 +25,9 @@ const (
 	recentTimeout = 2 * time.Second
 )
 
-// KVStore persists app state (palette recents, the active project).
-// *store.Cache satisfies it.
-type KVStore interface {
-	Get(ctx context.Context, key string) (store.CacheEntry, error)
-	Put(ctx context.Context, key, kind, project string, value []byte, ttl time.Duration) error
-}
+// KVStore persists app state (palette recents, the active project) and the
+// tabs' cached data. *store.Cache satisfies it.
+type KVStore = tabs.KVStore
 
 // Option configures New.
 type Option func(*Model)

@@ -11,6 +11,8 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/github"
+	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/artifacts"
 	contexttab "github.com/daan3011/forge/internal/tabs/context"
@@ -20,7 +22,9 @@ import (
 	"github.com/daan3011/forge/internal/tabs/plane"
 	"github.com/daan3011/forge/internal/tabs/prs"
 	"github.com/daan3011/forge/internal/tabs/sessions"
+	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // statusBarHeight is the number of rows the status bar takes.
@@ -46,7 +50,13 @@ type Model struct {
 	status  ui.StatusBar
 	message string
 	now     time.Time
+	clock   func() time.Time
 	clockOn bool
+
+	sched   refresh.Scheduler
+	spinner anim.Spinner
+	ghRate  github.RateLimit
+	hasRate bool
 
 	help     ui.HelpView
 	helpOpen bool
@@ -60,6 +70,7 @@ type Model struct {
 
 	savedProject string // from WithActiveProject
 	hasSaved     bool
+	fetchDelay   time.Duration // simulated latency of placeholder fetches
 }
 
 // paletteMode is which picker the palette overlay shows, if any.
@@ -79,18 +90,20 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		return Model{}, err
 	}
 	theme := ui.NewTheme(true, cfg.UI.Theme)
-	m := newModel(cfg, theme, keys, []tabs.Tab{
-		home.New(theme, keys),
-		prs.New(theme, keys),
-		pipelines.New(theme, keys),
-		plane.New(theme, keys),
-		sessions.New(theme, keys),
-		docs.New(theme, keys),
-		artifacts.New(theme, keys),
-		contexttab.New(theme, keys),
-	})
+	m := newModel(cfg, theme, keys, nil)
 	for _, o := range opts {
 		o(&m)
+	}
+	d := tabkit.Deps{Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay}
+	m.tabs = []tabs.Tab{
+		home.New(d),
+		prs.New(d),
+		pipelines.New(d),
+		plane.New(d),
+		sessions.New(d),
+		docs.New(d),
+		artifacts.New(d),
+		contexttab.New(d),
 	}
 	m.resolveProject()
 	return m, nil
@@ -107,7 +120,12 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		toast:   ui.NewToast(theme),
 		status:  ui.NewStatusBar(theme),
 		now:     time.Now(),
+		clock:   time.Now,
 		clockOn: true, // Init starts the first tick
+		sched:   refresh.New(cfg),
+		spinner: anim.NewSpinner(cfg.UI.Animations),
+
+		fetchDelay: tabkit.SampleFetchDelay,
 	}
 	m.resolveProject()
 	return m
@@ -141,7 +159,7 @@ func (m Model) findProject(name string) *config.Project {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.store)}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.store), m.sched.Start()}
 	for _, t := range m.tabs {
 		cmds = append(cmds, t.Init())
 	}
@@ -154,8 +172,28 @@ func clockTick() tea.Cmd {
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	return next.(Model).settle(cmd)
+}
+
+// settle runs after every message: the spinner runs exactly while the
+// visible tab is fetching, and the clock runs while it shows an update time.
+func (m Model) settle(cmd tea.Cmd) (Model, tea.Cmd) {
+	var spin tea.Cmd
+	if m.activeFetching() {
+		spin = m.spinner.Start()
+	} else {
+		m.spinner.Stop()
+	}
+	return m, tea.Batch(cmd, spin, m.ensureClock())
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.toast.Update(msg) {
 		return m, nil
+	}
+	if handled, cmd := m.spinner.Update(msg); handled {
+		return m, cmd
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -191,6 +229,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ui.InfoMsg:
 		m.message = msg.Text
 		return m, m.toast.Show(msg.Text, ui.ToastInfo)
+
+	case refresh.TickMsg:
+		return m.handleTick(msg)
+
+	case github.RateLimitMsg:
+		return m.handleRateLimit(msg.RateLimit)
+
+	case tabs.TargetedMsg:
+		return m.updateTab(msg.TargetTab(), msg)
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -240,6 +287,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, g.Refresh):
 		return m.refresh()
+	case key.Matches(msg, g.RefreshAll):
+		return m.refreshAll()
 	}
 	return m.updateActive(msg)
 }
@@ -364,14 +413,102 @@ func (m Model) refresh() (Model, tea.Cmd) {
 		return m, nil
 	}
 	cmd := m.tabs[m.active].Refresh()
-	m.now = time.Now()
+	m.now = m.clock()
 	return m, tea.Batch(cmd, m.ensureClock())
 }
 
+// refreshAll refreshes every tab, visible or not.
+func (m Model) refreshAll() (Model, tea.Cmd) {
+	cmds := make([]tea.Cmd, 0, len(m.tabs)+1)
+	for _, t := range m.tabs {
+		cmds = append(cmds, t.Refresh())
+	}
+	m.now = m.clock()
+	return m, tea.Batch(append(cmds, m.ensureClock())...)
+}
+
+// switchTo shows tab i. A tab that missed refreshes while hidden (or was
+// never loaded for this project) refreshes right away.
 func (m Model) switchTo(i int) (Model, tea.Cmd) {
 	m.active = i
-	m.now = time.Now()
-	return m, m.ensureClock()
+	m.now = m.clock()
+	var cmd tea.Cmd
+	if m.stale(m.tabs[i]) {
+		cmd = m.tabs[i].Refresh()
+	}
+	return m, tea.Batch(cmd, m.ensureClock())
+}
+
+// stale reports whether t has never loaded, or is older than the shortest
+// interval of its sources.
+func (m Model) stale(t tabs.Tab) bool {
+	u, ok := t.(tabs.Updater)
+	if !ok {
+		return false
+	}
+	last := u.LastUpdated()
+	if last.IsZero() {
+		return true
+	}
+	ar, ok := t.(tabs.AutoRefresher)
+	if !ok {
+		return false
+	}
+	for _, src := range ar.Sources() {
+		if m.now.Sub(last) >= m.sched.Interval(src) {
+			return true
+		}
+	}
+	return false
+}
+
+// refreshesNow reports whether tab i takes background refreshes right now:
+// it is visible, or it refreshes even when hidden (Home, Sessions).
+func (m Model) refreshesNow(i int) bool {
+	if i == m.active {
+		return true
+	}
+	ar, ok := m.tabs[i].(tabs.AutoRefresher)
+	return ok && ar.RefreshWhenHidden()
+}
+
+// handleTick refreshes the tabs that use the ticking source and are not
+// paused, then re-arms the source.
+func (m Model) handleTick(msg refresh.TickMsg) (Model, tea.Cmd) {
+	ok, next := m.sched.Handle(msg)
+	if !ok {
+		return m, nil
+	}
+	cmds := []tea.Cmd{next}
+	for i, t := range m.tabs {
+		ar, isAuto := t.(tabs.AutoRefresher)
+		if !isAuto || !slices.Contains(ar.Sources(), msg.Source) || !m.refreshesNow(i) {
+			continue
+		}
+		cmds = append(cmds, t.Refresh())
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// handleRateLimit records the GitHub rate limit and backs the GitHub
+// refresh off while it is low.
+func (m Model) handleRateLimit(rl github.RateLimit) (Model, tea.Cmd) {
+	m.ghRate, m.hasRate = rl, true
+	if !rl.Low() {
+		return m, m.sched.ClearDelay(refresh.GitHub)
+	}
+	base := m.cfg.GitHub.RefreshInterval.Duration
+	return m, m.sched.SetDelay(refresh.GitHub, github.NextDelay(rl, base, m.clock()))
+}
+
+// rateBadge is the status bar rate limit text, shown while calls are low
+// and the limit has not reset yet.
+func (m Model) rateBadge() string {
+	r := m.ghRate
+	if !m.hasRate || !r.Low() || (!r.Reset.IsZero() && !m.now.Before(r.Reset)) {
+		return ""
+	}
+	return r.Summary(m.now)
 }
 
 // ensureClock restarts the clock tick if the active tab shows an update time.
@@ -383,6 +520,18 @@ func (m *Model) ensureClock() tea.Cmd {
 	return clockTick()
 }
 
+// updateTab delivers msg to the tab titled title, active or not.
+func (m Model) updateTab(title string, msg tea.Msg) (tea.Model, tea.Cmd) {
+	for i, t := range m.tabs {
+		if t.Title() == title {
+			var cmd tea.Cmd
+			m.tabs[i], cmd = t.Update(msg)
+			return m, cmd
+		}
+	}
+	return m, nil
+}
+
 func (m Model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if len(m.tabs) == 0 {
 		return m, nil
@@ -390,6 +539,14 @@ func (m Model) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	t, cmd := m.tabs[m.active].Update(msg)
 	m.tabs[m.active] = t
 	return m, cmd
+}
+
+func (m Model) activeFetching() bool {
+	if len(m.tabs) == 0 {
+		return false
+	}
+	f, ok := m.tabs[m.active].(tabs.Fetcher)
+	return ok && f.Fetching()
 }
 
 func (m Model) activeUpdated() time.Time {
@@ -437,12 +594,15 @@ func (m Model) render() string {
 		ui.TabBar(m.theme, titles, m.active, m.width),
 		ui.Box(active.View(), cw, ch),
 		m.status.View(m.width, ui.StatusInfo{
-			Tab:     active.Title(),
-			Project: project,
-			Message: m.message,
-			Updated: m.activeUpdated(),
-			Now:     m.now,
-			Keys:    m.statusKeys(active),
+			Tab:      active.Title(),
+			Project:  project,
+			Message:  m.message,
+			Updated:  m.activeUpdated(),
+			Now:      m.now,
+			Fetching: m.activeFetching(),
+			Spinner:  m.spinner.View(),
+			Rate:     m.rateBadge(),
+			Keys:     m.statusKeys(active),
 		}),
 	)
 	screen = ui.Box(screen, m.width, m.height)
