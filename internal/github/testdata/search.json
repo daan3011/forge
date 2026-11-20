@@ -1,0 +1,27 @@
+{
+  "viewer": {"login": "daan"},
+  "search": {
+    "issueCount": 57,
+    "nodes": [
+      {"number": 12, "title": "Add retry", "url": "https://github.com/daan/forge/pull/12", "isDraft": false,
+       "state": "OPEN", "reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "additions": 391, "deletions": 4,
+       "createdAt": "2025-11-01T10:00:00Z", "updatedAt": "2026-11-20T10:00:00Z",
+       "headRefName": "agent/retry", "baseRefName": "main",
+       "author": {"login": "daan"}, "repository": {"nameWithOwner": "daan/forge"},
+       "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE"}}}]}},
+      {"number": 7, "title": "WIP tree", "url": "https://github.com/acme/ui/pull/7", "isDraft": true,
+       "state": "OPEN", "reviewDecision": null, "mergeable": "CONFLICTING", "additions": 1200, "deletions": 2,
+       "createdAt": "2026-10-01T10:00:00Z", "updatedAt": "2026-11-13T10:00:00Z",
+       "headRefName": "tree", "baseRefName": "v2",
+       "author": null, "repository": {"nameWithOwner": "acme/ui"},
+       "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}},
+      {},
+      {"number": 3, "title": "Shipped", "url": "https://github.com/acme/ui/pull/3", "isDraft": false,
+       "state": "MERGED", "reviewDecision": "REVIEW_REQUIRED", "mergeable": "UNKNOWN", "additions": 0, "deletions": 9,
+       "createdAt": "2026-09-01T10:00:00Z", "updatedAt": "2026-09-02T10:00:00Z",
+       "headRefName": "x", "baseRefName": "main",
+       "author": {"login": "bob"}, "repository": {"nameWithOwner": "acme/ui"},
+       "commits": {"nodes": []}}
+    ]
+  }
+}

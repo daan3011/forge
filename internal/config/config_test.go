@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +28,12 @@ func TestDefault(t *testing.T) {
 	if d.GitHub.RefreshInterval.Duration != time.Minute {
 		t.Errorf("refresh_interval = %s", d.GitHub.RefreshInterval)
 	}
-	if len(d.GitHub.PRSections) != 2 {
+	want := []PRSection{
+		{Title: "My PRs", Query: "is:open author:@me"},
+		{Title: "Review requested", Query: "is:open review-requested:@me"},
+		{Title: "Involved", Query: "is:open involves:@me"},
+	}
+	if !slices.Equal(d.GitHub.PRSections, want) {
 		t.Errorf("pr_sections = %v", d.GitHub.PRSections)
 	}
 	if d.Plane.BaseURL != "https://api.plane.so" || d.Plane.APIKeyEnv != "PLANE_API_KEY" {

@@ -35,6 +35,10 @@ func NewSplitPane(theme *Theme) SplitPane {
 	return SplitPane{theme: theme, ratio: DefaultSplitRatio, shown: DefaultSplitRatio}
 }
 
+// SetRatio sets the starting split, e.g. a wider list for a tab with many
+// columns. r is clamped like Grow and Shrink.
+func (s *SplitPane) SetRatio(r float64) { s.setRatio(r) }
+
 // SetSize sets the total outer size of both panes.
 func (s *SplitPane) SetSize(width, height int) {
 	s.width, s.height = max(width, 0), max(height, 0)

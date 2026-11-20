@@ -12,7 +12,10 @@ import (
 )
 
 func main() {
-	d := deps{opener: editor.Exec{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}}
+	d := deps{
+		opener:    editor.Exec{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
+		providers: defaultProviders(),
+	}
 	if term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) {
 		d.runForm = func(f *huh.Form) error { return f.Run() }
 	}

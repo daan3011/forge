@@ -196,8 +196,9 @@ func Default() *Config {
 		GitHub: GitHub{
 			RefreshInterval: Duration{60 * time.Second},
 			PRSections: []PRSection{
-				{Title: "Needs my review", Query: "is:open review-requested:@me"},
-				{Title: "Mine", Query: "is:open author:@me"},
+				{Title: "My PRs", Query: "is:open author:@me"},
+				{Title: "Review requested", Query: "is:open review-requested:@me"},
+				{Title: "Involved", Query: "is:open involves:@me"},
 			},
 		},
 		Plane: Plane{

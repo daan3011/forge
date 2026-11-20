@@ -20,12 +20,16 @@ projects:
 github:
   # How often PR and pipeline lists refresh in the background ("30s", "2m"; min 5s).
   refresh_interval: 60s
-  # Sections on the PRs tab. Each query uses GitHub search syntax.
+  # Sections on the PRs tab (h / l switch them). Each query uses GitHub
+  # search syntax; is:pr is added when missing, repo:<owner/name> when a
+  # project is active, and sort:updated-desc unless the query sorts itself.
   pr_sections:
-    - title: Needs my review
-      query: "is:open review-requested:@me"
-    - title: Mine
+    - title: My PRs
       query: "is:open author:@me"
+    - title: Review requested
+      query: "is:open review-requested:@me"
+    - title: Involved
+      query: "is:open involves:@me"
 
 plane:
   # Plane API base URL; change it for self-hosted Plane.
@@ -67,6 +71,7 @@ ui:
   # Override palette colours by name with #rgb or #rrggbb.
   theme:
     # ember: "#ff7a1a"
+    # Names: charcoal surface steel ember molten coldblue smoke text onaccent error patina
 
 # Override key bindings: action name -> list of keys. An override replaces
 # the action's keys and its help text. Defaults:
@@ -104,6 +109,10 @@ keybinds:
   # session_transcript: ["t"]   # read the session's transcript
   # session_open_pr: ["o"]      # open the linked PR (else the issue) in the browser
   # session_open_issue: ["O"]   # open the linked issue in the browser
+  # PRs tab
+  # pr_next_section: ["l", "right"]
+  # pr_prev_section: ["h", "left"]
+  # pr_repo_filter: ["f"]          # narrow every section to one repo
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

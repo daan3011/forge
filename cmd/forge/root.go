@@ -33,7 +33,7 @@ type deps struct {
 	// runForm runs a Huh form on the terminal; nil means no terminal.
 	runForm func(*huh.Form) error
 	// providers resolve {issue_*} / {pr_*} template variables; nil has
-	// none yet (P2.1 and P3.1 add them).
+	// none (main sets the GitHub one; Plane comes with P3.1).
 	providers *templates.Registry
 	// db is the database path; empty means store.DefaultPath().
 	db string
@@ -107,7 +107,7 @@ func newRootCmd(d deps) *cobra.Command {
 			}
 			opts := []app.Option{
 				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
-				app.WithBrowser(browser.Exec{}),
+				app.WithBrowser(browser.Exec{}), app.WithGitHub(githubPulls),
 				app.WithAlerts(alert.Checker{
 					Store: st.Sessions(), Notifier: d.notifications(), Watcher: d.tmuxWatcher(),
 					Policy: alert.PolicyFrom(cfg.Sessions),

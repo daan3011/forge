@@ -166,9 +166,41 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 
 ## Phase 2 — GitHub
 
-- [ ] P2.1 PR list & sections
-  - TODO (from P1.7): register a `templates.ContextProvider` for `github_pr` (fills `{pr_title}`, `{pr_body}`) through `app.WithTemplates` / `deps.providers`.
-  - TODO (from P1.9): grow `internal/github` (`REST`, `Pull`) rather than starting a second client; "start session" on a PR = `tabs.StartSessionFrom(tabs.Source{Kind: github_pr, ID, Number, Branch: headRefName, …})`.
+- [x] P2.1 PR list & sections — the PRs tab shows one GitHub search per configured section, laid out after `docs/design/gh-dash.jpeg` in forge colours. The tab is in `internal/tabs/prs`, the client in `internal/github`.
+  - **Client**: `github.REST` became `github.Client`, forge's only GitHub client (`githubPulls` in `cmd/forge`). It makes REST (P1.9 links) and GraphQL clients on first use over one observing transport, so PR searches report the rate limit through `OnResponse` / `Observe` too.
+    - `SearchPRs(ctx, query, limit)` is one GraphQL `search(type: ISSUE)` per section, fetching repo, number, title, author, isDraft, state, reviewDecision, the head commit's `statusCheckRollup` state, additions / deletions, created / updated, head / base ref, url and mergeable, plus `viewer { login }` and `issueCount`.
+    - `BuildQuery` adds `is:pr` when missing, `repo:<owner/name>` for the active project (server-side, so counts are right) and `sort:updated-desc` unless the query sorts itself.
+    - `SectionLimit` = 50. `IsAuthError` recognises a missing or refused `gh` login.
+    - The query was checked against the live API.
+  - **Template provider** (the P1.7 TODO): `Client.PRContext` resolves `{pr_title}` / `{pr_body}` for `owner/repo#n` or a PR URL. `main` registers it for `github_pr` (`defaultProviders`). A bare `#12` can't be resolved (the provider gets no repo) and falls back to the form.
+  - **Sections**: the default config is now My PRs (`is:open author:@me`), Review requested (`is:open review-requested:@me`) and Involved (`is:open involves:@me`); existing config files keep their own sections.
+    - Each section is cached in kv_cache under `tab:prs:<project>:<slug>:<fnv(query)>`, so editing a query never shows stale rows.
+    - Every refresh loads the cache first, then fetches all sections, so every count fills. A refresh with several failing sections gives one toast. Results for a project you've left are dropped. GitHub ticks only refresh while the tab is visible.
+  - **Layout**:
+    - section bar (`ui.SectionBar`: `⌕ │ My PRs (3) │ Review requested (0) │ Involved (2)`, compacting to counts when narrow)
+    - bordered search box with the query as sent (plus `· repo: x` when filtered)
+    - two-line rows: state icon · repo `· #n` over the title · review · CI · `+1.2k -34` · updated · created (`ui.ShortAge`: 5m / 3h / 2d / 1w / 4mo / 1y)
+    - The list starts at 65% (`SplitPane.SetRatio`). The right pane is a summary until P2.2: repo · #n, title, state, base ← head, author and ages, review / checks / conflicts lines, URL.
+    - Empty states explain themselves: no client, `gh auth login`, loading, no PRs from the filtered repo.
+  - **Shared UI**:
+    - `ui.Table.SetRowHeight(n)` (cells split on `\n`; a `Render` returns n lines; scrolling and paging count rows)
+    - `ui.Column.Hidden` (never drawn, still matched by `/`; PRs keep their id and `@author head base` there)
+    - `StatusInfo.Detail` via `tabs.StatusDetailer`: PRs shows `@login · PR 3/12 (fetched 12 of 57)`. It is dropped after the hints.
+    - Theme slot `patina` (green: approvals, passing checks, additions), `PRIcon` / `ReviewIcon` / `CIIcon` and the PR styles.
+  - **Filtering**:
+    - `/` filters the section's rows by repo, title, author or branch.
+    - `f` opens a huh picker (`All repos` + every repo in the loaded sections or configured projects). The choice narrows every section client-side and updates the counts.
+    - A project switch clears the repo filter and re-queries with `repo:`.
+  - **Keys** (scope `tab:prs`, configurable): `pr_next_section` l/→, `pr_prev_section` h/←, `pr_repo_filter` f.
+  - **Palette**: Filter PRs, next / previous section, filter by repo…, show all repos (while filtered), one command per section, widen / narrow. PR entities (`#n title`, `repo · @author`, searchable by head branch) jump to the first section holding the PR, dropping filters that hide it.
+  - **Tests**:
+    - github: `ParseSearch` fixture (draft, ghost author, no checks, non-PR nodes), `BuildQuery`, `SearchPRs` / `PRContext` over a fake transport (variables, errors, `OnResponse`), `ParsePRRef`, `IsAuthError`
+    - ui: two-line rows / hidden columns / paging, `SectionBar` compacting and width, status detail dropping, `ShortAge`, icons, `patina` override
+    - tab: sections and counts, cursor and section status detail, `h` / `l` wrapping; done-when `TestRepoFilter` (`f` → acme/bubbles narrows every section with counts, esc keeps it, All repos restores); text filter on hidden branch text; cache-first with a failing fetch (one toast); auth error; no client; active project (query, cache key, stale fetch dropped); entities / select; palette commands
+    - app: the PRs flows now run against the real tab with a fake `PRSearcher` (`WithGitHub`)
+    
+    Checked by hand in an isolated forge against the real API: sections, counts, rows, detail, status bar and the repo filter.
+  - **Limits**: at most 50 PRs per section (the status bar shows `of N`). Ages are computed when rows are built, i.e. on each refresh. "Start session from PR" comes with the P2.3 quick actions (`tabs.StartSessionFrom(tabs.Source{Kind: github_pr, ID, Number, Branch: HeadRef, …})`). There is no app version in the tab bar yet (P6.4).
 - [ ] P2.2 PR detail pane
 - [ ] P2.3 PR quick actions
 - [ ] P2.4 Review queue & diff

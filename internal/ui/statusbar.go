@@ -30,6 +30,10 @@ type StatusInfo struct {
 	// Waiting is how many agent sessions wait for input, in every project;
 	// 0 hides it. Like Rate it sits next to the tab name and outlives hints.
 	Waiting int
+	// Detail is the active tab's own status, e.g. "@daan · PR 3/12
+	// (fetched 12)". It follows "updated Ns ago" and is dropped after the
+	// hints when space runs out.
+	Detail string
 	// Keys are the hints shown on the right, most important last: when space
 	// runs out they are dropped from the front.
 	Keys []key.Binding
@@ -76,10 +80,15 @@ func (s StatusBar) View(width int, info StatusInfo) string {
 	}
 	lw := lipgloss.Width(left)
 	hints := info.Keys
-	rightView := s.right(updated, hints)
+	detail := info.Detail
+	rightView := s.right(updated, detail, hints)
 	for len(hints) > 0 && lw+lipgloss.Width(rightView) > width {
 		hints = hints[1:]
-		rightView = s.right(updated, hints)
+		rightView = s.right(updated, detail, hints)
+	}
+	if detail != "" && lw+lipgloss.Width(rightView) > width {
+		detail = ""
+		rightView = s.right(updated, detail, hints)
 	}
 	rw := lipgloss.Width(rightView)
 	if lw+rw > width {
@@ -101,12 +110,15 @@ func (s StatusBar) View(width int, info StatusInfo) string {
 	return left + mid + rightView
 }
 
-// right renders "updated Ns ago · key desc · key desc ".
-func (s StatusBar) right(updated string, hints []key.Binding) string {
+// right renders "updated Ns ago · detail · key desc · key desc ".
+func (s StatusBar) right(updated, detail string, hints []key.Binding) string {
 	t := s.theme
 	var parts []string
 	if updated != "" {
 		parts = append(parts, t.StatusRight.Render(updated))
+	}
+	if detail != "" {
+		parts = append(parts, t.StatusRight.Render(detail))
 	}
 	for _, h := range hints {
 		hp := h.Help()
@@ -135,6 +147,28 @@ func FormatAgo(d time.Duration) string {
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
+// ShortAge formats a duration as a compact age for table cells: "now",
+// "5m", "3h", "2d", "1w", "4mo", "1y".
+func ShortAge(d time.Duration) string {
+	const day = 24 * time.Hour
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < day:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d < 7*day:
+		return fmt.Sprintf("%dd", int(d/day))
+	case d < 30*day:
+		return fmt.Sprintf("%dw", int(d/(7*day)))
+	case d < 365*day:
+		return fmt.Sprintf("%dmo", int(d/(30*day)))
+	default:
+		return fmt.Sprintf("%dy", int(d/(365*day)))
 	}
 }
 

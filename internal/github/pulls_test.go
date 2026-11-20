@@ -52,7 +52,7 @@ func respond(req *http.Request, status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: h, Body: io.NopCloser(strings.NewReader(body)), Request: req}
 }
 
-func TestRESTPullsForBranch(t *testing.T) {
+func TestClientPullsForBranch(t *testing.T) {
 	tests := []struct {
 		name    string
 		repo    string
@@ -71,7 +71,7 @@ func TestRESTPullsForBranch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotURL string
 			seen := 0
-			r := NewREST(api.ClientOptions{
+			r := NewClient(api.ClientOptions{
 				Host: "github.com", AuthToken: "t",
 				Transport: roundTrip(func(req *http.Request) (*http.Response, error) {
 					gotURL = req.URL.String()

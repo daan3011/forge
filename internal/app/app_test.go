@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest/v2"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
 )
@@ -45,7 +47,7 @@ func TestSwitchTabFlow(t *testing.T) {
 		t.Fatalf("active = %d, want 1", m.active)
 	}
 	view := ansi.Strip(m.render())
-	for _, want := range []string{"2 PRs", "coming in P2.1", "Title: sample: Bump dependencies"} {
+	for _, want := range []string{"2 PRs", "My PRs (2)", "daan/forge · #98", "@daan · PR 2/2 (fetched 2)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
@@ -206,10 +208,11 @@ func TestEveryTabFits(t *testing.T) {
 }
 
 // TestRemapChangesBehaviourAndHelp is the P0.5 "done when": a keybinds
-// override changes what the key does and what the help says.
+// override changes what the key does and what the help says. (H, not h:
+// h is the PRs tab's previous section.)
 func TestRemapChangesBehaviourAndHelp(t *testing.T) {
 	cfg := config.Default()
-	cfg.Keybinds = map[string][]string{"quit": {"Q"}, "help": {"h"}}
+	cfg.Keybinds = map[string][]string{"quit": {"Q"}, "help": {"H"}}
 	var model tea.Model = mustNew(t, cfg)
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 
@@ -221,7 +224,7 @@ func TestRemapChangesBehaviourAndHelp(t *testing.T) {
 	}
 
 	status := ansi.Strip(model.(Model).render())
-	if !strings.Contains(status, "h help") || strings.Contains(status, "? help") {
+	if !strings.Contains(status, "H help") || strings.Contains(status, "? help") {
 		t.Fatalf("status bar should show the remapped help key:\n%s", status)
 	}
 
@@ -229,15 +232,15 @@ func TestRemapChangesBehaviourAndHelp(t *testing.T) {
 	if model.(Model).helpOpen {
 		t.Fatal("? should no longer open help")
 	}
-	model, _ = model.Update(press("h"))
+	model, _ = model.Update(press("H"))
 	if !model.(Model).helpOpen {
-		t.Fatal("h should open help")
+		t.Fatal("H should open help")
 	}
 	help := strings.Join(strings.Fields(ansi.Strip(model.(Model).render())), " ")
 	if !strings.Contains(help, "Q quit") || strings.Contains(help, "q quit") {
 		t.Fatalf("help should list Q for quit:\n%s", help)
 	}
-	if !strings.Contains(help, "h help") || !strings.Contains(help, "Home") {
+	if !strings.Contains(help, "H help") || !strings.Contains(help, "Home") {
 		t.Fatalf("help should list global and tab sections:\n%s", help)
 	}
 }
@@ -368,7 +371,7 @@ func assertScreen(t *testing.T, s string, width, height int) {
 // tab already loaded.
 func mustNew(t *testing.T, cfg *config.Config, opts ...Option) Model {
 	t.Helper()
-	m, err := New(cfg, append([]Option{withFetchDelay(0)}, opts...)...)
+	m, err := New(cfg, append([]Option{withFetchDelay(0), WithGitHub(fakeGitHub{})}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,6 +381,17 @@ func mustNew(t *testing.T, cfg *config.Config, opts ...Option) Model {
 		}
 	}
 	return m
+}
+
+// fakeGitHub answers every PR search with the same two PRs.
+type fakeGitHub struct{}
+
+func (fakeGitHub) SearchPRs(context.Context, string, int) (github.SearchResult, error) {
+	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	return github.SearchResult{Viewer: "daan", Total: 2, PRs: []github.PR{
+		{Repo: "daan/forge", Number: 101, Title: "Add retry to webhook sender", Author: "alice", State: github.StateOpen, CreatedAt: at, UpdatedAt: at},
+		{Repo: "daan/forge", Number: 98, Title: "Bump dependencies", Author: "bot", State: github.StateOpen, CreatedAt: at, UpdatedAt: at},
+	}}, nil
 }
 
 func withFetchDelay(d time.Duration) Option { return func(m *Model) { m.fetchDelay = d } }
