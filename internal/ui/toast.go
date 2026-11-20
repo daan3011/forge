@@ -14,6 +14,10 @@ type ErrMsg struct{ Err error }
 // and in the status bar.
 type InfoMsg struct{ Text string }
 
+// SuccessMsg reports that an action worked (merged, approved, created,
+// started). The root model shows it as a success toast with a spark burst.
+type SuccessMsg struct{ Text string }
+
 // ToastLevel is the severity of a toast.
 type ToastLevel int
 
@@ -21,7 +25,12 @@ type ToastLevel int
 const (
 	ToastInfo ToastLevel = iota
 	ToastError
+	ToastSuccess
 )
+
+// SuccessMark prefixes success toasts; it is the static stand-in for the
+// spark burst when animations are reduced or off.
+const SuccessMark = "✦ "
 
 // ToastDuration is how long a toast stays on screen.
 const ToastDuration = 4 * time.Second
@@ -84,13 +93,32 @@ func (t *Toast) View(maxWidth int) string {
 	}
 	boxes := make([]string, 0, len(t.items))
 	for _, it := range t.items {
-		style := t.theme.Toast
-		if it.level == ToastError {
-			style = t.theme.ToastError
-		}
-		inner := maxWidth - style.GetHorizontalFrameSize()
-		text := lipgloss.NewStyle().Width(min(lipgloss.Width(it.text), inner)).Render(it.text)
-		boxes = append(boxes, style.Render(text))
+		boxes = append(boxes, t.box(it, maxWidth))
 	}
 	return lipgloss.JoinVertical(lipgloss.Right, boxes...)
+}
+
+// LastSize returns the size of the newest (bottom) toast box as View draws
+// it, or zeros when no toast is showing.
+func (t *Toast) LastSize(maxWidth int) (width, height int) {
+	if len(t.items) == 0 || maxWidth < 8 {
+		return 0, 0
+	}
+	b := t.box(t.items[len(t.items)-1], maxWidth)
+	return lipgloss.Width(b), lipgloss.Height(b)
+}
+
+func (t *Toast) box(it toastItem, maxWidth int) string {
+	style := t.theme.Toast
+	text := it.text
+	switch it.level {
+	case ToastError:
+		style = t.theme.ToastError
+	case ToastSuccess:
+		style = t.theme.ToastSuccess
+		text = SuccessMark + text
+	}
+	inner := maxWidth - style.GetHorizontalFrameSize()
+	text = lipgloss.NewStyle().Width(min(lipgloss.Width(text), inner)).Render(text)
+	return style.Render(text)
 }

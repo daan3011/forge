@@ -3,6 +3,8 @@
 package app
 
 import (
+	"math"
+	"os"
 	"slices"
 	"time"
 
@@ -54,7 +56,11 @@ type Model struct {
 	clockOn bool
 
 	sched   refresh.Scheduler
-	spinner anim.Spinner
+	anim    *anim.Engine
+	splash  *anim.Splash // the launch splash while it plays
+	armed   bool         // play the splash on the first window size
+	bursts  []anim.Burst // spark bursts of success toasts
+	slideIn anim.Spring  // palette overlay offset from its resting row
 	ghRate  github.RateLimit
 	hasRate bool
 
@@ -94,7 +100,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 	for _, o := range opts {
 		o(&m)
 	}
-	d := tabkit.Deps{Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay}
+	d := tabkit.Deps{Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim}
 	m.tabs = []tabs.Tab{
 		home.New(d),
 		prs.New(d),
@@ -123,7 +129,7 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		clock:   time.Now,
 		clockOn: true, // Init starts the first tick
 		sched:   refresh.New(cfg),
-		spinner: anim.NewSpinner(cfg.UI.Animations),
+		anim:    anim.NewEngine(anim.Resolve(cfg.UI.Animations, os.Getenv)),
 
 		fetchDelay: tabkit.SampleFetchDelay,
 	}
@@ -176,28 +182,68 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return next.(Model).settle(cmd)
 }
 
-// settle runs after every message: the spinner runs exactly while the
-// visible tab is fetching, and the clock runs while it shows an update time.
+// settle runs after every message: the animation clock runs exactly while
+// something visible animates, and the status clock runs while the active
+// tab shows an update time.
 func (m Model) settle(cmd tea.Cmd) (Model, tea.Cmd) {
-	var spin tea.Cmd
-	if m.activeFetching() {
-		spin = m.spinner.Start()
-	} else {
-		m.spinner.Stop()
+	return m, tea.Batch(cmd, m.anim.Sync(m.animating()), m.ensureClock())
+}
+
+// animating reports whether anything on screen moves: the splash, a spark
+// burst, the palette sliding in, the hammer spinner while the visible tab
+// fetches, or the visible tab's own animation.
+func (m Model) animating() bool {
+	f := m.anim.Frame()
+	switch {
+	case m.splash != nil, len(m.bursts) > 0, m.activeFetching():
+		return true
+	case m.overlay != overlayNone && !m.slideIn.Settled(f):
+		return true
+	case m.helpOpen || len(m.tabs) == 0:
+		return false
 	}
-	return m, tea.Batch(cmd, spin, m.ensureClock())
+	a, ok := m.tabs[m.active].(tabs.Animator)
+	return ok && a.Animating()
+}
+
+// frame drops the splash and bursts that have finished.
+func (m Model) frame() Model {
+	f := m.anim.Frame()
+	if m.splash != nil && m.splash.Done(f) {
+		m.splash = nil
+	}
+	m.bursts = slices.DeleteFunc(slices.Clone(m.bursts), func(b anim.Burst) bool { return b.Done(f) })
+	return m
+}
+
+// WithSplash plays the launch splash once the terminal size is known, if
+// animations are full and the terminal is at least 60x16.
+func WithSplash() Option {
+	return func(m *Model) { m.armed = true }
+}
+
+// withGetenv resolves the animation level against getenv instead of the
+// process environment.
+func withGetenv(getenv func(string) string) Option {
+	return func(m *Model) { m.anim = anim.NewEngine(anim.Resolve(m.cfg.UI.Animations, getenv)) }
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.toast.Update(msg) {
 		return m, nil
 	}
-	if handled, cmd := m.spinner.Update(msg); handled {
-		return m, cmd
+	if m.anim.Update(msg) {
+		return m.frame(), nil
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.armed {
+			m.armed = false
+			if m.anim.Settings().Motion() && anim.SplashFits(m.width, m.height) {
+				m.splash = &anim.Splash{Start: m.anim.Frame(), Seed: uint64(m.clock().UnixNano())}
+			}
+		}
 		for _, t := range m.tabs {
 			t.SetSize(m.contentSize())
 		}
@@ -230,6 +276,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = msg.Text
 		return m, m.toast.Show(msg.Text, ui.ToastInfo)
 
+	case ui.SuccessMsg:
+		m.message = msg.Text
+		if m.anim.Settings().Motion() {
+			f := m.anim.Frame()
+			m.bursts = append(m.bursts, anim.Burst{Start: f, Seed: uint64(m.clock().UnixNano()) + uint64(len(m.bursts))})
+		}
+		return m, m.toast.Show(msg.Text, ui.ToastSuccess)
+
 	case refresh.TickMsg:
 		return m.handleTick(msg)
 
@@ -249,6 +303,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	g := m.keys.Global
 	if key.Matches(msg, g.ForceQuit) {
 		return m, tea.Quit
+	}
+	if m.splash != nil { // any key skips the splash
+		m.splash = nil
+		return m, nil
 	}
 	if key.Matches(msg, g.Palette) {
 		if m.overlay == overlayCommands {
@@ -300,6 +358,15 @@ func (m *Model) openPalette() {
 	m.overlay = overlayCommands
 	m.palette.Reset()
 	m.rerank()
+	m.startSlideIn()
+}
+
+// paletteDrop is how many rows above its resting place the palette starts
+// sliding in from.
+const paletteDrop = 4
+
+func (m *Model) startSlideIn() {
+	m.slideIn = anim.NewSpring(-paletteDrop, 0, m.anim.Frame(), m.anim.Settings())
 }
 
 // openProjects shows the project switcher with the current project
@@ -313,6 +380,7 @@ func (m Model) openProjects() (Model, tea.Cmd) {
 	m.overlay = overlayProjects
 	m.palette.Reset()
 	m.rerank()
+	m.startSlideIn()
 	for i, it := range m.shown {
 		if it.current {
 			m.palette.SetCursor(i)
@@ -576,6 +644,9 @@ func (m Model) render() string {
 	if m.width == 0 || m.height == 0 || len(m.tabs) == 0 {
 		return m.theme.Wordmark.Render("forge")
 	}
+	if m.splash != nil {
+		return m.splash.View(m.anim.Frame(), m.width, m.height, m.theme)
+	}
 	if m.helpOpen {
 		return m.help.View()
 	}
@@ -600,7 +671,7 @@ func (m Model) render() string {
 			Updated:  m.activeUpdated(),
 			Now:      m.now,
 			Fetching: m.activeFetching(),
-			Spinner:  m.spinner.View(),
+			Spinner:  anim.HammerFrame(m.anim.Frame(), m.anim.Settings(), m.theme),
 			Rate:     m.rateBadge(),
 			Keys:     m.statusKeys(active),
 		}),
@@ -614,10 +685,13 @@ func (m Model) render() string {
 		}
 	}
 	if !m.toast.Empty() {
-		toast := m.toast.View(max(m.width*2/5, 24))
-		x := max(m.width-lipgloss.Width(toast)-1, 0)
-		y := max(m.height-statusBarHeight-lipgloss.Height(toast), 0)
+		maxW := max(m.width*2/5, 24)
+		toast := m.toast.View(maxW)
+		tw, th := lipgloss.Width(toast), lipgloss.Height(toast)
+		x := max(m.width-tw-1, 0)
+		y := max(m.height-statusBarHeight-th, 0)
 		layers = append(layers, lipgloss.NewLayer(toast).X(x).Y(y).Z(2))
+		layers = append(layers, m.burstLayers(x, y, tw, th, maxW)...)
 	}
 	if len(layers) == 1 {
 		return screen
@@ -643,5 +717,32 @@ func (m Model) paletteLayer() *lipgloss.Layer {
 	}
 	x := (m.width - lipgloss.Width(view)) / 2
 	y := (m.height - lipgloss.Height(view)) / 2
+	off, _ := m.slideIn.At(m.anim.Frame())
+	y = max(y+int(math.Round(off)), 0)
 	return lipgloss.NewLayer(view).X(x).Y(y).Z(1)
+}
+
+// burstLayers throws the spark bursts from the left edge of the newest
+// toast (the bottom one), skipping sparks that would land on the toasts.
+func (m Model) burstLayers(x, y, w, h, maxW int) []*lipgloss.Layer {
+	if len(m.bursts) == 0 {
+		return nil
+	}
+	lw, lh := m.toast.LastSize(maxW)
+	bx, by := x+w-lw, y+h-lh+lh/2
+	inside := func(px, py int) bool {
+		if px >= m.width || py >= m.height {
+			return true
+		}
+		left := x // older toasts above the newest may be wider
+		if py >= y+h-lh {
+			left = bx
+		}
+		return px >= left && px < x+w && py >= y && py < y+h
+	}
+	var out []*lipgloss.Layer
+	for _, b := range m.bursts {
+		out = append(out, b.Layers(m.anim.Frame(), bx, by, 3, inside)...)
+	}
+	return out
 }

@@ -36,7 +36,13 @@ type Table struct {
 	height  int
 	widths  []int
 	focused bool
+	empty   func(width, height int) string // see SetEmptyView
 }
+
+// SetEmptyView draws the body of a table that has no rows at all (not one
+// whose filter matches nothing), such as anim.EmptyForge. nil restores the
+// one-line EmptyText.
+func (t *Table) SetEmptyView(f func(width, height int) string) { t.empty = f }
 
 // colGap is the space between columns.
 const colGap = 1
@@ -168,7 +174,9 @@ func (t *Table) View() string {
 	}
 	lines = append(lines, t.theme.TableHeader.Render(t.renderCells(titles)))
 
-	if len(t.visible) == 0 {
+	if len(t.rows) == 0 && t.empty != nil && t.height > 1 {
+		lines = append(lines, strings.Split(t.empty(t.width, t.height-1), "\n")...)
+	} else if len(t.visible) == 0 {
 		empty := EmptyText
 		if len(t.rows) > 0 {
 			empty = "no matches for " + strconv.Quote(t.filter)

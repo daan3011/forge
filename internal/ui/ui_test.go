@@ -529,3 +529,75 @@ func assertSize(t *testing.T, s string, width, height int) {
 		}
 	}
 }
+
+func TestTableEmptyView(t *testing.T) {
+	tb := NewTable(NewTheme(true, nil), DefaultKeyMap(), []Column{{Title: "N", Flex: true}})
+	tb.SetSize(30, 6)
+	var gotW, gotH int
+	tb.SetEmptyView(func(w, h int) string {
+		gotW, gotH = w, h
+		return Box("cold forge", w, h)
+	})
+	if !strings.Contains(tb.View(), "cold forge") || gotW != 30 || gotH != 5 {
+		t.Fatalf("empty view not used (got %dx%d):\n%s", gotW, gotH, tb.View())
+	}
+	assertSize(t, tb.View(), 30, 6)
+
+	// A filter that matches nothing still says so.
+	tb.SetRows([][]string{{"a"}})
+	tb.SetFilter("zzz")
+	if v := tb.View(); strings.Contains(v, "cold forge") || !strings.Contains(v, "no matches") {
+		t.Fatalf("filtered-out table used the empty view:\n%s", v)
+	}
+}
+
+func TestSplitPaneShowRatio(t *testing.T) {
+	s := NewSplitPane(NewTheme(true, nil))
+	s.SetSize(100, 20)
+	s.Grow()
+	target := s.Ratio()
+	s.ShowRatio(DefaultSplitRatio)
+	if s.Ratio() != target || s.ShownRatio() != DefaultSplitRatio {
+		t.Fatalf("ratio %v shown %v", s.Ratio(), s.ShownRatio())
+	}
+	if lw, _ := s.LeftSize(); lw != 40-borderSize {
+		t.Fatalf("left laid out at %d, want the shown ratio", lw)
+	}
+	s.ShowRatio(5)
+	if s.ShownRatio() != maxRatio {
+		t.Fatalf("shown ratio not clamped: %v", s.ShownRatio())
+	}
+	assertSize(t, s.View("l", "r", true), 100, 20)
+}
+
+func TestSuccessToast(t *testing.T) {
+	toast := NewToast(NewTheme(true, nil))
+	toast.Show("a much longer older message", ToastInfo)
+	toast.Show("merged", ToastSuccess)
+	view := ansi.Strip(toast.View(40))
+	if !strings.Contains(view, SuccessMark+"merged") {
+		t.Fatalf("success mark missing:\n%s", view)
+	}
+	w, h := toast.LastSize(40)
+	if w != lipgloss.Width(SuccessMark+"merged")+4 || h != 3 {
+		t.Fatalf("last toast size %dx%d", w, h)
+	}
+	empty := NewToast(NewTheme(true, nil))
+	if w, h := empty.LastSize(40); w != 0 || h != 0 {
+		t.Fatal("empty stack has a size")
+	}
+}
+
+func TestMix(t *testing.T) {
+	a, b := Charcoal, WhiteHot
+	if Mix(a, b, 0) != Mix(a, b, -3) || Mix(a, b, 1) != Mix(a, b, 9) {
+		t.Fatal("Mix not clamped")
+	}
+	r0, _, _, _ := Mix(a, b, 0).RGBA()
+	r1, _, _, _ := Mix(a, b, 1).RGBA()
+	ra, _, _, _ := a.RGBA()
+	rb, _, _, _ := b.RGBA()
+	if r0>>8 != ra>>8 || r1>>8 != rb>>8 {
+		t.Fatal("Mix endpoints wrong")
+	}
+}

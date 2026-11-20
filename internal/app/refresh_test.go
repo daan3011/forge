@@ -210,8 +210,8 @@ func TestSpinnerFollowsActiveFetch(t *testing.T) {
 	prs.fetching = true
 	model, cmd := model.Update(targeted{to: "PRs"})
 	got := model.(Model)
-	if !got.spinner.Running() || cmd == nil {
-		t.Fatal("spinner should start while the visible tab fetches")
+	if !got.anim.Ticking() || cmd == nil {
+		t.Fatal("animation clock should tick while the visible tab fetches")
 	}
 	if view := ansi.Strip(got.render()); !strings.Contains(view, "refreshing") {
 		t.Fatalf("status bar should say refreshing:\n%s", view)
@@ -219,12 +219,12 @@ func TestSpinnerFollowsActiveFetch(t *testing.T) {
 
 	// Switching away from the fetching tab stops it.
 	model, _ = model.Update(press("4"))
-	if model.(Model).spinner.Running() {
+	if model.(Model).anim.Ticking() {
 		t.Fatal("spinner kept running for a hidden tab")
 	}
 	prs.fetching = false
 	model, _ = model.Update(press("2"))
-	if model.(Model).spinner.Running() {
+	if model.(Model).anim.Ticking() {
 		t.Fatal("spinner running with nothing to fetch")
 	}
 }
