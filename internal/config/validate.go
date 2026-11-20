@@ -134,6 +134,11 @@ func (c *Config) Validate() error {
 	if c.Sessions.NotifyAfterMinutes < 0 {
 		add("sessions.notify_after_minutes", "must be 0 or more, got %d", c.Sessions.NotifyAfterMinutes)
 	}
+	switch c.Sessions.ArchiveCleanup {
+	case CleanupAsk, CleanupAlways, CleanupNever:
+	default:
+		add("sessions.archive_cleanup", "must be one of ask, always, never; got %q", c.Sessions.ArchiveCleanup)
+	}
 
 	for i, g := range c.Artifacts.Watch {
 		if _, err := filepath.Match(g, ""); err != nil {

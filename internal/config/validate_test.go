@@ -33,6 +33,7 @@ func TestValidation(t *testing.T) {
 		{"plane url", "plane:\n  base_url: plane.local\n", "plane.base_url", 2, "http(s) URL"},
 		{"relative worktree root", "sessions:\n  worktree_root: wt\n", "sessions.worktree_root", 2, "must be absolute"},
 		{"negative notify", "sessions:\n  notify_after_minutes: -1\n", "sessions.notify_after_minutes", 2, "0 or more"},
+		{"archive cleanup enum", "sessions:\n  archive_cleanup: sometimes\n", "sessions.archive_cleanup", 2, `must be one of ask, always, never; got "sometimes"`},
 		{"bad glob", "artifacts:\n  watch:\n    - /a/[b\n", "artifacts.watch[0]", 3, "invalid glob"},
 		{"animations enum", "ui:\n  animations: fast\n", "ui.animations", 2, `must be one of full, reduced, off; got "fast"`},
 		{"theme colour", "ui:\n  theme:\n    ember: orange\n", "ui.theme.ember", 3, "must be a colour"},
@@ -68,6 +69,7 @@ plane:
   workspace_slug: me
 sessions:
   notify_after_minutes: 0
+  archive_cleanup: always
 ui:
   animations: reduced
   theme:

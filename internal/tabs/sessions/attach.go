@@ -109,8 +109,8 @@ func (t *Tab) begin(r agent.Row, act resumeAction) tea.Cmd {
 	if t.svc == nil {
 		return errCmd(errUnavailable)
 	}
-	if r.Status == store.StatusArchived {
-		return info(r.Name + " is archived — its worktree is gone, so it can't be resumed")
+	if r.Archived() {
+		return info(r.Name + " is archived — restore it (" + t.keys.Sessions.Archive.Help().Key + " in the archived view) to work on it again")
 	}
 	if t.resuming[r.Name] {
 		return nil

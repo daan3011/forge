@@ -52,6 +52,9 @@ sessions:
   notify_on_finish: true
   # How often session status refreshes in the background (min 5s).
   refresh_interval: 10s
+  # Sessions whose PRs are all merged or closed move to the archive with a
+  # summary. Then remove their worktree and tmux window? ask | always | never
+  archive_cleanup: ask
 
 artifacts:
   # Globs of folders/files to watch for HTML/SVG/PNG/MD made by Claude.
@@ -95,6 +98,7 @@ keybinds:
   # session_kill: ["x"]         # kill, optionally removing the worktree
   # session_delete: ["D"]       # archived view only
   # session_archive_view: ["a"] # toggle active / archived sessions
+  # session_archive: ["A"]      # archive the session (restore it in the archived view)
   # session_attach: ["enter"]   # attach; a dead session is resumed first
   # session_resume: ["b"]       # background resume: resume without attaching
   # session_transcript: ["t"]   # read the session's transcript

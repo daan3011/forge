@@ -40,7 +40,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Attach** (`Service.Attach`) uses the stored target: forge's own client switches in place, a popup of the user's tmux runs in the background, otherwise `tea.ExecProcess`. On detach (or popup close) the list and that session's preview refresh at once. A second enter while one is in flight is ignored; the tab shows busy meanwhile.
   - **Keys**: tab keys now have their own scope (`tab:sessions`). They may not clash with global/list keys or each other, but different tabs may reuse a key (`b` is free for the Plane board toggle in P3.3). `R` stays refresh-all; ctrl+r stays free for P2.7.
   - **Tests**: service table tests (fake tmux gained `OnStart` to simulate a refused uuid), tab flows incl. dialogs under teatest, app picker tests, and `TestResumeAfterRebootEndToEnd` (`-tags tmux`). That test kills the real tmux server, resumes with `--resume <uuid>` in the worktree, then deletes the worktree and recreates it from the branch.
-  - **Limits**: the picker lists the current project's sessions (as the Sessions tab does); switch to "All projects" to reach others. Archived sessions can't be resumed (their worktree is removed by design).
+  - **Limits**: the picker lists the current project's sessions (as the Sessions tab does); switch to "All projects" to reach others. Archived sessions can't be resumed until they are restored with `A` (P1.10); a removed worktree is then recreated from the branch.
 - [x] P1.6 Transcript viewer — `t` on a session (palette: "Open session transcript") opens a full-screen viewer, so you can read what an agent did without attaching. The parser lives in `internal/sessions/transcript`; the viewer is in `internal/tabs/sessions/transcript.go`.
   - **Format**: checked against real Claude Code 2.1.x files. Only `user`, `assistant` and `system` lines are read; other types and malformed lines are skipped.
     - One API message is written as one line per content block, all with the same `message.id`, and every line repeats `message.usage`. So text blocks are merged, and usage is counted once per id.
@@ -130,7 +130,39 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - teatest flows incl. the "done when" (`TestStartFromIssueThenPR`): start from an issue → detail shows the issue → GitHub tick → detail shows its PR → `o` / `O` open them
     - also: picker, branch-in-use dialogs, kill options, and app routing of `StartSessionFrom` / `RefreshSource`
   - **Limits**: PRs from forks aren't matched (head filter is `owner:branch` of the repo itself). Issue states only change when P3.1 calls `Links.SetState`; until then the detail pane shows the state the source had when the session started.
-- [ ] P1.10 Auto-archive
+- [x] P1.10 Auto-archive — sessions whose PRs are all merged or closed move to the archive with a summary; notes and summary are searchable from the palette. Service side in `internal/sessions/archive.go`, tab side in `internal/tabs/sessions/archive.go`.
+  - **Two archive states**: `archived_at` set = in the archive. `status = archived` (0002) additionally means the worktree was removed. An archived session that kept its worktree keeps its last status.
+  - **Auto-archive**: the PR sync Cmd (GitHub ticks, plus once at start) runs `Service.AutoArchive(project)` right after `SyncPRs`, since link states only change there. A session is archived when:
+    - it has ≥1 PR link and every PR is `merged` / `closed` (`sessions.PRsFinished`)
+    - it isn't `working` / `waiting`; busy agents are picked up on a later tick
+    - it wasn't restored from the archive: migration 0004 adds `auto_archive_off`, set by `Unarchive`
+    
+    A toast says "<name> archived — PR #12 merged" (or "N sessions archived (PRs done): …").
+  - **Summary** (`Service.Summarize`): extracted, no LLM. It has one line per link (`PR owner/repo#12 merged — title`, `issue PROJ-1 …`), then `transcript.Brief`:
+    - messages · tool calls · files touched (relative to the worktree, first 5 then `+N`)
+    - the last 3 assistant replies, one line each, ≤240 runes
+    
+    A missing transcript reads "no transcript". `Kill{RemoveWorktree}` writes a summary too, so every archived session has one. Notes are never touched. `ArchiveRemoved` now keeps an earlier `archived_at`. `transcript.ShortFiles` moved out of the viewer.
+  - **Cleanup**: new config `sessions.archive_cleanup: ask | always | never` (default `ask`), through the existing kill flow:
+    - `always` removes worktree + tmux window, never forced; a dirty worktree still gets the "remove anyway?" dialog
+    - `ask` queues one dialog per session: remove / remove + delete branch (only `CanDeleteBranch`) / keep. Questions open one at a time, only when no other dialog, transcript or filter is up. One pushed aside by another dialog goes back in the queue (`dialog.displaced`).
+    - `never` leaves them
+  - **Keys** (also palette commands and help):
+    - `A` (new `session_archive`) archives the selected session, with the same cleanup; in the archived view it restores it (`Service.Unarchive`: a removed worktree comes back `dead`, so enter / `b` recreate it via P1.5)
+    - `x` in the archived view removes a kept worktree + window
+    - `D` still needs the worktree gone, and says so
+    - enter / `b` on an archived session point at `A`
+  - **Lists & palette**: every refresh loads both lists, so `a` switches at once. Archived sessions are `tabs.Entity{Kind: "Archived session"}` (`sessionstab.EntityArchivedSession`), searchable by links, branch, summary and notes. They're offered from either view; picking one opens the archived view on it. The ctrl+g picker stays active-only (`EntitySession`).
+  - **Detail pane**: archived rows show `archived: <date> · PR #12 merged [· worktree kept]` and a `── summary ──` / `── notes ──` section in place of the output preview (no capture-pane polling).
+  - **Tests**:
+    - store: migration 0004 default, `Unarchive` (flag, archived → dead), `ArchiveRemoved` keeps `archived_at`
+    - `Brief` / `ShortFiles` tables
+    - service: `AutoArchive` table (merged, closed, mixed, draft, no PR, issue only, working, waiting, restored); done-when `TestMergedPRArchivesWithSummary` (fake `PullFinder` open → merged, summary from the transcript fixture); archive / cleanup / restore round trip; Kill writes a summary
+    - config enum
+    - tab: done-when `TestMergedPRArchivesSession` (teatest: GitHub tick → toast → two queued cleanup questions → archived view shows the summary); cleanup modes; busy sessions wait; manual archive + restore; `x` in the archived view; palette entities + select
+    
+    Real-tmux suite (`-tags tmux`) still passes.
+  - **Limits**: auto-archive runs only while forge runs, on GitHub ticks. A session started from an already-merged PR is archived on the next tick (restore it to keep it). There's no notes editor yet; notes are kept and searched when present.
 
 ## Phase 2 — GitHub
 
@@ -180,6 +212,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 
 - [ ] P6.1 Home screen
 - [ ] P6.2 Scratchpad & daily note
+  - Note (from P1.10): finished sessions = `archived_at` in the day with their `summary` (first line: the PR and its state).
 - [ ] P6.3 Custom commands
 - [ ] P6.4 Polish & packaging
   - [ ] TODO: `forge doctor` reports the tmux version and which config file the forge server uses (`#{config_files}`), and warns when the user's tmux.conf version (`tmux.ParseConfigVersion`) is older than the embedded one (`tmux.ConfigVersion`).

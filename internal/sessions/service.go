@@ -101,6 +101,8 @@ type Store interface {
 	Update(ctx context.Context, x store.Session) error
 	LatestEvent(ctx context.Context, claudeID string) (store.Event, error)
 	ArchiveRemoved(ctx context.Context, id int64, at time.Time) error
+	Archive(ctx context.Context, id int64, summary string, at time.Time) error
+	Unarchive(ctx context.Context, id int64) error
 	Delete(ctx context.Context, id int64) error
 	Get(ctx context.Context, id int64) (store.Session, error)
 	LinksFor(ctx context.Context, ref store.Ref) ([]store.Link, error)
@@ -465,16 +467,17 @@ func (s *Service) List(ctx context.Context, project string, archived bool) ([]Ro
 	}
 	rows := make([]Row, len(xs))
 	for i, x := range xs {
-		rows[i] = Row{Session: x}
 		links, err := s.c.Store.LinksFor(ctx, store.SessionRef(x.ID))
 		if err != nil {
 			return nil, err
 		}
-		rows[i].Link = linkLabel(links)
-		rows[i].Links = linkNames(links)
-		rows[i].LinkList = links
+		rows[i] = newRow(x, links)
 	}
 	return rows, nil
+}
+
+func newRow(x store.Session, links []store.Link) Row {
+	return Row{Session: x, Link: linkLabel(links), Links: linkNames(links), LinkList: links}
 }
 
 // sweep marks live-looking sessions dead when their window is missing or
@@ -731,7 +734,8 @@ type Killed struct {
 
 // Kill closes the session's tmux window. The row is never deleted: without
 // RemoveWorktree the session becomes dead (resumable in place); with it the
-// worktree is removed, the branch kept, and the session archived. A dirty
+// worktree is removed, the branch kept, and the session archived (with a
+// summary, unless it is in the archive already). A dirty
 // worktree returns *worktree.DirtyError (the window is already closed and
 // the session marked dead); retry with Force to remove it anyway. An
 // external worktree (StartOpts.Worktree) is never removed: RemoveWorktree
@@ -776,6 +780,18 @@ func (s *Service) Kill(ctx context.Context, x store.Session, o KillOpts) (Killed
 				return Killed{}, fmt.Errorf("delete branch %s: %w", x.Branch, err)
 			}
 			res.BranchDeleted = true
+		}
+	}
+	// Every archived session gets a summary (P1.10); the transcript lives
+	// outside the worktree, so it is still there. The row is read again
+	// for a current transcript path.
+	cur, err := s.c.Store.Get(ctx, x.ID)
+	if err != nil {
+		return Killed{}, err
+	}
+	if !cur.Archived() {
+		if err := s.archive(ctx, cur); err != nil {
+			return Killed{}, err
 		}
 	}
 	if err := s.c.Store.ArchiveRemoved(ctx, x.ID, now); err != nil {
@@ -840,6 +856,9 @@ type API interface {
 	Transcript(ctx context.Context, x store.Session) (transcript.Transcript, error)
 	LinkedSessions(ctx context.Context, kind store.LinkKind, id string) ([]store.Session, error)
 	SyncPRs(ctx context.Context, project string) (bool, error)
+	Archive(ctx context.Context, x store.Session) (store.Session, error)
+	AutoArchive(ctx context.Context, project string) ([]Row, error)
+	Unarchive(ctx context.Context, x store.Session) error
 	TmuxControl
 }
 
