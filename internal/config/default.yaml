@@ -93,6 +93,18 @@ keybinds:
   # session_archive_view: ["a"] # toggle active / archived sessions
   # session_attach: ["enter"]   # attach; a dead session is resumed first
   # session_resume: ["b"]       # background resume: resume without attaching
+  # session_transcript: ["t"]   # read the session's transcript
+  # Transcript viewer (only these keys are live while it is open)
+  # transcript_up: ["k", "up"]
+  # transcript_down: ["j", "down"]
+  # transcript_page_up: ["ctrl+u", "pgup"]
+  # transcript_page_down: ["ctrl+d", "pgdown"]
+  # transcript_top: ["g", "home"]
+  # transcript_bottom: ["G", "end"]
+  # transcript_toggle: ["enter"]  # expand / collapse a tool call
+  # transcript_toggle_all: ["e"]
+  # transcript_follow: ["f"]      # keep the newest entry in view
+  # transcript_close: ["esc", "q"]
   # Text inputs (filter, palette)
   # cancel: ["esc"]
   # accept: ["enter"]

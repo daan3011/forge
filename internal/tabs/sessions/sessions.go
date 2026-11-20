@@ -105,6 +105,12 @@ type Tab struct {
 	clearTried string // clearKey of the last waiting spell ClearWaiting declined
 
 	dialog *dialog
+
+	// transcript viewer (P1.6); nil when closed
+	transcript     *transcriptView
+	transcriptID   int // bumps per opened viewer
+	transcriptPoll int // bumps on open/close/visibility; stale polls are dropped
+	width, height  int
 }
 
 var (
@@ -264,6 +270,12 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.deleted(msg)
 	case pingMsg:
 		return t, t.pinged(msg)
+	case transcriptLoadedMsg:
+		return t, t.transcriptLoaded(msg)
+	case transcriptPollMsg:
+		return t, t.transcriptPolled(msg)
+	case transcriptRenderedMsg:
+		return t, t.markdownRendered(msg)
 	case clearedMsg:
 		if msg.err != nil {
 			return t, errCmd(fmt.Errorf("sessions: %w", msg.err))
@@ -286,6 +298,9 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	if !ok {
 		return t, nil
 	}
+	if t.transcript != nil {
+		return t, t.updateTranscript(kp)
+	}
 	if t.filter.Active() {
 		t.updateFilter(kp)
 		return t, t.selectionChanged()
@@ -296,6 +311,8 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.attachSelected()
 	case key.Matches(kp, s.Resume):
 		return t, t.resumeSelected()
+	case key.Matches(kp, s.Transcript):
+		return t, t.openTranscript()
 	case key.Matches(kp, s.New):
 		return t, t.openNew()
 	case key.Matches(kp, s.Kill):
@@ -490,10 +507,11 @@ func (t *Tab) SetVisible(v bool) tea.Cmd {
 	t.visible = v
 	t.previewGen++
 	t.previewBusy = false
+	poll := t.transcriptVisible(v)
 	if !v {
 		return nil
 	}
-	return t.capture()
+	return tea.Batch(t.capture(), poll)
 }
 
 // selectionChanged restarts the preview when another session is selected.
@@ -907,6 +925,9 @@ func (t *Tab) Animating() bool {
 		return false
 	}
 	s := t.anim.Settings()
+	if t.transcript != nil {
+		return !t.transcript.loaded && s.Motion() // the hammer while reading
+	}
 	for _, row := range t.table.VisibleRows() {
 		if r, ok := t.rows[row[0]]; ok && anim.FlameAnimating(flameStatus(r.Status), s) {
 			return true
@@ -917,7 +938,9 @@ func (t *Tab) Animating() bool {
 
 // SetSize implements tabs.Tab.
 func (t *Tab) SetSize(width, height int) {
+	t.width, t.height = width, height
 	t.split.SetSize(width, height)
+	t.layoutTranscript()
 	t.resizeTable()
 	if t.dialog != nil {
 		w, h := t.dialogSize()
@@ -949,6 +972,9 @@ func (t *Tab) View() string {
 	t.slide()
 	if t.dialog != nil {
 		return t.dialogView()
+	}
+	if t.transcript != nil {
+		return t.transcriptView()
 	}
 	list := t.table.View()
 	if t.filter.Visible() {
@@ -1053,20 +1079,23 @@ func (t *Tab) ShortHelp() []key.Binding {
 	switch {
 	case t.dialog != nil:
 		return t.keys.FormHelp()
+	case t.transcript != nil:
+		return t.transcriptHelp()
 	case t.filter.Active():
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	case t.archived:
 		return []key.Binding{t.keys.Global.Refresh, t.keys.List.Filter, t.keys.Sessions.ArchiveView, t.keys.Sessions.Delete}
 	}
 	s := t.keys.Sessions
-	return []key.Binding{s.Attach, s.Resume, t.keys.List.Filter, s.ArchiveView, s.Kill, s.New}
+	return []key.Binding{s.Attach, s.Resume, s.Transcript, t.keys.List.Filter, s.ArchiveView, s.Kill, s.New}
 }
 
 // FullHelp implements tabs.Tab.
 func (t *Tab) FullHelp() [][]key.Binding {
-	l, in, s := t.keys.List, t.keys.Input, t.keys.Sessions
+	l, in, s, tr := t.keys.List, t.keys.Input, t.keys.Sessions, t.keys.Transcript
 	return [][]key.Binding{
-		{s.Attach, s.Resume, s.New, s.Kill, s.ArchiveView, s.Delete},
+		{s.Attach, s.Resume, s.Transcript, s.New, s.Kill, s.ArchiveView, s.Delete},
+		{tr.Up, tr.Down, tr.PageUp, tr.PageDown, tr.Top, tr.Bottom, tr.Toggle, tr.ToggleAll, tr.Follow, tr.Close},
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, l.ShrinkPane, l.GrowPane},
 		append([]key.Binding{in.Accept, in.Cancel}, t.keys.FormHelp()[1:]...),
@@ -1081,9 +1110,14 @@ func (t *Tab) Commands() []tabs.Command {
 	if t.archived {
 		view = "Show active sessions"
 	}
-	cmds := []tabs.Command{
+	var cmds []tabs.Command
+	if t.transcript != nil {
+		cmds = t.transcriptCommands()
+	}
+	cmds = append(cmds, []tabs.Command{
 		{ID: "session_attach", Title: "Attach session (resume if needed)", Key: s.Attach, Run: t.attachSelected},
 		{ID: "session_resume", Title: "Resume session in the background", Key: s.Resume, Run: t.resumeSelected},
+		{ID: "session_transcript", Title: "Open session transcript", Key: s.Transcript, Run: t.openTranscript},
 		{ID: "session_new", Title: "New session…", Key: s.New, Run: t.openNew},
 		{ID: "session_kill", Title: "Kill session…", Key: s.Kill, Run: t.openKill},
 		{ID: "session_archive_view", Title: view, Key: s.ArchiveView, Run: t.toggleArchive},
@@ -1091,7 +1125,7 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "tmux_restart", Title: "tmux: restart forge server…", Run: t.restartTmux},
 		{ID: "tmux_config", Title: "tmux: edit forge tmux config", Run: t.editTmuxConfig},
 		{ID: "tmux_config_reset", Title: "tmux: reset forge tmux config…", Run: t.resetTmuxConfig},
-	}
+	}...)
 	return append(cmds,
 		tabs.Command{ID: "filter", Title: "Filter sessions", Key: l.Filter, Run: do(t.startFilter)},
 		tabs.Command{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(func() { t.resize(t.split.Grow) })},
@@ -1127,7 +1161,9 @@ func (t *Tab) Select(id string) tea.Cmd {
 }
 
 // CapturingInput implements tabs.InputCapturer.
-func (t *Tab) CapturingInput() bool { return t.dialog != nil || t.filter.Active() }
+func (t *Tab) CapturingInput() bool {
+	return t.dialog != nil || t.filter.Active() || t.transcript != nil
+}
 
 // LastUpdated implements tabs.Updater.
 func (t *Tab) LastUpdated() time.Time { return t.updated }

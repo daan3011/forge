@@ -1,0 +1,19 @@
+{"type":"permission-mode","permissionMode":"default","sessionId":"s1"}
+{"type":"user","timestamp":"2026-11-20T10:00:00Z","message":{"role":"user","content":"Add a README"},"sessionId":"s1"}
+{"type":"attachment","timestamp":"2026-11-20T10:00:00Z","attachment":{"type":"x"}}
+{"type":"user","isMeta":true,"timestamp":"2026-11-20T10:00:00Z","message":{"role":"user","content":"<system-reminder>injected</system-reminder>"}}
+{"type":"assistant","timestamp":"2026-11-20T10:00:01Z","message":{"id":"msg_1","role":"assistant","content":[{"type":"thinking","thinking":"hmm"}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}
+{"type":"assistant","timestamp":"2026-11-20T10:00:02Z","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"I'll **write** it."}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}
+{"type":"assistant","timestamp":"2026-11-20T10:00:03Z","message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Write","input":{"file_path":"/repo/README.md","content":"# hi"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}
+{"type":"user","timestamp":"2026-11-20T10:00:04Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":"File created","is_error":false}]}}
+{this is not json
+{"type":"assistant","timestamp":"2026-11-20T10:00:05Z","message":{"id":"msg_2","role":"assistant","content":[{"type":"tool_use","id":"tu_2","name":"Bash","input":{"command":"go test ./...","description":"Run tests"}}],"usage":{"input_tokens":1,"output_tokens":7,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"type":"user","timestamp":"2026-11-20T10:00:06Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_2","content":[{"type":"text","text":"FAIL foo"}],"is_error":true}]}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-11-20T10:00:07Z","message":{"id":"msg_side","role":"assistant","content":[{"type":"text","text":"subagent"}],"usage":{"input_tokens":999,"output_tokens":999}}}
+{"type":"assistant","timestamp":"2026-11-20T10:00:08Z","message":{"id":"msg_3","role":"assistant","content":[{"type":"tool_use","id":"tu_3","name":"Edit","input":{"file_path":"/repo/main.go","old_string":"a","new_string":"b"}}],"usage":{"input_tokens":2,"output_tokens":3}}}
+{"type":"user","timestamp":"2026-11-20T10:00:09Z","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"}}
+{"type":"user","timestamp":"2026-11-20T10:00:09Z","message":{"role":"user","content":"<local-command-stdout></local-command-stdout>"}}
+{"type":"system","subtype":"compact_boundary","timestamp":"2026-11-20T10:00:10Z","content":"Conversation compacted"}
+{"type":"system","subtype":"turn_duration","timestamp":"2026-11-20T10:00:11Z","durationMs":5}
+{"type":"assistant","timestamp":"2026-11-20T10:00:12Z","message":{"id":"msg_4","role":"assistant","content":[{"type":"text","text":"Done."}],"usage":{"input_tokens":1,"output_tokens":1}}}
+{"type":"future-thing","timestamp":"2026-11-20T11:00:00Z"}

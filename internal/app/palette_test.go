@@ -119,11 +119,15 @@ func TestPushRecent(t *testing.T) {
 
 // notRegistered are keymap actions that are not palette commands: movement
 // and text editing only make sense as keys, force_quit duplicates quit, and
-// palette opens the palette itself.
+// palette opens the palette itself. The transcript viewer's other actions
+// are commands only while it is open (see the sessions tab's tests).
 var notRegistered = []string{
 	"force_quit", "palette",
 	"up", "down", "top", "bottom", "page_down", "page_up",
 	"cancel", "accept", "delete_back", "clear_input", "next", "prev",
+	"transcript_up", "transcript_down", "transcript_top", "transcript_bottom",
+	"transcript_page_up", "transcript_page_down",
+	"transcript_toggle", "transcript_toggle_all", "transcript_follow", "transcript_close",
 }
 
 // TestEveryActionIsACommand guards the "every user action is a palette

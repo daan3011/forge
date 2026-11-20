@@ -13,6 +13,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/sessions/transcript"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
 )
@@ -133,7 +134,8 @@ const startupPoll = 200 * time.Millisecond
 // Service starts, lists, previews and kills agent sessions. It does blocking
 // I/O and must only be called from a tea.Cmd or the CLI.
 type Service struct {
-	c Config
+	c           Config
+	transcripts *transcript.Cache
 }
 
 // New returns a Service.
@@ -150,7 +152,18 @@ func New(c Config) *Service {
 	if c.StartupCheck == 0 {
 		c.StartupCheck = DefaultStartupCheck
 	}
-	return &Service{c: c}
+	return &Service{c: c, transcripts: transcript.NewCache()}
+}
+
+// Transcript parses the transcript of x (P1.6). Files are parsed
+// incrementally, so loading the same session again only reads new lines.
+// It returns transcript.ErrNoTranscript when there is none yet.
+func (s *Service) Transcript(_ context.Context, x store.Session) (transcript.Transcript, error) {
+	path, err := transcript.Locate(x, s.c.ProjectsDir)
+	if err != nil {
+		return transcript.Transcript{}, err
+	}
+	return s.transcripts.Load(path)
 }
 
 // Project returns the configured project called name.
@@ -573,6 +586,7 @@ type API interface {
 	Inspect(ctx context.Context, x store.Session) (ResumePlan, error)
 	Resume(ctx context.Context, x store.Session, o ResumeOpts) (Resumed, error)
 	Attach(ctx context.Context, x store.Session) (tmux.Attachment, error)
+	Transcript(ctx context.Context, x store.Session) (transcript.Transcript, error)
 	TmuxControl
 }
 

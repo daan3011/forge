@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/sessions/transcript"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
@@ -45,6 +46,30 @@ type fakeSvc struct {
 	attaches  []string
 	attachAs  tmux.Attachment
 	resumeErr error // returned once by Resume
+
+	// transcripts by session name; a missing name means no transcript.
+	transcripts     map[string]transcript.Transcript
+	transcriptLoads int
+}
+
+func (f *fakeSvc) Transcript(_ context.Context, x store.Session) (transcript.Transcript, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.transcriptLoads++
+	tr, ok := f.transcripts[x.Name]
+	if !ok {
+		return transcript.Transcript{}, transcript.ErrNoTranscript
+	}
+	return tr, nil
+}
+
+func (f *fakeSvc) setTranscript(name string, tr transcript.Transcript) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.transcripts == nil {
+		f.transcripts = map[string]transcript.Transcript{}
+	}
+	f.transcripts[name] = tr
 }
 
 func (f *fakeSvc) TmuxWindows(context.Context) ([]tmux.Target, error) {
