@@ -20,8 +20,11 @@ type KeyMap struct {
 	List     ListKeys
 	Input    InputKeys
 	Sessions SessionKeys
-	Demo     DemoKeys
-	Tmux     TmuxDemoKeys
+	// Transcript drives the transcript viewer (P1.6), which takes over
+	// the Sessions tab while open.
+	Transcript TranscriptKeys
+	Demo       DemoKeys
+	Tmux       TmuxDemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -72,6 +75,22 @@ type SessionKeys struct {
 	ArchiveView key.Binding // toggle between active and archived sessions
 	Attach      key.Binding // attach, resuming a dead session first
 	Resume      key.Binding // resume a dead session without attaching
+	Transcript  key.Binding // open the transcript viewer
+}
+
+// TranscriptKeys are active while the transcript viewer is open; nothing
+// else (not even the global keys) is.
+type TranscriptKeys struct {
+	Up        key.Binding // previous entry
+	Down      key.Binding // next entry
+	PageUp    key.Binding
+	PageDown  key.Binding
+	Top       key.Binding
+	Bottom    key.Binding
+	Toggle    key.Binding // expand / collapse the tool call under the cursor
+	ToggleAll key.Binding // expand / collapse every tool call
+	Follow    key.Binding // keep the newest entry in view as it arrives
+	Close     key.Binding
 }
 
 // DemoKeys drive the hidden `forge demo anim` showcase. They are not
@@ -141,6 +160,19 @@ func DefaultKeyMap() *KeyMap {
 			ArchiveView: bind("archived view", "a"),
 			Attach:      bind("attach", "enter"),
 			Resume:      bind("background resume", "b"),
+			Transcript:  bind("transcript", "t"),
+		},
+		Transcript: TranscriptKeys{
+			Up:        bind("prev entry", "k", "up"),
+			Down:      bind("next entry", "j", "down"),
+			PageUp:    bind("page up", "ctrl+u", "pgup"),
+			PageDown:  bind("page down", "ctrl+d", "pgdown"),
+			Top:       bind("first entry", "g", "home"),
+			Bottom:    bind("last entry", "G", "end"),
+			Toggle:    bind("expand tool call", "enter"),
+			ToggleAll: bind("expand all", "e"),
+			Follow:    bind("follow", "f"),
+			Close:     bind("close", "esc", "q"),
 		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
@@ -173,6 +205,9 @@ const (
 	scopeMain     = "main" // global + list keys, active together
 	scopeInput    = "input"
 	scopeSessions = "tab:sessions"
+	// scopeTranscript is modal: while the viewer is open only its keys
+	// (and force quit) are live, so it is checked on its own.
+	scopeTranscript = "transcript"
 )
 
 // isTabScope reports whether scope belongs to one tab (and is active
@@ -180,7 +215,7 @@ const (
 func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
-	g, l, in, ss := &k.Global, &k.List, &k.Input, &k.Sessions
+	g, l, in, ss, tr := &k.Global, &k.List, &k.Input, &k.Sessions, &k.Transcript
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -208,6 +243,17 @@ func (k *KeyMap) actions() []action {
 		{"session_archive_view", scopeSessions, &ss.ArchiveView},
 		{"session_attach", scopeSessions, &ss.Attach},
 		{"session_resume", scopeSessions, &ss.Resume},
+		{"session_transcript", scopeSessions, &ss.Transcript},
+		{"transcript_up", scopeTranscript, &tr.Up},
+		{"transcript_down", scopeTranscript, &tr.Down},
+		{"transcript_page_up", scopeTranscript, &tr.PageUp},
+		{"transcript_page_down", scopeTranscript, &tr.PageDown},
+		{"transcript_top", scopeTranscript, &tr.Top},
+		{"transcript_bottom", scopeTranscript, &tr.Bottom},
+		{"transcript_toggle", scopeTranscript, &tr.Toggle},
+		{"transcript_toggle_all", scopeTranscript, &tr.ToggleAll},
+		{"transcript_follow", scopeTranscript, &tr.Follow},
+		{"transcript_close", scopeTranscript, &tr.Close},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},

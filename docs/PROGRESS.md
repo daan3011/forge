@@ -41,7 +41,24 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Keys**: tab keys now have their own scope (`tab:sessions`). They may not clash with global/list keys or each other, but different tabs may reuse a key (`b` is free for the Plane board toggle in P3.3). `R` stays refresh-all; ctrl+r stays free for P2.7.
   - **Tests**: service table tests (fake tmux gained `OnStart` to simulate a refused uuid), tab flows incl. dialogs under teatest, app picker tests, and `TestResumeAfterRebootEndToEnd` (`-tags tmux`). That test kills the real tmux server, resumes with `--resume <uuid>` in the worktree, then deletes the worktree and recreates it from the branch.
   - **Limits**: the picker lists the current project's sessions (as the Sessions tab does); switch to "All projects" to reach others. Archived sessions can't be resumed (their worktree is removed by design).
-- [ ] P1.6 Transcript viewer
+- [x] P1.6 Transcript viewer — `t` on a session (palette: "Open session transcript") opens a full-screen viewer, so you can read what an agent did without attaching. The parser lives in `internal/sessions/transcript`; the viewer is in `internal/tabs/sessions/transcript.go`.
+  - **Format**: checked against real Claude Code 2.1.x files. Only `user`, `assistant` and `system` lines are read; other types and malformed lines are skipped.
+    - One API message is written as one line per content block, all with the same `message.id`, and every line repeats `message.usage`. So text blocks are merged, and usage is counted once per id.
+    - User lines are either a prompt (a string) or `tool_result` blocks, which are paired with their `tool_use` by id.
+    - `/command` wrappers and compactions become one-line notices. `thinking` blocks, `isMeta` lines and subagent (`isSidechain`) lines are skipped.
+  - **Locating**: `transcript.Locate` uses the session's `transcript_path` from the hooks if that file exists. Otherwise it falls back to `claude.FindTranscript` (`~/.claude/projects/*/<uuid>.jsonl`). On each load it uses the session's current row, so a new path (e.g. after `/clear`) is picked up.
+  - **Incremental parsing**: `transcript.Cache` remembers per file the byte offset and parser state.
+    - Loading again only parses the bytes appended since. A half-written last line waits for the next load. A truncated or replaced file (different inode) starts over.
+    - On a 28 MB transcript the first parse takes 230 ms and re-opening takes 54 µs.
+    - The open viewer re-reads every 2 s while its tab is visible.
+  - **Viewer**:
+    - Summary header: messages, tool calls, files touched by Edit/Write/MultiEdit/NotebookEdit (relative to the worktree, first 4 then `+N`), last activity, and tokens (`in · out · cache` from usage, or `~chars/4` when the file has none).
+    - Prompts are shown as text; assistant replies are rendered with Glamour v2 in forge colours (`Theme.GlamourStyle`). Glamour runs in a `tea.Cmd`, cached per entry and width, with plain text shown until it's ready.
+    - Each tool call is one line `▸ ⚒ Bash  Run tests ✓/✗/…`. `enter` expands it to show its input (`$ cmd`, an Edit's -/+ lines, Write content, otherwise indented JSON) and its result, each capped at 40 lines. `e` toggles all.
+    - `j/k` move entry by entry; `ctrl+d/u`, `g/G` jump; `f` follows new entries (on when opened); `esc`/`q` closes.
+    - The viewer keys have their own modal scope (`transcript`), so `enter` inside the viewer never reaches Attach. Toggle, expand-all, follow and close are palette commands while the viewer is open.
+  - **Tests**: table-driven parser tests on a fixture (split blocks, usage dedup, unknown/malformed lines, result pairing, wrappers, chars/4), cache tests (partial line, append, truncate, replace) and `Locate` tests. There are teatest flows for open → expand → expand all → close → enter attaches, live refresh, missing transcript, and the palette commands. `go test ./internal/sessions/transcript -run TestRealFiles -real ~/.claude/projects` parses every local transcript (63 files here, no errors).
+  - **Limits**: subagent transcripts are not shown. The offset cache lives in memory per forge process; `transcript_offset` is left for the persistent cache in P5.3. A resize re-renders the markdown on the next 2 s poll (plain text until then).
 - [ ] P1.7 Session templates
 - [ ] P1.8 Waiting notifications
 - [ ] P1.9 Session ↔ issue/PR links

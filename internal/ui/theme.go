@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"math"
 
+	"charm.land/glamour/v2/ansi"
+	"charm.land/glamour/v2/styles"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -137,6 +139,19 @@ type Theme struct {
 	FilterPrompt lipgloss.Style
 	FilterText   lipgloss.Style
 
+	// Transcript viewer (P1.6).
+	TranscriptTitle   lipgloss.Style // session name in the header
+	TranscriptStat    lipgloss.Style // header numbers
+	TranscriptUser    lipgloss.Style // "you" label
+	TranscriptPrompt  lipgloss.Style // prompt text
+	TranscriptAgent   lipgloss.Style // "claude" label
+	TranscriptTool    lipgloss.Style // collapsed tool call line
+	TranscriptToolOK  lipgloss.Style // ✓ on a finished call
+	TranscriptToolErr lipgloss.Style // ✗ on a failed call
+	TranscriptDetail  lipgloss.Style // expanded tool input / result
+	TranscriptNotice  lipgloss.Style // /commands, compactions
+	TranscriptCursor  lipgloss.Style // gutter bar at the selected entry
+
 	PaletteBox            lipgloss.Style
 	PalettePrompt         lipgloss.Style
 	PaletteGroup          lipgloss.Style
@@ -203,6 +218,18 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 
 		FilterPrompt: lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		FilterText:   base,
+
+		TranscriptTitle:   lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		TranscriptStat:    lipgloss.NewStyle().Foreground(p.Text),
+		TranscriptUser:    lipgloss.NewStyle().Foreground(p.Link).Bold(true),
+		TranscriptPrompt:  base,
+		TranscriptAgent:   lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		TranscriptTool:    lipgloss.NewStyle().Foreground(p.Muted),
+		TranscriptToolOK:  lipgloss.NewStyle().Foreground(p.Accent),
+		TranscriptToolErr: lipgloss.NewStyle().Foreground(p.Error).Bold(true),
+		TranscriptDetail:  lipgloss.NewStyle().Foreground(p.Muted),
+		TranscriptNotice:  lipgloss.NewStyle().Foreground(p.Border).Italic(true),
+		TranscriptCursor:  lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 
 		PaletteBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
 		PalettePrompt:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
@@ -283,6 +310,37 @@ func (t *Theme) Huh() huh.Theme {
 		h.Help.FullSeparator = h.Help.ShortSeparator
 		return h
 	})
+}
+
+// GlamourStyle is the Glamour markdown style in forge colours, based on
+// Glamour's dark or light style, with no document margin (the transcript
+// viewer indents itself).
+func (t *Theme) GlamourStyle() ansi.StyleConfig {
+	c := styles.LightStyleConfig
+	if t.IsDark {
+		c = styles.DarkStyleConfig
+	}
+	str := func(s string) *string { return &s }
+	col := func(cc color.Color) *string { return str(Hex(cc)) }
+	yes := true
+	zero := uint(0)
+
+	c.Document.Margin = &zero
+	c.Document.BlockPrefix = ""
+	c.Document.BlockSuffix = ""
+	c.Document.Color = col(t.Text)
+	c.Heading.Color = col(t.Accent)
+	c.H1.Color = col(t.OnAccent)
+	c.H1.BackgroundColor = col(t.Accent)
+	c.H1.Bold = &yes
+	c.H6.Color = col(t.Muted)
+	c.HorizontalRule.Color = col(t.Border)
+	c.Link.Color = col(t.Link)
+	c.LinkText.Color = col(t.Link)
+	c.Code.Color = col(t.Highlight)
+	c.Code.BackgroundColor = col(t.Surface)
+	c.BlockQuote.Color = col(t.Muted)
+	return c
 }
 
 // heatSteps is the resolution of the precomputed heat gradient.
