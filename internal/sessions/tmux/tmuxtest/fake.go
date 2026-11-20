@@ -24,6 +24,10 @@ type Fake struct {
 	// it returns an AttachPopup whose command runs `true`, with Warning.
 	Popup   bool
 	Warning string
+	// OnStart, if set, is called for every new window with its command; it
+	// returns the window's output and whether its process exits at once
+	// (e.g. a program that refuses its arguments).
+	OnStart func(cmd []string) (output string, exited bool)
 
 	mu       sync.Mutex
 	sessions map[string][]*fakeWindow // in creation order
@@ -107,12 +111,20 @@ func (f *Fake) NewWindow(_ context.Context, session, name, dir string, cmd []str
 	if len(cmd) > 0 {
 		command = cmd[0]
 	}
-	f.sessions[session] = append(ws, &fakeWindow{
+	w := &fakeWindow{
 		Window: tmux.Window{ID: fmt.Sprintf("@%d", f.nextID), Index: len(ws) + 1, Name: t.Window, Command: command},
 		Dir:    dir,
 		Cmd:    slices.Clone(cmd),
 		Env:    env,
-	})
+	}
+	if f.OnStart != nil {
+		var exited bool
+		w.output, exited = f.OnStart(slices.Clone(cmd))
+		if exited {
+			w.Dead, w.ExitStatus = true, 1
+		}
+	}
+	f.sessions[session] = append(ws, w)
 	return t, nil
 }
 

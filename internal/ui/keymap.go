@@ -36,6 +36,8 @@ type GlobalKeys struct {
 	RefreshAll key.Binding // every tab, visible or not
 	Palette    key.Binding // also works while a text input has focus
 	Projects   key.Binding // project switcher; also works while a text input has focus
+	// GotoSession opens the session picker; picking one attaches to it.
+	GotoSession key.Binding
 }
 
 // ListKeys drive the list/detail layout every tab uses. Tab-specific groups
@@ -68,6 +70,8 @@ type SessionKeys struct {
 	Kill        key.Binding
 	Delete      key.Binding // archived view only
 	ArchiveView key.Binding // toggle between active and archived sessions
+	Attach      key.Binding // attach, resuming a dead session first
+	Resume      key.Binding // resume a dead session without attaching
 }
 
 // DemoKeys drive the hidden `forge demo anim` showcase. They are not
@@ -108,6 +112,8 @@ func DefaultKeyMap() *KeyMap {
 			RefreshAll: bind("refresh all", "R"),
 			Palette:    bind("commands", "ctrl+k"),
 			Projects:   bind("switch project", "ctrl+p"),
+
+			GotoSession: bind("go to session", "ctrl+g"),
 		},
 		List: ListKeys{
 			Up:         bind("up", "k", "up"),
@@ -133,6 +139,8 @@ func DefaultKeyMap() *KeyMap {
 			Kill:        bind("kill session", "x"),
 			Delete:      bind("delete session", "D"),
 			ArchiveView: bind("archived view", "a"),
+			Attach:      bind("attach", "enter"),
+			Resume:      bind("background resume", "b"),
 		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
@@ -158,10 +166,18 @@ type action struct {
 	b     *key.Binding
 }
 
+// Scopes group actions that are active at the same time; a key may be bound
+// once per scope. Tab scopes are active together with scopeMain, so their
+// keys must not clash with it either, but two tabs may reuse a key.
 const (
-	scopeMain  = "main" // global + list keys, active together
-	scopeInput = "input"
+	scopeMain     = "main" // global + list keys, active together
+	scopeInput    = "input"
+	scopeSessions = "tab:sessions"
 )
+
+// isTabScope reports whether scope belongs to one tab (and is active
+// together with scopeMain).
+func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
 	g, l, in, ss := &k.Global, &k.List, &k.Input, &k.Sessions
@@ -176,6 +192,7 @@ func (k *KeyMap) actions() []action {
 		{"refresh_all", scopeMain, &g.RefreshAll},
 		{"palette", scopeMain, &g.Palette},
 		{"projects", scopeMain, &g.Projects},
+		{"goto_session", scopeMain, &g.GotoSession},
 		{"up", scopeMain, &l.Up},
 		{"down", scopeMain, &l.Down},
 		{"top", scopeMain, &l.Top},
@@ -185,10 +202,12 @@ func (k *KeyMap) actions() []action {
 		{"filter", scopeMain, &l.Filter},
 		{"grow_pane", scopeMain, &l.GrowPane},
 		{"shrink_pane", scopeMain, &l.ShrinkPane},
-		{"session_new", scopeMain, &ss.New},
-		{"session_kill", scopeMain, &ss.Kill},
-		{"session_delete", scopeMain, &ss.Delete},
-		{"session_archive_view", scopeMain, &ss.ArchiveView},
+		{"session_new", scopeSessions, &ss.New},
+		{"session_kill", scopeSessions, &ss.Kill},
+		{"session_delete", scopeSessions, &ss.Delete},
+		{"session_archive_view", scopeSessions, &ss.ArchiveView},
+		{"session_attach", scopeSessions, &ss.Attach},
+		{"session_resume", scopeSessions, &ss.Resume},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},
@@ -237,8 +256,25 @@ func NewKeyMap(overrides map[string][]string) (*KeyMap, error) {
 		a.b.SetHelp(helpKey(keys), a.b.Help().Desc)
 	}
 
-	// Report a conflict against the action that was overridden, so the error
-	// points at the line the user changed.
+	errs = append(errs, conflicts(acts, overrides)...)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return k, nil
+}
+
+// conflicts reports keys bound twice in one scope, or by a tab action and a
+// main one. Each is reported against the overridden action, so the error
+// points at the line the user changed.
+func conflicts(acts []action, overrides map[string][]string) []error {
+	var errs []error
+	conflict := func(a, b, kk string) {
+		id, other := a, b
+		if _, ok := overrides[id]; !ok {
+			id, other = b, a
+		}
+		errs = append(errs, fmt.Errorf("keybinds.%s: %q is already bound to %s", id, kk, other))
+	}
 	owner := map[string]map[string]string{} // scope -> key -> action id
 	for _, a := range acts {
 		if owner[a.scope] == nil {
@@ -250,17 +286,21 @@ func NewKeyMap(overrides map[string][]string) (*KeyMap, error) {
 				owner[a.scope][kk] = a.id
 				continue
 			}
-			id, other := a.id, prev
-			if _, ok := overrides[id]; !ok {
-				id, other = prev, a.id
-			}
-			errs = append(errs, fmt.Errorf("keybinds.%s: %q is already bound to %s", id, kk, other))
+			conflict(a.id, prev, kk)
 		}
 	}
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
+	// A tab's keys are live together with the main ones.
+	for _, a := range acts {
+		if !isTabScope(a.scope) {
+			continue
+		}
+		for _, kk := range a.b.Keys() {
+			if prev, taken := owner[scopeMain][kk]; taken {
+				conflict(a.id, prev, kk)
+			}
+		}
 	}
-	return k, nil
+	return errs
 }
 
 // keyNames are the help-text spellings of special keys.
@@ -289,7 +329,7 @@ func helpKey(keys []string) string {
 // GlobalHelp returns the bindings that work on every tab, for the help overlay.
 func (k *KeyMap) GlobalHelp() []key.Binding {
 	g := k.Global
-	return []key.Binding{g.Palette, g.Projects, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
+	return []key.Binding{g.Palette, g.Projects, g.GotoSession, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
 }
 
 // HuhKeyMap is the key map for Huh forms embedded in forge: Huh's defaults,

@@ -116,6 +116,9 @@ type Entity struct {
 	ID     string
 	Title  string
 	Detail string
+	// Search is extra text the palette matches (linked issues and PRs,
+	// branch names) besides the kind and title.
+	Search string
 }
 
 // EntityProvider is implemented by tabs that contribute searchable items.
@@ -123,4 +126,12 @@ type Entity struct {
 type EntityProvider interface {
 	Entities() []Entity
 	Select(id string) tea.Cmd
+}
+
+// SessionGoer is implemented by the tab that owns agent sessions. The root
+// model's "Go to session…" picker lists its Session entities and calls
+// AttachSession with the picked id once the tab is active.
+type SessionGoer interface {
+	EntityProvider
+	AttachSession(id string) tea.Cmd
 }

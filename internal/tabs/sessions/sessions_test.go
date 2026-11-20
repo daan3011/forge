@@ -37,6 +37,14 @@ type fakeSvc struct {
 	restarts int
 	conf     string
 	resets   int
+
+	// attach & resume
+	plans     map[string]agent.ResumePlan
+	inspects  []string
+	resumes   []agent.ResumeOpts
+	attaches  []string
+	attachAs  tmux.Attachment
+	resumeErr error // returned once by Resume
 }
 
 func (f *fakeSvc) TmuxWindows(context.Context) ([]tmux.Target, error) {
@@ -69,7 +77,51 @@ func (f *fakeSvc) tmuxCounts() (restarts, resets int) {
 }
 
 func newFakeSvc(rows ...agent.Row) *fakeSvc {
-	return &fakeSvc{rows: rows, output: map[string]string{}}
+	return &fakeSvc{
+		rows: rows, output: map[string]string{}, plans: map[string]agent.ResumePlan{},
+		attachAs: tmux.Attachment{Mode: tmux.AttachSwitched},
+	}
+}
+
+func (f *fakeSvc) Inspect(_ context.Context, x store.Session) (agent.ResumePlan, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.inspects = append(f.inspects, x.Name)
+	return f.plans[x.Name], nil
+}
+
+func (f *fakeSvc) Resume(_ context.Context, x store.Session, o agent.ResumeOpts) (agent.Resumed, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resumes = append(f.resumes, o)
+	if err := f.resumeErr; err != nil {
+		f.resumeErr = nil
+		return agent.Resumed{}, err
+	}
+	p := f.plans[x.Name]
+	res := agent.Resumed{Fresh: !p.HasTranscript, WorktreeRecreated: o.RecreateWorktree}
+	for i := range f.rows {
+		if f.rows[i].Name == x.Name {
+			f.rows[i].Status = store.StatusStarting
+			res.Session = f.rows[i].Session
+		}
+	}
+	p.Alive = true
+	f.plans[x.Name] = p
+	return res, nil
+}
+
+func (f *fakeSvc) Attach(_ context.Context, x store.Session) (tmux.Attachment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attaches = append(f.attaches, x.Name)
+	return f.attachAs, nil
+}
+
+func (f *fakeSvc) attachCalls() (inspects []string, resumes []agent.ResumeOpts, attaches []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.inspects), slices.Clone(f.resumes), slices.Clone(f.attaches)
 }
 
 func row(name string, st store.Status) agent.Row {

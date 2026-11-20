@@ -75,6 +75,7 @@ keybinds:
   # refresh_all: ["R"]         # refresh every tab, visible or not
   # palette: ["ctrl+k"]        # command palette; also works while typing
   # projects: ["ctrl+p"]       # project switcher; also works while typing
+  # goto_session: ["ctrl+g"]   # session picker: attach (resuming if needed)
   # Lists
   # up: ["k", "up"]
   # down: ["j", "down"]
@@ -85,11 +86,13 @@ keybinds:
   # filter: ["/"]
   # grow_pane: [">"]
   # shrink_pane: ["<"]
-  # Sessions tab
+  # Sessions tab (tab keys may reuse another tab's keys, never a global one)
   # session_new: ["n"]
   # session_kill: ["x"]         # kill, optionally removing the worktree
   # session_delete: ["D"]       # archived view only
   # session_archive_view: ["a"] # toggle active / archived sessions
+  # session_attach: ["enter"]   # attach; a dead session is resumed first
+  # session_resume: ["b"]       # background resume: resume without attaching
   # Text inputs (filter, palette)
   # cancel: ["esc"]
   # accept: ["enter"]

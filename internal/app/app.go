@@ -90,6 +90,7 @@ const (
 	overlayNone     paletteMode = iota
 	overlayCommands             // ctrl+k: every action and entity
 	overlayProjects             // ctrl+p: the project switcher
+	overlaySessions             // ctrl+g: the session picker
 )
 
 // New returns the root model for the given config. It fails if the keybinds
@@ -352,6 +353,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, g.Help):
 		m.openHelp()
 		return m, nil
+	case key.Matches(msg, g.GotoSession):
+		return m.openSessions()
 	case key.Matches(msg, g.NextTab):
 		return m.switchTo((m.active + 1) % len(m.tabs))
 	case key.Matches(msg, g.PrevTab):
@@ -405,6 +408,22 @@ func (m Model) openProjects() (Model, tea.Cmd) {
 			break
 		}
 	}
+	return m, nil
+}
+
+// openSessions shows the session picker, or a hint when there are no
+// sessions to pick.
+func (m Model) openSessions() (Model, tea.Cmd) {
+	items := m.sessionItems()
+	if len(items) == 0 {
+		return m, m.toast.Show("no sessions to go to — start one on the Sessions tab", ui.ToastInfo)
+	}
+	m.helpOpen = false
+	m.items = items
+	m.overlay = overlaySessions
+	m.palette.Reset()
+	m.rerank()
+	m.startSlideIn()
 	return m, nil
 }
 

@@ -30,6 +30,7 @@ type fakeWT struct {
 	branches   map[string]bool // session -> branch exists
 	dirty      map[string]bool
 	createErr  error
+	created    []worktree.CreateOpts
 	removed    []worktree.RemoveOpts
 	deleted    []string
 	excluded   []string // dir/rel passed to EnsureExcluded
@@ -47,11 +48,15 @@ func (f *fakeWT) Create(_ context.Context, o worktree.CreateOpts) (worktree.Crea
 	if f.branches[o.Session] && !o.ReuseBranch {
 		return worktree.Created{}, &worktree.BranchExistsError{Branch: worktree.Branch(o.Session)}
 	}
+	reused := f.branches[o.Session]
 	f.trees[o.Session], f.branches[o.Session] = true, true
-	return worktree.Created{
-		Path:   worktree.Path(f.root, o.Project, o.Session),
-		Branch: worktree.Branch(o.Session),
-	}, nil
+	f.created = append(f.created, o)
+	path := worktree.Path(f.root, o.Project, o.Session)
+	// A real directory, so code that checks the worktree exists sees it.
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return worktree.Created{}, err
+	}
+	return worktree.Created{Path: path, Branch: worktree.Branch(o.Session), Reused: reused}, nil
 }
 
 func (f *fakeWT) List(context.Context, config.Project) ([]worktree.Worktree, error) { return nil, nil }
@@ -65,6 +70,7 @@ func (f *fakeWT) Remove(_ context.Context, o worktree.RemoveOpts) (worktree.Remo
 		return worktree.Removed{}, &worktree.DirtyError{Path: o.Session, Files: []string{" M a.go"}}
 	}
 	delete(f.trees, o.Session)
+	_ = os.RemoveAll(worktree.Path(f.root, o.Project, o.Session))
 	return worktree.Removed{Branch: worktree.Branch(o.Session), BranchMerged: true}, nil
 }
 
@@ -93,6 +99,8 @@ type env struct {
 	st   *store.Store
 	data string
 	proj config.Project
+	// claude is the fake ~/.claude/projects.
+	claude string
 }
 
 func newEnv(t *testing.T) *env {
@@ -105,11 +113,12 @@ func newEnv(t *testing.T) *env {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	e := &env{
-		tmux: tmuxtest.NewFake(),
-		wt:   newFakeWT(filepath.Join(dir, "wt")),
-		st:   st,
-		data: filepath.Join(dir, "data"),
-		proj: config.Project{Name: "forge", Repo: "daan/forge", Path: filepath.Join(dir, "repo")},
+		tmux:   tmuxtest.NewFake(),
+		wt:     newFakeWT(filepath.Join(dir, "wt")),
+		st:     st,
+		data:   filepath.Join(dir, "data"),
+		claude: filepath.Join(dir, "claude-projects"),
+		proj:   config.Project{Name: "forge", Repo: "daan/forge", Path: filepath.Join(dir, "repo")},
 	}
 	e.svc = New(Config{
 		Tmux: e.tmux, Worktrees: e.wt, Store: StoreFrom(st),
@@ -117,6 +126,8 @@ func newEnv(t *testing.T) *env {
 		DataDir:  e.data, ClaudeBin: "claude",
 		NewID: func() (string, error) { return testID, nil },
 		Now:   func() time.Time { return t0.Add(time.Hour) },
+
+		ProjectsDir: e.claude, StartupCheck: time.Nanosecond,
 	})
 	return e
 }

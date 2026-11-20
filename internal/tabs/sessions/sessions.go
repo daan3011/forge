@@ -87,9 +87,10 @@ type Tab struct {
 	updated  time.Time
 	listGen  int // bumps on project/view change; stale lists are dropped
 	fetching bool
-	dirty    bool   // a ping arrived during a refresh: refresh again after
-	busy     int    // start/kill/delete actions in flight
-	pending  string // select this session once it shows up in the list
+	dirty    bool            // a ping arrived during a refresh: refresh again after
+	busy     int             // start/kill/delete actions in flight
+	pending  string          // select this session once it shows up in the list
+	resuming map[string]bool // sessions with an attach/resume in flight
 
 	visible     bool
 	selected    string // name of the selected session, for change detection
@@ -116,6 +117,7 @@ var (
 	_ tabs.AutoRefresher   = (*Tab)(nil)
 	_ tabs.Animator        = (*Tab)(nil)
 	_ tabs.VisibilityAware = (*Tab)(nil)
+	_ tabs.SessionGoer     = (*Tab)(nil)
 )
 
 // New returns the Sessions tab. Without d.Sessions it shows an empty list
@@ -138,6 +140,8 @@ func New(d tabkit.Deps) *Tab {
 		table:  ui.NewTable(d.Theme, d.Keys, nil),
 		filter: ui.NewFilter(d.Theme, d.Keys),
 		rows:   map[string]agent.Row{},
+
+		resuming: map[string]bool{},
 	}
 	cols := slices.Clone(columns)
 	cols[statusCol].Render = t.renderStatus
@@ -272,6 +276,9 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	if cmd, ok := t.updateTmux(msg); ok {
 		return t, cmd
 	}
+	if cmd, ok := t.updateAttach(msg); ok {
+		return t, cmd
+	}
 	if t.dialog != nil {
 		return t, t.updateDialog(msg)
 	}
@@ -285,6 +292,10 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	}
 	l, s := t.keys.List, t.keys.Sessions
 	switch {
+	case key.Matches(kp, s.Attach):
+		return t, t.attachSelected()
+	case key.Matches(kp, s.Resume):
+		return t, t.resumeSelected()
 	case key.Matches(kp, s.New):
 		return t, t.openNew()
 	case key.Matches(kp, s.Kill):
@@ -788,10 +799,17 @@ type dialog struct {
 	form    *huh.Form
 	subject string // session the dialog is about, for the header
 	done    func() tea.Cmd
+	aborted func() // optional: the user abandoned the form (esc)
 }
 
 func (t *Tab) openDialog(subject string, f *huh.Form, done func() tea.Cmd) tea.Cmd {
-	t.dialog = &dialog{form: f, subject: subject, done: done}
+	return t.openDialogOr(subject, f, done, nil)
+}
+
+// openDialogOr is openDialog with a function to call when the form is
+// abandoned instead of completed.
+func (t *Tab) openDialogOr(subject string, f *huh.Form, done func() tea.Cmd, aborted func()) tea.Cmd {
+	t.dialog = &dialog{form: f, subject: subject, done: done, aborted: aborted}
 	init := f.Init()
 	w, h := t.dialogSize()
 	_, _ = f.Update(tea.WindowSizeMsg{Width: w, Height: h})
@@ -819,6 +837,9 @@ func (t *Tab) updateDialog(msg tea.Msg) tea.Cmd {
 		return tea.Batch(cmd, d.done(), t.selectionChanged())
 	case huh.StateAborted:
 		t.dialog = nil
+		if d.aborted != nil {
+			d.aborted()
+		}
 		return nil
 	}
 	return cmd
@@ -1038,14 +1059,14 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{t.keys.Global.Refresh, t.keys.List.Filter, t.keys.Sessions.ArchiveView, t.keys.Sessions.Delete}
 	}
 	s := t.keys.Sessions
-	return []key.Binding{t.keys.List.Filter, s.ArchiveView, s.Kill, s.New}
+	return []key.Binding{s.Attach, s.Resume, t.keys.List.Filter, s.ArchiveView, s.Kill, s.New}
 }
 
 // FullHelp implements tabs.Tab.
 func (t *Tab) FullHelp() [][]key.Binding {
 	l, in, s := t.keys.List, t.keys.Input, t.keys.Sessions
 	return [][]key.Binding{
-		{s.New, s.Kill, s.ArchiveView, s.Delete},
+		{s.Attach, s.Resume, s.New, s.Kill, s.ArchiveView, s.Delete},
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, l.ShrinkPane, l.GrowPane},
 		append([]key.Binding{in.Accept, in.Cancel}, t.keys.FormHelp()[1:]...),
@@ -1061,6 +1082,8 @@ func (t *Tab) Commands() []tabs.Command {
 		view = "Show active sessions"
 	}
 	cmds := []tabs.Command{
+		{ID: "session_attach", Title: "Attach session (resume if needed)", Key: s.Attach, Run: t.attachSelected},
+		{ID: "session_resume", Title: "Resume session in the background", Key: s.Resume, Run: t.resumeSelected},
 		{ID: "session_new", Title: "New session…", Key: s.New, Run: t.openNew},
 		{ID: "session_kill", Title: "Kill session…", Key: s.Kill, Run: t.openKill},
 		{ID: "session_archive_view", Title: view, Key: s.ArchiveView, Run: t.toggleArchive},
@@ -1081,9 +1104,14 @@ func (t *Tab) Entities() []tabs.Entity {
 	out := make([]tabs.Entity, 0, len(t.rows))
 	for _, row := range t.table.Rows() {
 		r := t.rows[row[0]]
+		detail := []string{string(r.Status), r.Project, r.Branch}
+		if r.Link != "" {
+			detail = append(detail, r.Link)
+		}
 		out = append(out, tabs.Entity{
 			Kind: "Session", ID: r.Name, Title: r.Name,
-			Detail: strings.Join([]string{string(r.Status), r.Project, r.Branch}, " · "),
+			Detail: strings.Join(detail, " · "),
+			Search: strings.Join(append(slices.Clone(r.Links), r.Branch), " "),
 		})
 	}
 	return out

@@ -53,7 +53,13 @@ func TestArgv(t *testing.T) {
 			l:    Launch{Bin: "/opt/my tools/claude", SessionID: id, PromptFile: "/tmp/it's here/p.md"},
 			want: []string{"sh", "-c", `exec '/opt/my tools/claude' --session-id ` + id + ` -- "$(cat '/tmp/it'\''s here/p.md')"`},
 		},
+		{
+			name: "resume ignores the prompt file",
+			l:    Launch{SessionID: id, Resume: true, PromptFile: "/data/p.md"},
+			want: []string{"sh", "-c", "exec 'claude' --resume " + id},
+		},
 		{name: "bad id", l: Launch{SessionID: "x; rm -rf /"}, wantErr: true},
+		{name: "bad id on resume", l: Launch{SessionID: "x; rm -rf /", Resume: true}, wantErr: true},
 		{name: "uppercase id", l: Launch{SessionID: strings.ToUpper(id)}, wantErr: true},
 	}
 	for _, tt := range tests {

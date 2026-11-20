@@ -45,11 +45,15 @@ type Launch struct {
 	// at start-up, so the prompt never has to be quoted into a command line.
 	// Command substitution drops trailing newlines from it.
 	PromptFile string
+	// Resume continues the existing conversation SessionID with --resume
+	// instead of starting it; PromptFile is ignored.
+	Resume bool
 }
 
 // Argv returns the command to run in the agent's window:
 //
 //	sh -c 'exec <bin> --session-id <id> -- "$(cat <file>)"'
+//	sh -c 'exec <bin> --resume <id>'                         (Resume)
 //
 // The bin and file paths are single-quoted for the shell; the prompt itself
 // only ever exists in the file and in the expanded, double-quoted argument,
@@ -62,6 +66,9 @@ func (l Launch) Argv() ([]string, error) {
 	bin := l.Bin
 	if bin == "" {
 		bin = DefaultBin
+	}
+	if l.Resume {
+		return []string{"sh", "-c", "exec " + shell.Quote(bin) + " --resume " + l.SessionID}, nil
 	}
 	script := "exec " + shell.Quote(bin) + " --session-id " + l.SessionID
 	if l.PromptFile != "" {
