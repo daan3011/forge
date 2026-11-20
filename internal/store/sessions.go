@@ -214,6 +214,33 @@ func (r *Sessions) SetStatus(ctx context.Context, id int64, st Status, at time.T
 	return mustAffect("set session status", res, err)
 }
 
+// SetStatusIf is SetStatus applied only while the session is still in
+// status from. It reports whether the row changed, so a caller acting on a
+// stale view can't overwrite a status a hook has just written.
+func (r *Sessions) SetStatusIf(ctx context.Context, id int64, from, to Status, at time.Time) (bool, error) {
+	ms := at.UnixMilli()
+	res, err := r.s.w.ExecContext(ctx, `UPDATE sessions SET
+		status_changed_at   = CASE WHEN status = ?1 THEN status_changed_at ELSE ?2 END,
+		waiting_notified_at = CASE WHEN status = ?1 THEN waiting_notified_at ELSE NULL END,
+		status = ?1, last_activity_at = ?2, updated_at = ?3
+		WHERE id = ?4 AND status = ?5`, to, ms, r.s.now().UnixMilli(), id, from)
+	if err != nil {
+		return false, wrap("set session status", err)
+	}
+	n, err := res.RowsAffected()
+	return n > 0, wrap("set session status", err)
+}
+
+// SetClaudeID records a new Claude Code session id for the session, e.g.
+// after /clear started a fresh conversation in the same window. It returns
+// ErrConflict if another session already has the id.
+func (r *Sessions) SetClaudeID(ctx context.Context, id int64, claudeID string) error {
+	res, err := r.s.w.ExecContext(ctx,
+		`UPDATE sessions SET claude_session_id = ?, updated_at = ? WHERE id = ?`,
+		claudeID, r.s.now().UnixMilli(), id)
+	return mustAffect("set claude session id", res, err)
+}
+
 // MarkWaitingNotified records that a "waiting" notification was sent (P1.8).
 func (r *Sessions) MarkWaitingNotified(ctx context.Context, id int64, at time.Time) error {
 	res, err := r.s.w.ExecContext(ctx,

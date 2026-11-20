@@ -186,3 +186,51 @@ func TestSessionArchiveUpdateTranscriptDelete(t *testing.T) {
 		t.Errorf("links left after delete: %+v", links)
 	}
 }
+
+func TestSessionSetStatusIf(t *testing.T) {
+	s, c := newTestStore(t)
+	ctx := context.Background()
+	x := mustSession(t, s, "a")
+	noErr(t, s.Sessions().SetStatus(ctx, x.ID, StatusWaiting, t0))
+
+	tests := []struct {
+		name     string
+		from, to Status
+		want     bool
+		after    Status
+	}{
+		{"stale from is ignored", StatusIdle, StatusWorking, false, StatusWaiting},
+		{"matching from applies", StatusWaiting, StatusWorking, true, StatusWorking},
+		{"already moved on", StatusWaiting, StatusWorking, false, StatusWorking},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c.Advance(time.Second)
+			ok, err := s.Sessions().SetStatusIf(ctx, x.ID, tt.from, tt.to, c.Now())
+			noErr(t, err)
+			if ok != tt.want {
+				t.Errorf("changed = %v, want %v", ok, tt.want)
+			}
+			got, err := s.Sessions().Get(ctx, x.ID)
+			noErr(t, err)
+			if got.Status != tt.after {
+				t.Errorf("status = %s, want %s", got.Status, tt.after)
+			}
+		})
+	}
+}
+
+func TestSessionSetClaudeID(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	a := mustSession(t, s, "a")
+	mustSession(t, s, "b")
+	noErr(t, s.Sessions().SetClaudeID(ctx, a.ID, "uuid-new"))
+	got, err := s.Sessions().GetByClaudeID(ctx, "uuid-new")
+	noErr(t, err)
+	if got.ID != a.ID {
+		t.Fatalf("got session %d, want %d", got.ID, a.ID)
+	}
+	wantErr(t, s.Sessions().SetClaudeID(ctx, a.ID, "uuid-b"), ErrConflict)
+	wantErr(t, s.Sessions().SetClaudeID(ctx, 999, "x"), ErrNotFound)
+}

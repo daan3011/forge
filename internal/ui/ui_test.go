@@ -601,3 +601,32 @@ func TestMix(t *testing.T) {
 		t.Fatal("Mix endpoints wrong")
 	}
 }
+
+func TestTableColumnRender(t *testing.T) {
+	var calls []string
+	cols := []Column{
+		{Title: "St", Width: 6, Render: func(cell string, width int, row lipgloss.Style) string {
+			calls = append(calls, cell)
+			return row.Render(fit("* "+cell, width))
+		}},
+		{Title: "Name", Flex: true},
+	}
+	tb := NewTable(NewTheme(true, nil), DefaultKeyMap(), cols)
+	tb.SetRows([][]string{{"idle", "alpha"}, {"waiting", "beta"}})
+	tb.SetSize(24, 4)
+	v := ansi.Strip(tb.View())
+	if !strings.Contains(v, "St") || strings.Contains(v, "* St") {
+		t.Errorf("header must not be custom-rendered:\n%s", v)
+	}
+	if !strings.Contains(v, "* idle alpha") || !strings.Contains(v, "* wai… beta") {
+		t.Errorf("cells not rendered:\n%s", v)
+	}
+	if len(calls) != 2 {
+		t.Errorf("render calls %q", calls)
+	}
+	assertSize(t, tb.View(), 24, 4)
+	tb.SetFilter("waiting") // raw text is what the filter sees
+	if n := len(tb.VisibleRows()); n != 1 {
+		t.Errorf("filter matched %d rows", n)
+	}
+}

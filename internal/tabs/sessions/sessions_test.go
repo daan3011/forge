@@ -31,6 +31,7 @@ type fakeSvc struct {
 	kills    []agent.KillOpts
 	previews int
 	dirty    bool
+	clears   []string // ClearWaiting calls
 
 	windows  []tmux.Target
 	restarts int
@@ -140,6 +141,36 @@ func (f *fakeSvc) Delete(_ context.Context, x store.Session) error {
 		}
 	}
 	return errors.New("no such session")
+}
+
+func (f *fakeSvc) ClearWaiting(_ context.Context, x store.Session) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clears = append(f.clears, x.Name)
+	for i := range f.rows {
+		if f.rows[i].Name == x.Name && f.rows[i].Status == store.StatusWaiting {
+			f.rows[i].Status = store.StatusWorking
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// setStatus changes a row's status, as a hook writing the database would.
+func (f *fakeSvc) setStatus(name string, st store.Status) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.rows {
+		if f.rows[i].Name == name {
+			f.rows[i].Status = st
+		}
+	}
+}
+
+func (f *fakeSvc) clearCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.clears)
 }
 
 func (f *fakeSvc) snapshot() (starts []agent.StartOpts, kills []agent.KillOpts, rows []agent.Row) {

@@ -34,7 +34,21 @@ func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
 		Store:      agent.StoreFrom(st),
 		Projects:   cfg.Projects,
 		DataDir:    filepath.Join(config.DataHome(), "forge"),
+		ForgeBin:   forgeBin(),
 	}), nil
+}
+
+// forgeBin is the absolute path of this forge binary, which the Claude
+// Code hooks in new worktrees call. "" (no hooks) if it can't be found.
+func forgeBin() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return exe
 }
 
 func newNewCmd(d deps) *cobra.Command {

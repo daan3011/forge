@@ -340,3 +340,39 @@ func realPath(p string) string {
 		p = parent
 	}
 }
+
+// EnsureExcluded implements Manager. The pattern is anchored ("/" + rel) in
+// the repo's info/exclude, which all its worktrees share.
+func (w *Worktrees) EnsureExcluded(ctx context.Context, dir, rel string) error {
+	ignored, err := w.git.CheckIgnore(ctx, dir, rel)
+	if err != nil || ignored {
+		return err
+	}
+	path, err := w.git.GitPath(ctx, dir, "info/exclude")
+	if err != nil {
+		return err
+	}
+	pattern := "/" + strings.TrimPrefix(filepath.ToSlash(rel), "/")
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("worktree: %w", err)
+	}
+	for l := range strings.SplitSeq(string(b), "\n") {
+		if strings.TrimSpace(l) == pattern {
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("worktree: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("worktree: %w", err)
+	}
+	line := "# forge: agent session hooks (P1.4)\n" + pattern + "\n"
+	if len(b) > 0 && !strings.HasSuffix(string(b), "\n") {
+		line = "\n" + line
+	}
+	_, werr := f.WriteString(line)
+	return errors.Join(werr, f.Close())
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -36,6 +37,12 @@ type Git interface {
 	IsAncestor(ctx context.Context, repo, a, b string) (bool, error)
 	// DeleteBranch deletes a local branch; force deletes it even unmerged.
 	DeleteBranch(ctx context.Context, repo, branch string, force bool) error
+	// CheckIgnore reports whether path (relative to dir) is git-ignored.
+	CheckIgnore(ctx context.Context, dir, path string) (bool, error)
+	// GitPath resolves a path inside dir's git directory, e.g.
+	// "info/exclude" (shared by every worktree of a repo), as an absolute
+	// path.
+	GitPath(ctx context.Context, dir, name string) (string, error)
 }
 
 // Error is a failed git invocation.
@@ -206,4 +213,29 @@ func (e *Exec) DeleteBranch(ctx context.Context, repo, branch string, force bool
 	}
 	_, err := e.Run(ctx, repo, "branch", flag, "--", branch)
 	return err
+}
+
+// CheckIgnore implements Git.
+func (e *Exec) CheckIgnore(ctx context.Context, dir, path string) (bool, error) {
+	_, err := e.Run(ctx, dir, "check-ignore", "--quiet", "--", path)
+	if err == nil {
+		return true, nil
+	}
+	if exitCode(err) == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
+// GitPath implements Git.
+func (e *Exec) GitPath(ctx context.Context, dir, name string) (string, error) {
+	out, err := e.Run(ctx, dir, "rev-parse", "--git-path", name)
+	if err != nil {
+		return "", err
+	}
+	p := strings.TrimSpace(out)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	return p, nil
 }

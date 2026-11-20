@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/editor"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/store"
 )
@@ -31,6 +34,11 @@ type deps struct {
 	// ask replaces the huh yes/no prompt; now replaces the clock.
 	ask func(title, desc string) (bool, error)
 	now func() time.Time
+	// getenv replaces os.Getenv and sender the live socket, for `forge hook`.
+	getenv func(string) string
+	sender live.Sender
+	// listen replaces live.Listen for the TUI; nil means the real socket.
+	listen func() (pingSource, error)
 }
 
 func (d deps) sessions(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -45,6 +53,19 @@ func (d deps) dbPath() string {
 		return d.db
 	}
 	return store.DefaultPath()
+}
+
+// pingSource is the TUI's end of the live socket (*live.Listener).
+type pingSource interface {
+	Pings() <-chan live.Ping
+	Close() error
+}
+
+func (d deps) listenLive(ctx context.Context) (pingSource, error) {
+	if d.listen != nil {
+		return d.listen()
+	}
+	return live.Listen(ctx, live.DefaultPath())
 }
 
 func newRootCmd(d deps) *cobra.Command {
@@ -72,6 +93,15 @@ func newRootCmd(d deps) *cobra.Command {
 				return err
 			}
 			opts := []app.Option{app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc)}
+			switch src, err := d.listenLive(cmd.Context()); {
+			case errors.Is(err, live.ErrRunning):
+				fmt.Fprintln(cmd.ErrOrStderr(), "note: another forge is running and gets live session updates; this one refreshes every few seconds")
+			case err != nil:
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: no live session updates:", err)
+			default:
+				defer func() { _ = src.Close() }()
+				opts = append(opts, app.WithLive(src.Pings()))
+			}
 			switch name, found, err := app.LoadActiveProject(cmd.Context(), st.Cache()); {
 			case err != nil:
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
@@ -87,7 +117,7 @@ func newRootCmd(d deps) *cobra.Command {
 		},
 	}
 	root.AddCommand(
-		stubCmd("hook <event>", "Ingest a Claude Code hook event", "P1.4", cobra.ArbitraryArgs),
+		newHookCmd(d),
 		stubCmd("capture [title]", "Quick-capture a Plane issue", "P3.5", cobra.ArbitraryArgs),
 		newNewCmd(d),
 		newConfigCmd(d),
