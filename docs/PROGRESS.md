@@ -17,7 +17,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 ## Phase 1 — Agent sessions
 
 - [ ] P1.1 tmux driver
-- [ ] P1.2 Worktree manager
+- [x] P1.2 Worktree manager — `internal/sessions/worktree`: `Manager` (`Create` / `List` / `Remove` / `DeleteBranch`) over a fakeable `Git` interface (`Exec` = git binary, argv only, never prompts). Worktrees live at `<worktree_root>/<repo>/<session>` on `agent/<session>`, created `--no-track` from `origin/<base>` after a fetch (offline falls back to the local base, reported as `FetchErr`). Existing branch → `ErrBranchExists` (retry with `ReuseBranch`); per-project `worktree_copy` globs copied in (never overwriting tracked files, rolled back on failure). `Reconcile` maps worktrees to sessions → matched / orphans / missing. `Remove` refuses dirty worktrees (`*DirtyError`) unless forced and reports `BranchMerged` (ancestry only; squash merges not detected). Tests run against real temp repos with an isolated git config.
 - [ ] P1.3 Start named session
 - [ ] P1.4 Live status via hooks
 - [ ] P1.5 Attach & resume

@@ -15,6 +15,7 @@ projects:
   #   path: ~/code/forge               # local checkout (absolute or ~/)
   #   plane_project_id: ""             # Plane project UUID (optional)
   #   docs_dir: .forge/docs            # relative to path (default .forge/docs)
+  #   worktree_copy: [.env.local]      # globs copied from path into new agent worktrees
 
 github:
   # How often PR and pipeline lists refresh in the background ("30s", "2m"; min 5s).
