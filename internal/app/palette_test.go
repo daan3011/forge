@@ -357,12 +357,13 @@ func TestPaletteEntityJump(t *testing.T) {
 type fakeStore struct {
 	mu   sync.Mutex
 	vals map[string][]byte
+	at   map[string]time.Time
 	puts map[string]int
 	err  error
 }
 
 func newFakeStore(vals map[string]string) *fakeStore {
-	f := &fakeStore{vals: map[string][]byte{}, puts: map[string]int{}}
+	f := &fakeStore{vals: map[string][]byte{}, at: map[string]time.Time{}, puts: map[string]int{}}
 	for k, v := range vals {
 		f.vals[k] = []byte(v)
 	}
@@ -391,7 +392,7 @@ func (f *fakeStore) Get(_ context.Context, key string) (store.CacheEntry, error)
 	if !ok {
 		return store.CacheEntry{}, store.ErrNotFound
 	}
-	return store.CacheEntry{Key: key, Value: v}, nil
+	return store.CacheEntry{Key: key, Value: v, FetchedAt: f.at[key]}, nil
 }
 
 func (f *fakeStore) Put(_ context.Context, key, kind, _ string, value []byte, ttl time.Duration) error {
@@ -401,10 +402,14 @@ func (f *fakeStore) Put(_ context.Context, key, kind, _ string, value []byte, tt
 		return f.err
 	}
 	wantKind := map[string]string{recentKey: recentKind, projectKey: projectKind}[key]
+	if strings.HasPrefix(key, "tab:") {
+		wantKind = tabkit.CacheKind
+	}
 	if wantKind == "" || kind != wantKind || ttl != 0 {
 		return errors.New("unexpected key, kind or ttl")
 	}
 	f.vals[key] = value
+	f.at[key] = time.Now()
 	f.puts[key]++
 	return nil
 }

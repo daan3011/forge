@@ -1,8 +1,6 @@
 package app
 
 import (
-	"time"
-
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
@@ -57,6 +55,10 @@ func (m Model) paletteItems() []item {
 		{
 			id: "refresh", title: "Refresh tab", group: groupCommands, hint: hint(g.Refresh),
 			run: func(m Model) (Model, tea.Cmd) { return m.refresh() },
+		},
+		{
+			id: "refresh_all", title: "Refresh all tabs", group: groupCommands, hint: hint(g.RefreshAll),
+			run: func(m Model) (Model, tea.Cmd) { return m.refreshAll() },
 		},
 		{
 			id: "next_tab", title: "Next tab", group: groupCommands, hint: hint(g.NextTab),
@@ -169,19 +171,22 @@ func joinDetail(a, b string) string {
 }
 
 // setProject makes p the active project (nil = all projects): every tab is
-// told and reloads, and the choice is saved for the next start.
+// told, the visible and background tabs reload (the rest catch up when
+// shown), and the choice is saved for the next start.
 func (m Model) setProject(p *config.Project) (Model, tea.Cmd) {
 	m.project = p
 	cmds := []tea.Cmd{saveProject(m.store, p)}
-	for _, t := range m.tabs {
+	for i, t := range m.tabs {
 		t.SetProject(p)
-		cmds = append(cmds, t.Refresh())
+		if m.refreshesNow(i) {
+			cmds = append(cmds, t.Refresh())
+		}
 	}
 	name := "all projects"
 	if p != nil {
 		name = p.Name
 	}
-	m.now = time.Now()
+	m.now = m.clock()
 	cmds = append(cmds, m.toast.Show("project: "+name, ui.ToastInfo), m.ensureClock())
 	return m, tea.Batch(cmds...)
 }

@@ -1,19 +1,21 @@
 package plane
 
 import (
+	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
 )
 
 // New returns the Plane tab. It is a placeholder until P3.2.
-func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
+func New(d tabkit.Deps) tabs.Tab {
+	return tabkit.NewPlaceholder(d, tabkit.PlaceholderSpec{
 		Title:            "Plane",
 		Feature:          "P3.2",
 		Blurb:            "Issues from your Plane workspace as a list or kanban board.",
 		EntityKind:       "Issue",
 		EntityTitleCells: 2,
+		Sources:          []refresh.Source{refresh.Plane},
 		Columns: []ui.Column{
 			{Title: "ID", Width: 8},
 			{Title: "Title", Width: 0, Flex: true},

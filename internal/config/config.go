@@ -80,6 +80,8 @@ type Plane struct {
 	Workspace string `yaml:"workspace_slug"`
 	APIKey    string `yaml:"api_key"`
 	APIKeyEnv string `yaml:"api_key_env"`
+	// RefreshInterval is how often Plane lists refresh in the background.
+	RefreshInterval Duration `yaml:"refresh_interval"`
 }
 
 // ResolveAPIKey returns APIKey if set, otherwise the value of the environment
@@ -103,6 +105,8 @@ type Sessions struct {
 	WorktreeRoot       string `yaml:"worktree_root"`
 	DefaultTemplate    string `yaml:"default_template"`
 	NotifyAfterMinutes int    `yaml:"notify_after_minutes"`
+	// RefreshInterval is how often session status refreshes in the background.
+	RefreshInterval Duration `yaml:"refresh_interval"`
 }
 
 // Artifacts holds the artifact gallery settings.
@@ -165,12 +169,14 @@ func Default() *Config {
 			},
 		},
 		Plane: Plane{
-			BaseURL:   "https://api.plane.so",
-			APIKeyEnv: "PLANE_API_KEY",
+			BaseURL:         "https://api.plane.so",
+			APIKeyEnv:       "PLANE_API_KEY",
+			RefreshInterval: Duration{2 * time.Minute},
 		},
 		Sessions: Sessions{
 			WorktreeRoot:       filepath.Join(DataHome(), "forge", "worktrees"),
 			NotifyAfterMinutes: 5,
+			RefreshInterval:    Duration{10 * time.Second},
 		},
 		UI: UI{Animations: AnimationsFull},
 	}

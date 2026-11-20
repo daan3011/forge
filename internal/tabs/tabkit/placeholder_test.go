@@ -15,7 +15,7 @@ import (
 func press(s string) tea.KeyPressMsg { return tea.KeyPressMsg{Code: rune(s[0]), Text: s} }
 
 func TestPlaceholder(t *testing.T) {
-	p := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{
+	p := NewPlaceholder(testDeps(nil), PlaceholderSpec{
 		Title:   "PRs",
 		Feature: "P2.1",
 		Blurb:   "Pull requests.",
@@ -24,13 +24,14 @@ func TestPlaceholder(t *testing.T) {
 	})
 	fixed := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 	p.now = func() time.Time { return fixed }
-	p.Init()
+	drain(t, p, p.Init())
 	if !p.LastUpdated().Equal(fixed) {
-		t.Fatal("Init should stamp the update time")
+		t.Fatal("the first fetch should stamp the update time")
 	}
 
 	p.SetSize(80, 21)
 	p.SetProject(&config.Project{Name: "forge"})
+	drain(t, p, p.Refresh())
 	p.Update(press("j"))
 	view := ansi.Strip(p.View())
 	for _, want := range []string{"Title: second", "project: forge", "coming in P2.1"} {
@@ -52,11 +53,12 @@ func TestPlaceholder(t *testing.T) {
 }
 
 func TestPlaceholderFilter(t *testing.T) {
-	p := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{
+	p := NewPlaceholder(testDeps(nil), PlaceholderSpec{
 		Title:   "PRs",
 		Columns: []ui.Column{{Title: "#", Width: 4}, {Title: "Title", Flex: true}},
 		Rows:    [][]string{{"#1", "first"}, {"#2", "second"}},
 	})
+	drain(t, p, p.Init())
 	p.SetSize(80, 12)
 	p.Update(press("/"))
 	if !p.CapturingInput() {
@@ -104,13 +106,14 @@ func TestWrap(t *testing.T) {
 }
 
 func TestPlaceholderPalette(t *testing.T) {
-	p := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{
+	p := NewPlaceholder(testDeps(nil), PlaceholderSpec{
 		Title:            "PRs",
 		EntityKind:       "PR",
 		EntityTitleCells: 2,
 		Columns:          []ui.Column{{Title: "#", Width: 4}, {Title: "Title", Flex: true}, {Title: "By", Width: 6}},
 		Rows:             [][]string{{"#1", "first", "ann"}, {"#2", "second", "bob"}, {}},
 	})
+	drain(t, p, p.Init())
 	p.SetSize(80, 12)
 
 	es := p.Entities()
@@ -145,7 +148,8 @@ func TestPlaceholderPalette(t *testing.T) {
 		t.Fatal("filter command should start the filter")
 	}
 
-	none := NewPlaceholder(ui.NewTheme(true, nil), ui.DefaultKeyMap(), PlaceholderSpec{Rows: [][]string{{"x"}}})
+	none := NewPlaceholder(testDeps(nil), PlaceholderSpec{Rows: [][]string{{"x"}}})
+	drain(t, none, none.Init())
 	if none.Entities() != nil {
 		t.Fatal("no EntityKind means no entities")
 	}

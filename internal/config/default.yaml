@@ -34,6 +34,8 @@ plane:
   # Prefer keeping the key in an environment variable. api_key, if set, wins.
   # api_key: ""
   api_key_env: PLANE_API_KEY
+  # How often Plane lists refresh in the background (min 5s).
+  refresh_interval: 2m
 
 sessions:
   # Where agent worktrees are created
@@ -43,6 +45,8 @@ sessions:
   default_template: ""
   # Desktop notification when an agent waits for input this many minutes (0 = never).
   notify_after_minutes: 5
+  # How often session status refreshes in the background (min 5s).
+  refresh_interval: 10s
 
 artifacts:
   # Globs of folders/files to watch for HTML/SVG/PNG/MD made by Claude.
@@ -67,6 +71,7 @@ keybinds:
   # prev_tab: ["shift+tab"]
   # goto_tab: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]  # nth key -> nth tab
   # refresh: ["r"]
+  # refresh_all: ["R"]         # refresh every tab, visible or not
   # palette: ["ctrl+k"]        # command palette; also works while typing
   # projects: ["ctrl+p"]       # project switcher; also works while typing
   # Lists

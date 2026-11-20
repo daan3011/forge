@@ -1,19 +1,21 @@
 package prs
 
 import (
+	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
 )
 
 // New returns the PRs tab. It is a placeholder until P2.1.
-func New(theme *ui.Theme, keys *ui.KeyMap) tabs.Tab {
-	return tabkit.NewPlaceholder(theme, keys, tabkit.PlaceholderSpec{
+func New(d tabkit.Deps) tabs.Tab {
+	return tabkit.NewPlaceholder(d, tabkit.PlaceholderSpec{
 		Title:            "PRs",
 		Feature:          "P2.1",
 		Blurb:            "Pull requests grouped by your configured sections, with CI and review status.",
 		EntityKind:       "PR",
 		EntityTitleCells: 2,
+		Sources:          []refresh.Source{refresh.GitHub},
 		Columns: []ui.Column{
 			{Title: "#", Width: 5},
 			{Title: "Title", Width: 0, Flex: true},

@@ -22,15 +22,16 @@ type KeyMap struct {
 
 // GlobalKeys work on every tab.
 type GlobalKeys struct {
-	Quit      key.Binding
-	ForceQuit key.Binding // also works while a text input has focus
-	Help      key.Binding
-	NextTab   key.Binding
-	PrevTab   key.Binding
-	GotoTab   key.Binding
-	Refresh   key.Binding
-	Palette   key.Binding // also works while a text input has focus
-	Projects  key.Binding // project switcher; also works while a text input has focus
+	Quit       key.Binding
+	ForceQuit  key.Binding // also works while a text input has focus
+	Help       key.Binding
+	NextTab    key.Binding
+	PrevTab    key.Binding
+	GotoTab    key.Binding
+	Refresh    key.Binding
+	RefreshAll key.Binding // every tab, visible or not
+	Palette    key.Binding // also works while a text input has focus
+	Projects   key.Binding // project switcher; also works while a text input has focus
 }
 
 // ListKeys drive the list/detail layout every tab uses. Tab-specific groups
@@ -65,15 +66,16 @@ func bind(desc string, keys ...string) key.Binding {
 func DefaultKeyMap() *KeyMap {
 	return &KeyMap{
 		Global: GlobalKeys{
-			Quit:      bind("quit", "q"),
-			ForceQuit: bind("force quit", "ctrl+c"),
-			Help:      bind("help", "?"),
-			NextTab:   bind("next tab", "tab"),
-			PrevTab:   bind("prev tab", "shift+tab"),
-			GotoTab:   bind("go to tab", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
-			Refresh:   bind("refresh", "r"),
-			Palette:   bind("commands", "ctrl+k"),
-			Projects:  bind("switch project", "ctrl+p"),
+			Quit:       bind("quit", "q"),
+			ForceQuit:  bind("force quit", "ctrl+c"),
+			Help:       bind("help", "?"),
+			NextTab:    bind("next tab", "tab"),
+			PrevTab:    bind("prev tab", "shift+tab"),
+			GotoTab:    bind("go to tab", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
+			Refresh:    bind("refresh", "r"),
+			RefreshAll: bind("refresh all", "R"),
+			Palette:    bind("commands", "ctrl+k"),
+			Projects:   bind("switch project", "ctrl+p"),
 		},
 		List: ListKeys{
 			Up:         bind("up", "k", "up"),
@@ -119,6 +121,7 @@ func (k *KeyMap) actions() []action {
 		{"prev_tab", scopeMain, &g.PrevTab},
 		{"goto_tab", scopeMain, &g.GotoTab},
 		{"refresh", scopeMain, &g.Refresh},
+		{"refresh_all", scopeMain, &g.RefreshAll},
 		{"palette", scopeMain, &g.Palette},
 		{"projects", scopeMain, &g.Projects},
 		{"up", scopeMain, &l.Up},
@@ -230,7 +233,7 @@ func helpKey(keys []string) string {
 // GlobalHelp returns the bindings that work on every tab, for the help overlay.
 func (k *KeyMap) GlobalHelp() []key.Binding {
 	g := k.Global
-	return []key.Binding{g.Palette, g.Projects, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.Help, g.Quit, g.ForceQuit}
+	return []key.Binding{g.Palette, g.Projects, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
 }
 
 // TabIndex returns the zero-based tab index for a GotoTab key press (the

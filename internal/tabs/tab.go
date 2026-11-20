@@ -3,12 +3,15 @@
 package tabs
 
 import (
+	"context"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/refresh"
+	"github.com/daan3011/forge/internal/store"
 )
 
 // Tab is one top-level screen of forge.
@@ -38,6 +41,35 @@ type Tab interface {
 // so the status bar can show "updated Ns ago".
 type Updater interface {
 	LastUpdated() time.Time
+}
+
+// AutoRefresher is implemented by tabs that refresh in the background. The
+// root model calls Refresh on every tick of one of Sources while the tab is
+// visible; hidden tabs are paused unless RefreshWhenHidden (Home, Sessions)
+// and catch up when shown again.
+type AutoRefresher interface {
+	Sources() []refresh.Source
+	RefreshWhenHidden() bool
+}
+
+// Fetcher is implemented by tabs that know whether a refresh is running, so
+// the status bar can show a spinner.
+type Fetcher interface {
+	Fetching() bool
+}
+
+// TargetedMsg is a message meant for one tab, such as the result of its
+// background fetch. The root model delivers it to the tab whose Title
+// matches, whether or not that tab is active.
+type TargetedMsg interface {
+	TargetTab() string
+}
+
+// KVStore is the key/value cache tabs and the root model persist to.
+// *store.Cache satisfies it.
+type KVStore interface {
+	Get(ctx context.Context, key string) (store.CacheEntry, error)
+	Put(ctx context.Context, key, kind, project string, value []byte, ttl time.Duration) error
 }
 
 // InputCapturer is implemented by tabs that can take text input (a filter,

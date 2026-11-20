@@ -364,13 +364,42 @@ func assertScreen(t *testing.T, s string, width, height int) {
 	}
 }
 
-func mustNew(t *testing.T, cfg *config.Config) Model {
+// mustNew builds the real model with instant placeholder fetches and every
+// tab already loaded.
+func mustNew(t *testing.T, cfg *config.Config, opts ...Option) Model {
 	t.Helper()
-	m, err := New(cfg)
+	m, err := New(cfg, append([]Option{withFetchDelay(0)}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, tab := range m.tabs {
+		for _, msg := range runCmd(tab.Init()) {
+			tab.Update(msg)
+		}
+	}
 	return m
+}
+
+func withFetchDelay(d time.Duration) Option { return func(m *Model) { m.fetchDelay = d } }
+
+// runCmd executes cmd and returns its messages, flattening batches. Use it
+// only on commands that do not sleep (no ticks).
+func runCmd(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if b, ok := msg.(tea.BatchMsg); ok {
+		var out []tea.Msg
+		for _, c := range b {
+			out = append(out, runCmd(c)...)
+		}
+		return out
+	}
+	if msg == nil {
+		return nil
+	}
+	return []tea.Msg{msg}
 }
 
 func press(s string) tea.KeyPressMsg {

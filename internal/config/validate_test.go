@@ -23,6 +23,8 @@ func TestValidation(t *testing.T) {
 		{"path required", "projects:\n  - name: f\n    repo: a/b\n", "projects[0].path", 2, "is required"},
 		{"relative path", "projects:\n  - name: f\n    repo: a/b\n    path: code/f\n", "projects[0].path", 4, "must be absolute"},
 		{"refresh too fast", "github:\n  refresh_interval: 2s\n", "github.refresh_interval", 2, "at least 5s"},
+		{"plane refresh too fast", "plane:\n  refresh_interval: 1s\n", "plane.refresh_interval", 2, "at least 5s"},
+		{"sessions refresh too fast", "sessions:\n  refresh_interval: 3s\n", "sessions.refresh_interval", 2, "at least 5s"},
 		{"section title", "github:\n  pr_sections:\n    - query: is:open\n", "github.pr_sections[0].title", 3, "is required"},
 		{"section query", "github:\n  pr_sections:\n    - title: All\n", "github.pr_sections[0].query", 3, "is required"},
 		{"plane url", "plane:\n  base_url: plane.local\n", "plane.base_url", 2, "http(s) URL"},
