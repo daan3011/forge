@@ -201,7 +201,27 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     
     Checked by hand in an isolated forge against the real API: sections, counts, rows, detail, status bar and the repo filter.
   - **Limits**: at most 50 PRs per section (the status bar shows `of N`). Ages are computed when rows are built, i.e. on each refresh. "Start session from PR" comes with the P2.3 quick actions (`tabs.StartSessionFrom(tabs.Source{Kind: github_pr, ID, Number, Branch: HeadRef, …})`). There is no app version in the tab bar yet (P6.4).
-- [ ] P2.2 PR detail pane
+- [x] P2.2 PR detail pane — the PRs tab's right pane is now a real detail view after `docs/design/gh-dash.jpeg`: header, then Overview / Checks / Activity. Code in `internal/tabs/prs/detail.go` (state, loading) and `detailview.go` (view); client in `internal/github/detail.go`.
+  - **Client**: `Client.PRDetail(ctx, repo, n)` is one GraphQL query (body, labels, review requests, latest reviews, merge state, the head commit's check runs and status contexts, last 30 comments and reviews), parsed by `ParsePRDetail`.
+    - Checks are normalised (`github.Check*`: fail / running / pending / pass / skipped) and listed failing first; `Check.Duration`.
+    - Reviewers merge latest reviews with requests (a re-requested reviewer is pending again); empty "commented" reviews that only carry inline replies and drafts are left out of Activity, which is newest first.
+    - `github.PRClient` (= `PRSearcher` + `PRDetailer`) is now the type of `tabkit.Deps.GitHub` / `app.WithGitHub`.
+    - The query was checked against the live API.
+  - **Loading** ("no lag"):
+    - The header and status cards come from the list row, so they follow the cursor immediately.
+    - Details are fetched once the cursor rests for 150ms (`detailDebounce`, a generation counter drops older ticks); only that PR is fetched.
+    - Cached by PR + updatedAt: in memory (`id@updatedAt`, 64 entries) and in kv_cache under `pr-detail:owner/repo#n` with the list's updatedAt it was fetched for, so a restart shows details without a call. A new updatedAt refetches while the old details show, marked "updating…".
+    - Glamour renders the body and comment bodies in a command, per pane width; plain wrapped text shows until it lands.
+    - Errors: one toast for the selected PR (stale results are dropped silently); the pane shows the error; revisiting retries.
+  - **Overview**: status card (review: approved with N approving reviews / changes requested by … / review required; checks summary; merge: conflicts / clean / behind / blocked / unstable, merged, closed), labels in their own colours (`Theme.LabelChip`), reviewers with state icons, linked forge sessions (P1.9 `LinkedSessions(github_pr, id)`, loaded on each rest, newest first, with status and age), description.
+  - **Checks**: icon, name · workflow, duration (`2m14s`, `running 1m03s`, `queued`, `skipped`). **Activity**: author, review state or "commented", age, rendered body.
+  - **Keys** (scope `tab:prs`, configurable): `pr_detail_next` ], `pr_detail_prev` [, `pr_detail_down` J, `pr_detail_up` K (half a pane). A new PR starts scrolled to the top.
+  - **Palette**: next / previous detail tab, show overview / checks / activity, scroll detail down / up.
+  - **Theme**: `DetailBand`, `DetailTab(Active)`, `DetailRule`, `StatusCard`, `CardTitle`, `StatePill`, `LabelChip`, `CheckIcon`, `ReviewStateIcon`.
+  - **Tests**:
+    - github: `ParsePRDetail` fixture (check runs + status context, ordering, durations, ghost, team and re-requested reviewers, drafts and empty reviews skipped), edge cases, `checkRunState`, `PRDetail` over a fake transport.
+    - tab: done-when `TestDetailNoLag` (pane follows `j` with no fetch; four moves → one fetch, for the resting PR; going back is served from memory), updatedAt invalidation, kv_cache across a restart, errors and stale results, tabs and palette commands, scrolling, linked sessions, eviction, durations.
+  - **Limits**: 30 comments / reviews, 100 checks, 20 labels / reviewers; inline review threads aren't shown. After a resize the Markdown re-renders on the next message (plain text meanwhile). The list keeps its 65% start (`<` / `>` resize).
 - [ ] P2.3 PR quick actions
 - [ ] P2.4 Review queue & diff
 - [ ] P2.5 Stale PR markers

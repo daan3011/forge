@@ -1,0 +1,49 @@
+{
+  "repository": {
+    "pullRequest": {
+      "body": "Adds **retry**.\n\nFixes #3",
+      "updatedAt": "2026-11-20T10:00:00Z",
+      "reviewDecision": "APPROVED",
+      "mergeable": "MERGEABLE",
+      "mergeStateStatus": "BLOCKED",
+      "labels": {"nodes": [{"name": "bug", "color": "d73a4a"}, {"name": "infra", "color": "0e8a16"}]},
+      "reviewRequests": {"nodes": [
+        {"requestedReviewer": {"slug": "core", "organization": {"login": "acme"}}},
+        {"requestedReviewer": {"login": "carol"}},
+        {"requestedReviewer": null}
+      ]},
+      "latestReviews": {"nodes": [
+        {"state": "APPROVED", "author": {"login": "bob"}},
+        {"state": "APPROVED", "author": {"login": "carol"}},
+        {"state": "COMMENTED", "author": null},
+        {"state": "PENDING", "author": {"login": "daan"}}
+      ]},
+      "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+        {"__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS",
+         "startedAt": "2026-11-20T09:00:00Z", "completedAt": "2026-11-20T09:02:14Z", "detailsUrl": "https://x/lint",
+         "checkSuite": {"workflowRun": {"workflow": {"name": "CI"}}}},
+        {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "FAILURE",
+         "startedAt": "2026-11-20T09:00:00Z", "completedAt": "2026-11-20T09:05:00Z", "detailsUrl": "https://x/test",
+         "checkSuite": {"workflowRun": {"workflow": {"name": "CI"}}}},
+        {"__typename": "CheckRun", "name": "deploy", "status": "COMPLETED", "conclusion": "SKIPPED",
+         "startedAt": null, "completedAt": null, "detailsUrl": "", "checkSuite": null},
+        {"__typename": "CheckRun", "name": "e2e", "status": "IN_PROGRESS", "conclusion": null,
+         "startedAt": "2026-11-20T09:10:00Z", "completedAt": null, "detailsUrl": "",
+         "checkSuite": {"workflowRun": null}},
+        {"__typename": "StatusContext", "context": "ci/legacy", "state": "PENDING",
+         "createdAt": "2026-11-20T09:00:00Z", "targetUrl": "https://x/legacy"},
+        {}
+      ]}}}}]},
+      "comments": {"nodes": [
+        {"body": "first", "createdAt": "2026-11-19T08:00:00Z", "author": {"login": "bob"}},
+        {"body": "ghost here", "createdAt": "2026-11-20T08:00:00Z", "author": null}
+      ]},
+      "reviews": {"nodes": [
+        {"state": "APPROVED", "body": "", "submittedAt": "2026-11-19T12:00:00Z", "author": {"login": "bob"}},
+        {"state": "COMMENTED", "body": "", "submittedAt": "2026-11-19T13:00:00Z", "author": {"login": "bob"}},
+        {"state": "CHANGES_REQUESTED", "body": "nit", "submittedAt": "2026-11-20T09:30:00Z", "author": {"login": "carol"}},
+        {"state": "PENDING", "body": "draft", "submittedAt": null, "author": {"login": "daan"}}
+      ]}
+    }
+  }
+}

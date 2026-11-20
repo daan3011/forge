@@ -88,7 +88,7 @@ type Model struct {
 	templatesDir string              // from WithTemplates
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
-	github       github.PRSearcher   // from WithGitHub
+	github       github.PRClient     // from WithGitHub
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project

@@ -87,6 +87,12 @@ type PRKeys struct {
 	NextSection key.Binding
 	PrevSection key.Binding
 	RepoFilter  key.Binding // pick a repo to narrow every section to
+	// The detail pane (P2.2): its Overview / Checks / Activity tabs and
+	// scrolling, while the list keeps j / k.
+	DetailNext key.Binding
+	DetailPrev key.Binding
+	DetailDown key.Binding
+	DetailUp   key.Binding
 }
 
 // TranscriptKeys are active while the transcript viewer is open; nothing
@@ -180,6 +186,10 @@ func DefaultKeyMap() *KeyMap {
 			NextSection: bind("next section", "l", "right"),
 			PrevSection: bind("prev section", "h", "left"),
 			RepoFilter:  bind("filter by repo", "f"),
+			DetailNext:  bind("next detail tab", "]"),
+			DetailPrev:  bind("prev detail tab", "["),
+			DetailDown:  bind("scroll detail down", "J"),
+			DetailUp:    bind("scroll detail up", "K"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -270,6 +280,10 @@ func (k *KeyMap) actions() []action {
 		{"pr_next_section", scopePRs, &pr.NextSection},
 		{"pr_prev_section", scopePRs, &pr.PrevSection},
 		{"pr_repo_filter", scopePRs, &pr.RepoFilter},
+		{"pr_detail_next", scopePRs, &pr.DetailNext},
+		{"pr_detail_prev", scopePRs, &pr.DetailPrev},
+		{"pr_detail_down", scopePRs, &pr.DetailDown},
+		{"pr_detail_up", scopePRs, &pr.DetailUp},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

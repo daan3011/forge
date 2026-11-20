@@ -113,6 +113,10 @@ keybinds:
   # pr_next_section: ["l", "right"]
   # pr_prev_section: ["h", "left"]
   # pr_repo_filter: ["f"]          # narrow every section to one repo
+  # pr_detail_next: ["]"]          # detail pane: next tab (Overview / Checks / Activity)
+  # pr_detail_prev: ["["]          # detail pane: previous tab
+  # pr_detail_down: ["J"]          # scroll the detail pane down
+  # pr_detail_up: ["K"]            # scroll the detail pane up
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
