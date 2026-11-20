@@ -24,6 +24,9 @@ type StatusInfo struct {
 	// Fetching replaces "updated Ns ago" with Spinner and "refreshing".
 	Fetching bool
 	Spinner  string
+	// Activity, when set, replaces "refreshing" (and "updated Ns ago")
+	// with Spinner and a running action, e.g. "merging #12…".
+	Activity string
 	// Rate is the GitHub rate limit badge, set only when it runs low. It sits
 	// next to the tab name and is kept when hints are dropped.
 	Rate string
@@ -73,6 +76,8 @@ func (s StatusBar) View(width int, info StatusInfo) string {
 
 	updated := ""
 	switch {
+	case info.Activity != "":
+		updated = strings.TrimSpace(info.Spinner + " " + info.Activity + "…")
 	case info.Fetching:
 		updated = strings.TrimSpace(info.Spinner + " refreshing")
 	case !info.Updated.IsZero():

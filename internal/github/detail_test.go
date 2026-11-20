@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,9 @@ func TestParsePRDetail(t *testing.T) {
 	if d.Body != "Adds **retry**.\n\nFixes #3" || d.ReviewDecision != ReviewApproved || d.Mergeable != Mergeable ||
 		d.MergeState != MergeStateBlocked || !d.UpdatedAt.Equal(ts("2026-11-20T10:00:00Z")) {
 		t.Errorf("fields = %+v", d)
+	}
+	if want := []string{MergeMethodSquash, MergeMethodRebase}; !slices.Equal(d.MergeMethods, want) {
+		t.Errorf("merge methods = %v, want %v", d.MergeMethods, want)
 	}
 	if len(d.Labels) != 2 || d.Labels[0] != (Label{"bug", "d73a4a"}) {
 		t.Errorf("labels = %v", d.Labels)

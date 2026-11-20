@@ -70,6 +70,13 @@ type Fetcher interface {
 	Fetching() bool
 }
 
+// Busier is implemented by tabs that run user actions in the background
+// (merging a PR). While Busy is non-empty the status bar shows a spinner
+// with it, e.g. "merging #12".
+type Busier interface {
+	Busy() string
+}
+
 // Animator is implemented by tabs that animate (a springing divider, a
 // working agent's flame). While the tab is visible and Animating is true the
 // root model keeps the shared animation clock running; tabs read the frame

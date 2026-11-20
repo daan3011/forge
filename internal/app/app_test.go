@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -383,8 +386,9 @@ func mustNew(t *testing.T, cfg *config.Config, opts ...Option) Model {
 	return m
 }
 
-// fakeGitHub answers every PR search with the same two PRs.
-type fakeGitHub struct{}
+// fakeGitHub answers every PR search with the same two PRs. PR actions
+// (P2.3) aren't used by these tests; calling one panics.
+type fakeGitHub struct{ github.PRActor }
 
 func (fakeGitHub) SearchPRs(context.Context, string, int) (github.SearchResult, error) {
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
@@ -427,4 +431,59 @@ func press(s string) tea.KeyPressMsg {
 func isQuit(msg tea.Msg) bool {
 	_, ok := msg.(tea.QuitMsg)
 	return ok
+}
+
+// fakeActor records merges; every other action fails.
+type fakeActor struct {
+	github.PRActor
+	mu     sync.Mutex
+	merged []string
+}
+
+func (f *fakeActor) Merge(_ context.Context, repo string, n int, method string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.merged = append(f.merged, fmt.Sprintf("%s#%d %s", repo, n, method))
+	return nil
+}
+
+func (f *fakeActor) PR(context.Context, string, int) (github.PR, error) {
+	return github.PR{}, errors.New("not refreshed")
+}
+
+func TestPRMergeFlow(t *testing.T) {
+	act := &fakeActor{}
+	tm := teatest.NewTestModel(t, mustNew(t, config.Default(), WithGitHub(fakeGitHub{PRActor: act})),
+		teatest.WithInitialTermSize(120, 30))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("forge"))
+	}, teatest.WithDuration(2*time.Second))
+	tm.Send(press("2"))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("#101"))
+	}, teatest.WithDuration(2*time.Second))
+	tm.Send(press("m"))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("Squash and merge"))
+	}, teatest.WithDuration(2*time.Second))
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyDown})  // squash
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter}) // to the confirm
+	// huh moves focus with a command, and the renderer only redraws the
+	// focus bar, so give the move a moment before choosing "Merge".
+	settled := time.Now().Add(300 * time.Millisecond)
+	teatest.WaitFor(t, tm.Output(), func([]byte) bool { return time.Now().After(settled) },
+		teatest.WithDuration(2*time.Second), teatest.WithCheckInterval(50*time.Millisecond))
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyLeft})
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("merged #101 (squash)"))
+	}, teatest.WithDuration(3*time.Second))
+	tm.Send(press("q"))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+
+	act.mu.Lock()
+	defer act.mu.Unlock()
+	if want := []string{"daan/forge#101 squash"}; !slices.Equal(act.merged, want) {
+		t.Errorf("merged = %v, want %v", act.merged, want)
+	}
 }

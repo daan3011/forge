@@ -70,6 +70,9 @@ type PRDetail struct {
 	Checks []Check `json:"checks"`
 	// Activity is comments and reviews, newest first.
 	Activity []Event `json:"activity"`
+	// MergeMethods are the merge methods the repo allows (MergeMethod*),
+	// in GitHub's order; empty when unknown (an older cache entry).
+	MergeMethods []string `json:"merge_methods"`
 }
 
 // Label is a PR label; Color is GitHub's hex without "#".
@@ -113,12 +116,14 @@ type PRDetailer interface {
 type PRClient interface {
 	PRSearcher
 	PRDetailer
+	PRActor
 }
 
 var _ PRClient = (*Client)(nil)
 
 var prDetailQuery = fmt.Sprintf(`query ForgePRDetail($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
+    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
     pullRequest(number: $number) {
       body updatedAt reviewDecision mergeable mergeStateStatus
       labels(first: %[1]d) { nodes { name color } }
@@ -178,7 +183,10 @@ func login(a *gqlLogin) string {
 
 type gqlDetail struct {
 	Repository *struct {
-		PullRequest *struct {
+		MergeCommitAllowed bool `json:"mergeCommitAllowed"`
+		SquashMergeAllowed bool `json:"squashMergeAllowed"`
+		RebaseMergeAllowed bool `json:"rebaseMergeAllowed"`
+		PullRequest        *struct {
 			Body             string    `json:"body"`
 			UpdatedAt        time.Time `json:"updatedAt"`
 			ReviewDecision   string    `json:"reviewDecision"`
@@ -278,6 +286,18 @@ func ParsePRDetail(r io.Reader) (PRDetail, error) {
 		Labels: []Label{}, Reviewers: []Reviewer{}, Checks: []Check{}, Activity: []Event{},
 	}
 	d.Labels = append(d.Labels, pr.Labels.Nodes...)
+	for _, m := range []struct {
+		ok     bool
+		method string
+	}{
+		{raw.Repository.MergeCommitAllowed, MergeMethodMerge},
+		{raw.Repository.SquashMergeAllowed, MergeMethodSquash},
+		{raw.Repository.RebaseMergeAllowed, MergeMethodRebase},
+	} {
+		if m.ok {
+			d.MergeMethods = append(d.MergeMethods, m.method)
+		}
+	}
 
 	// Past reviewers first, then requests; a re-requested reviewer is
 	// pending again.

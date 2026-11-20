@@ -13,6 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/checkout"
+	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
@@ -56,6 +58,10 @@ type Deps struct {
 	// GitHub runs the PRs tab searches (P2.1) and detail fetches (P2.2); nil shows that GitHub
 	// isn't available.
 	GitHub github.PRClient
+	// Checkout checks PRs out locally (P2.3); nil can't.
+	Checkout checkout.Checker
+	// Clipboard copies text (PR URLs); nil falls back to OSC 52.
+	Clipboard clipboard.Copier
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

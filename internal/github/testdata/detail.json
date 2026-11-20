@@ -1,5 +1,8 @@
 {
   "repository": {
+    "mergeCommitAllowed": false,
+    "squashMergeAllowed": true,
+    "rebaseMergeAllowed": true,
     "pullRequest": {
       "body": "Adds **retry**.\n\nFixes #3",
       "updatedAt": "2026-11-20T10:00:00Z",
