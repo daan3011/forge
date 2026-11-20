@@ -45,7 +45,7 @@ func TestTranscriptViewer(t *testing.T) {
 	if !tab.CapturingInput() {
 		t.Error("viewer should capture input")
 	}
-	if strings.Contains(sc.h.frame, "File created") {
+	if strings.Contains(sc.h.lastFrame(), "File created") {
 		t.Error("tool result shown while collapsed")
 	}
 

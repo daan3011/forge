@@ -314,6 +314,14 @@ func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return h, cmd
 }
 
+// lastFrame is the last rendered frame; View writes it from the program's
+// goroutine, so tests read it under the lock.
+func (h *host) lastFrame() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.frame
+}
+
 func (h *host) View() tea.View {
 	v := h.tab.View()
 	h.mu.Lock()
@@ -415,7 +423,7 @@ func TestNewSessionFlow(t *testing.T) {
 	if r, ok := h.tab.current(); !ok || r.Name != "fix-ci" {
 		t.Errorf("selected %+v, want the new session", r)
 	}
-	if frame := h.frame; !strings.Contains(frame, "Name") || !strings.Contains(frame, "fix-ci   ") {
+	if frame := h.lastFrame(); !strings.Contains(frame, "Name") || !strings.Contains(frame, "fix-ci   ") {
 		t.Errorf("name column missing:\n%s", frame)
 	}
 }
