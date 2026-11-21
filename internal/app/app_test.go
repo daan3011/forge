@@ -397,7 +397,7 @@ func (fakeGitHub) SearchPRs(context.Context, string, int) (github.SearchResult, 
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 	// #101 is always fresh and #98 long stale, whatever the clock says.
 	return github.SearchResult{Viewer: "daan", Total: 2, PRs: []github.PR{
-		{Repo: "daan/forge", Number: 101, Title: "Add retry to webhook sender", Author: "alice", State: github.StateOpen, CreatedAt: at, UpdatedAt: time.Now().Add(-time.Hour)},
+		{Repo: "daan/forge", Number: 101, Title: "Add retry to webhook sender", Author: "alice", State: github.StateOpen, HeadRef: "retry", CreatedAt: at, UpdatedAt: time.Now().Add(-time.Hour)},
 		{Repo: "daan/forge", Number: 98, Title: "Bump dependencies", Author: "bot", State: github.StateOpen, CreatedAt: at, UpdatedAt: at.AddDate(-1, 0, 0)},
 	}}, nil
 }
@@ -565,5 +565,85 @@ func TestPRStaleFilter(t *testing.T) {
 	view := ansi.Strip(fm.(Model).render())
 	if !strings.Contains(view, "Bump dependencies") || strings.Contains(view, "Add retry") {
 		t.Errorf("stale-only view should show #98 alone:\n%s", view)
+	}
+}
+
+// fakeRuns is a workflow run that is in progress until done is set.
+type fakeRuns struct {
+	mu   sync.Mutex
+	done bool
+	asks []string // "repo branch"
+}
+
+func (f *fakeRuns) ListRuns(_ context.Context, repo string, fl github.RunFilter) ([]github.Run, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asks = append(f.asks, repo+" "+fl.Branch)
+	start := time.Now().Add(-90 * time.Second)
+	r := github.Run{
+		Repo: repo, ID: 7001, RunNumber: 55, Workflow: "ci", Branch: "retry", Title: "Add retry to webhook sender",
+		Event: "pull_request", Actor: "alice", State: github.CheckRunning, CreatedAt: start, StartedAt: start, UpdatedAt: start,
+	}
+	if f.done {
+		r.State, r.UpdatedAt = github.CheckPass, start.Add(2*time.Minute)
+	}
+	return []github.Run{r}, nil
+}
+
+func (f *fakeRuns) RunJobs(context.Context, string, int64) ([]github.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	start := time.Now().Add(-80 * time.Second)
+	steps := []github.Step{
+		{Number: 1, Name: "Checkout", State: github.CheckPass, StartedAt: start, CompletedAt: start.Add(5 * time.Second)},
+		{Number: 2, Name: "Run tests", State: github.CheckRunning, StartedAt: start.Add(5 * time.Second)},
+	}
+	job := github.Job{ID: 1, Name: "test", State: github.CheckRunning, StartedAt: start, Steps: steps}
+	if f.done {
+		steps[1].State, steps[1].CompletedAt = github.CheckPass, start.Add(time.Minute)
+		job.State, job.CompletedAt = github.CheckPass, start.Add(time.Minute)
+	}
+	return []github.Job{job}, nil
+}
+
+func (f *fakeRuns) Viewer(context.Context) (string, error) { return "daan", nil }
+
+// TestPipelineLiveProgress is P2.6's done-when: from a PR, p shows its
+// branch's running pipeline with live jobs and steps, which turn green as
+// the run finishes.
+func TestPipelineLiveProgress(t *testing.T) {
+	cfg := config.Default()
+	cfg.Projects = []config.Project{{Name: "forge", Repo: "daan/forge"}}
+	runs := &fakeRuns{}
+	tm := teatest.NewTestModel(t, mustNew(t, cfg, WithRuns(runs)), teatest.WithInitialTermSize(160, 30))
+	wait := func(s string) {
+		t.Helper()
+		teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return bytes.Contains(b, []byte(s)) },
+			teatest.WithDuration(3*time.Second))
+	}
+	wait("forge")
+	tm.Send(press("2"))
+	wait("#101")
+	tm.Send(press("p"))
+	wait("branch: retry")
+	wait("2. Run tests")
+	wait("running")
+
+	runs.mu.Lock()
+	runs.done = true
+	runs.mu.Unlock()
+	tm.Send(press("r"))
+	wait("succeeded")
+	wait("1m00s") // the finished job, after its debounced refetch
+	tm.Send(press("q"))
+	fm := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second))
+	view := ansi.Strip(fm.(Model).render())
+	if !strings.Contains(view, "succeeded") || strings.Contains(view, "running") {
+		t.Errorf("finished run should be green:\n%s", view)
+	}
+	runs.mu.Lock()
+	defer runs.mu.Unlock()
+	if !slices.Contains(runs.asks, "daan/forge retry") {
+		t.Errorf("asked for %v, want daan/forge retry", runs.asks)
 	}
 }

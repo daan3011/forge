@@ -49,6 +49,23 @@ type SessionStarter interface {
 	StartSession(src Source) tea.Cmd
 }
 
+// ShowRunsMsg asks the tab that lists workflow runs to show the runs of
+// Branch in Repo (P2.6). The root model switches to that tab.
+type ShowRunsMsg struct {
+	Repo   string // owner/name
+	Branch string
+}
+
+// ShowRuns jumps to the workflow runs of repo's branch.
+func ShowRuns(repo, branch string) tea.Cmd {
+	return func() tea.Msg { return ShowRunsMsg{Repo: repo, Branch: branch} }
+}
+
+// RunsShower is implemented by the tab that lists workflow runs.
+type RunsShower interface {
+	ShowRuns(repo, branch string) tea.Cmd
+}
+
 // SourceRefresher is implemented by AutoRefreshers that do different work
 // per source (the Sessions tab syncs PR links on GitHub ticks). The root
 // model calls RefreshSource instead of Refresh on background ticks.

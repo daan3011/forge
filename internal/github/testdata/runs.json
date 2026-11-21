@@ -1,0 +1,33 @@
+{
+  "total_count": 4,
+  "workflow_runs": [
+    {
+      "id": 1001, "name": "ci", "display_title": "Add pipelines tab", "head_branch": "feat/pipes",
+      "head_sha": "abc1234def", "event": "push", "status": "in_progress", "conclusion": null,
+      "run_number": 42, "run_attempt": 1, "html_url": "https://github.com/acme/app/actions/runs/1001",
+      "created_at": "2026-11-21T10:00:00Z", "updated_at": "2026-11-21T10:01:00Z",
+      "run_started_at": "2026-11-21T10:00:05Z", "actor": {"login": "daan"}
+    },
+    {
+      "id": 1000, "name": "release", "display_title": "", "head_branch": "main",
+      "head_sha": "fff0000", "event": "workflow_dispatch", "status": "completed", "conclusion": "failure",
+      "run_number": 7, "run_attempt": 2, "html_url": "https://github.com/acme/app/actions/runs/1000",
+      "created_at": "2026-11-21T09:00:00Z", "updated_at": "2026-11-21T09:04:30Z",
+      "run_started_at": "2026-11-21T09:00:00Z", "actor": null, "triggering_actor": {"login": "bot"},
+      "head_commit": {"message": "Bump version\n\nLong body here"}
+    },
+    {
+      "id": 999, "name": "ci", "display_title": "Fix lint", "head_branch": "main",
+      "head_sha": "eee", "event": "pull_request", "status": "queued", "conclusion": null,
+      "run_number": 41, "run_attempt": 1, "html_url": "https://github.com/acme/app/actions/runs/999",
+      "created_at": "2026-11-21T08:00:00Z", "updated_at": "2026-11-21T08:00:00Z", "actor": {"login": "alice"}
+    },
+    {
+      "id": 998, "name": "ci", "display_title": "Old", "head_branch": "main",
+      "head_sha": "ddd", "event": "schedule", "status": "completed", "conclusion": "cancelled",
+      "run_number": 40, "run_attempt": 1, "html_url": "https://github.com/acme/app/actions/runs/998",
+      "created_at": "2026-11-20T08:00:00Z", "updated_at": "2026-11-20T08:02:00Z",
+      "run_started_at": "2026-11-20T08:00:00Z", "actor": {"login": "alice"}
+    }
+  ]
+}

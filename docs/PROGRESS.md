@@ -271,7 +271,41 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Palette**: "PRs: show stale only" / "PRs: show all (not just stale)" (`pr_stale_only`).
   - **Tests**: `staleLevel` boundaries, cell encoding, `renderUpdated`; tab tests for S, counts, empty hint, palette command, `Select`, markers off; config default and validation; app teatest `TestPRStaleFilter` (`2` → `S` → only #98). The app's fake PRs now use clock-relative `updatedAt` so they stay fresh / stale over time.
   - **Limits**: staleness is GitHub's `updatedAt`, which bot comments, CI status pushes and label changes also bump, so "stale" means "nothing touched it", not "no human activity". Ages are computed when rows are laid out (each fetch / filter change), not ticked live.
-- [ ] P2.6 Pipelines list
+- [x] P2.6 Pipelines list — the Pipelines tab lists GitHub Actions runs for the active project's repo, or every configured repo under "all projects". Code in `internal/tabs/pipelines` (`pipelines.go` list, filters and refresh; `rows.go` columns; `detail.go` jobs pane); client in `internal/github/runs.go`.
+  - **Client** (`github.RunsClient`, `tabkit.Deps.Runs`, `app.WithRuns`, the same `githubPulls` client in `cmd/forge`):
+    - `ListRuns(repo, RunFilter{Branch, Status, Actor})` is REST `GET …/actions/runs?per_page=30`, with branch / status / actor filtered by GitHub.
+    - `RunJobs(repo, id)` is `GET …/runs/{id}/jobs?per_page=100` (latest attempt), with steps.
+    - `Viewer()` is `GET user`, fetched once and remembered, for "mine".
+    - REST status / conclusion map to the `Check*` states through the existing `checkRunState`, so runs, jobs and steps share the checks' icons. `Run.Duration` runs from `run_started_at` to `updated_at`, or to now while running. Queued is zero.
+    - Parsed against live responses from this repo: states, titles, durations and steps all match.
+  - **List**: a bordered filter box (`⌕ acme/app · branch: x · workflow: ci · status: failed · actor: @me`). Columns: status icon · (repo, only with several repos) · workflow · branch · commit (display title, first line) · event · actor · duration · started.
+    - Duration and started are stored as timestamps and drawn against now, so a running run's time keeps moving between fetches.
+    - Runs from every repo are merged newest first. Each repo is fetched and cached separately in kv_cache, keyed by project, repo and the GitHub-side filters. Loading is cache-first.
+    - One error toast per refresh. The empty state explains itself: no repo, no client, `gh auth login`, the fetch error, or "no runs match · x clears filters".
+  - **Filters**:
+    - `f` opens a huh form: branch (free text with suggestions from loaded runs), workflow (filtered client-side), status (in progress / queued / failed / succeeded / cancelled / completed), and mine.
+    - `m` toggles mine: actor = the gh login. Without a login it toasts and turns itself off.
+    - `x` clears every filter and a PR's repo override. `/` text-filters the rows.
+    - Changing project resets the filters.
+  - **Detail pane**:
+    - Header: repo · workflow #n (attempt), the title on a band, a state pill (`Theme.CheckPill`), branch @ sha7, event, actor, age and duration.
+    - Then each job (icon, name, duration) with its numbered steps indented below. The pane scrolls with J / K.
+    - Jobs are fetched once the cursor rests for 150ms, refetched whenever the run's updatedAt moves ("updating…" shows meanwhile), and kept in memory (32 runs). A failed fetch toasts for the selected run.
+  - **Live progress**:
+    - While the tab is visible and a run on screen is queued or in progress, it refreshes every 15s (`activeInterval`). The selected run's jobs are refetched too.
+    - The timer is the tab's own (`tabs.VisibilityAware`), with a generation counter so timers never stack. It stops when the tab is hidden or every run has finished.
+    - It is skipped when `github.refresh_interval` is already 15s or less. Normal GitHub ticks still apply.
+    - Running durations (rows, jobs, steps) advance every second through the app's clock re-render.
+  - **From a PR**: `p` (`pr_runs`, palette "PR: show pipeline runs") sends `tabs.ShowRunsMsg{Repo, Branch}`. The app switches to the `tabs.RunsShower` tab, which shows that branch's runs with no other filters. A repo outside the active project is listed on its own (`repo: x`) until the filters are cleared.
+  - **Keys** (scope `tab:pipelines`): `pipeline_filters` f, `pipeline_mine` m, `pipeline_clear_filters` x, `pipeline_detail_down` J, `pipeline_detail_up` K, `pipeline_open` o (run in browser). Also `pr_runs` p (scope `tab:prs`).
+  - **Palette**: Filter runs, "Pipelines: filters… / show only mine (show everyone's) / clear filters / scroll detail down / up", "Run: open in browser", widen / narrow list. Runs are palette entities ("ci #42 title", repo · branch · state).
+  - **Shared**: `ui.ShortDuration` / `ui.StateDuration` (moved from the PRs detail pane, which now uses them), `Theme.CheckPill`.
+  - **Tests**:
+    - github: `ParseRuns` / `ParseJobs` fixtures (running, queued, failure, cancelled, skipped steps, null actor, multi-line commit), durations, query params, errors, `Viewer` remembered.
+    - tab: rows and order, merged repos and the repo column, detail jobs / steps and the memory cache, durations ticking without fetches, fast refresh (armed once, refetches jobs, stops when done or hidden, off with a short base interval), mine (with and without a login), the filter form → GitHub filter + cache key, client-side workflow, `ShowRuns` with and without an override, cache-first + one toast, empty states, a stale fetch after a project change, jobs errors, status detail, entities / select, palette commands, text filter.
+    - prs: `p` and its palette command send `ShowRunsMsg`.
+    - app: done-when teatest `TestPipelineLiveProgress` (`2` → `p` → the running run with steps → it finishes → refresh → "succeeded" and the finished job).
+  - **Limits**: 30 runs per repo and the latest attempt's jobs only. The 15s loop doesn't follow the app's rate-limit backoff: one list call per repo per tick, only while visible and something runs. Workflow names come from loaded runs. For P2.7, `Job.ID` / `Job.URL` are there for the log tail.
 - [ ] P2.7 Log tail & rerun
 - [ ] P2.8 "Fix this" from CI
   - Note (from P1.9): find a linked session with `Service.LinkedSessions(github_pr, "owner/repo#n")`; otherwise `StartSessionFrom` with `Branch` = the PR's head and `Vars{"failing_log": …}`.

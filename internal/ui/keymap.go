@@ -21,6 +21,8 @@ type KeyMap struct {
 	Input    InputKeys
 	Sessions SessionKeys
 	PRs      PRKeys
+	// Pipelines are the Pipelines tab's actions (P2.6).
+	Pipelines PipelineKeys
 	// Transcript drives the transcript viewer (P1.6), which takes over
 	// the Sessions tab while open.
 	Transcript TranscriptKeys
@@ -108,6 +110,19 @@ type PRKeys struct {
 	Session      key.Binding
 	// Diff opens the full-screen diff viewer to review the PR (P2.4).
 	Diff key.Binding
+	// Runs jumps to the PR branch's workflow runs on the Pipelines tab
+	// (P2.6).
+	Runs key.Binding
+}
+
+// PipelineKeys are the Pipelines tab's actions (P2.6).
+type PipelineKeys struct {
+	Filters      key.Binding // branch / workflow / status / mine form
+	Mine         key.Binding // toggle runs started by me
+	ClearFilters key.Binding
+	DetailDown   key.Binding
+	DetailUp     key.Binding
+	Open         key.Binding // the run in the browser
 }
 
 // TranscriptKeys are active while the transcript viewer is open; nothing
@@ -234,6 +249,15 @@ func DefaultKeyMap() *KeyMap {
 			ToggleDraft:  bind("toggle draft", "d"),
 			Session:      bind("start session", "s"),
 			Diff:         bind("review diff", "v"),
+			Runs:         bind("pipeline runs", "p"),
+		},
+		Pipelines: PipelineKeys{
+			Filters:      bind("filters", "f"),
+			Mine:         bind("mine only", "m"),
+			ClearFilters: bind("clear filters", "x"),
+			DetailDown:   bind("scroll detail down", "J"),
+			DetailUp:     bind("scroll detail up", "K"),
+			Open:         bind("open in browser", "o"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -294,6 +318,7 @@ const (
 	scopeInput    = "input"
 	scopeSessions = "tab:sessions"
 	scopePRs      = "tab:prs"
+	scopePipes    = "tab:pipelines"
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
 	scopeTranscript = "transcript"
@@ -307,6 +332,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
+	pp := &k.Pipelines
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -355,6 +381,13 @@ func (k *KeyMap) actions() []action {
 		{"pr_toggle_draft", scopePRs, &pr.ToggleDraft},
 		{"pr_session", scopePRs, &pr.Session},
 		{"pr_diff", scopePRs, &pr.Diff},
+		{"pr_runs", scopePRs, &pr.Runs},
+		{"pipeline_filters", scopePipes, &pp.Filters},
+		{"pipeline_mine", scopePipes, &pp.Mine},
+		{"pipeline_clear_filters", scopePipes, &pp.ClearFilters},
+		{"pipeline_detail_down", scopePipes, &pp.DetailDown},
+		{"pipeline_detail_up", scopePipes, &pp.DetailUp},
+		{"pipeline_open", scopePipes, &pp.Open},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

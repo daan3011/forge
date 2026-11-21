@@ -130,6 +130,14 @@ keybinds:
   # pr_toggle_draft: ["d"]         # draft <-> ready for review
   # pr_session: ["s"]              # start a forge session for the PR
   # pr_diff: ["v"]                 # full-screen diff viewer to review the PR
+  # pr_runs: ["p"]                 # the PR branch's workflow runs (Pipelines tab)
+  # Pipelines tab
+  # pipeline_filters: ["f"]        # branch / workflow / status / mine form
+  # pipeline_mine: ["m"]           # only runs started by me
+  # pipeline_clear_filters: ["x"]
+  # pipeline_detail_down: ["J"]
+  # pipeline_detail_up: ["K"]
+  # pipeline_open: ["o"]           # the run in the browser
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

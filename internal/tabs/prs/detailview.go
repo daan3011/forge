@@ -455,29 +455,7 @@ func (t *Tab) checksView(p github.PR, e *detailEntry, w int) []string {
 
 // checkDuration is "2m14s", "running 1m3s", "queued", "skipped" or "—".
 func checkDuration(c github.Check, now time.Time) string {
-	d := c.Duration(now)
-	switch {
-	case c.State == github.CheckRunning:
-		return "running " + shortDuration(d)
-	case c.State == github.CheckPending:
-		return "queued"
-	case c.State == github.CheckSkipped && d == 0:
-		return "skipped"
-	case d == 0:
-		return "—"
-	}
-	return shortDuration(d)
-}
-
-func shortDuration(d time.Duration) string {
-	d = d.Round(time.Second)
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
-	}
-	return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
+	return ui.StateDuration(c.State, c.Duration(now))
 }
 
 // --- activity ----------------------------------------------------------------------
