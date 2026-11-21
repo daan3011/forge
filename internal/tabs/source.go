@@ -26,7 +26,7 @@ type Source struct {
 	// Base is the base branch; empty means the default.
 	Base string
 	// Branch is the branch to work on: a PR's head branch, or the issue's
-	// branch name (P3.7). Empty means agent/<name>.
+	// plane.BranchFor name (P3.7). Empty means agent/<name>.
 	Branch string
 	// Template is the session template to pre-select; empty picks
 	// implement-issue / review-pr when present, else the default.

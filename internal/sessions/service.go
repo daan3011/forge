@@ -682,6 +682,67 @@ func (s *Service) SetIssueStates(ctx context.Context, states map[string]string) 
 	return errors.Join(errs...)
 }
 
+// IssuePR is a PR whose branch or title names a Plane work item (P3.7).
+type IssuePR struct {
+	Key  string    // work item key, "PROJ-123"
+	PR   store.Ref // store.PRRef
+	Meta store.LinkMeta
+}
+
+// LinkIssuePRs links each work item to its PR (issue -> PR, with the PR's
+// URL, title and state). added are the links that didn't exist before; a
+// link whose PR title or state changed is updated but not reported, and an
+// unchanged one isn't written. Failures are joined; the others still link.
+func (s *Service) LinkIssuePRs(ctx context.Context, links []IssuePR) (added []IssuePR, err error) {
+	var errs []error
+	for _, l := range links {
+		issue := store.IssueRef(l.Key)
+		have, err := s.c.Store.LinksFor(ctx, issue)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", l.Key, err))
+			continue
+		}
+		known, same := false, false
+		for _, h := range have {
+			if h.Other != l.PR {
+				continue
+			}
+			known = true
+			// A PR -> issue link (none are made yet) has no PR meta to compare.
+			same = same || h.LinkMeta == l.Meta
+		}
+		if same {
+			continue
+		}
+		if err := s.c.Store.AddLink(ctx, issue, l.PR, l.Meta); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", l.Key, err))
+			continue
+		}
+		if !known {
+			added = append(added, l)
+		}
+	}
+	return added, errors.Join(errs...)
+}
+
+// PRIssues returns the Plane work item links touching the PR id
+// ("owner/repo#12"), oldest first. Links made from the issue side carry
+// the PR's meta, not the issue's, so their URL, title and state are left
+// empty.
+func (s *Service) PRIssues(ctx context.Context, prID string) ([]store.Link, error) {
+	links, err := s.c.Store.LinksFor(ctx, store.Ref{Kind: store.KindGitHubPR, ID: prID})
+	if err != nil {
+		return nil, err
+	}
+	var out []store.Link
+	for _, l := range links {
+		if l.Other.Kind == store.KindPlaneIssue {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
 // maxSyncedPulls is how many PRs per branch SyncPRs links.
 const maxSyncedPulls = 5
 
@@ -972,6 +1033,8 @@ type API interface {
 	IssueLinks(ctx context.Context, key string) ([]store.Session, []store.Link, error)
 	SetIssueStates(ctx context.Context, states map[string]string) error
 	SyncPRs(ctx context.Context, project string) (bool, error)
+	LinkIssuePRs(ctx context.Context, links []IssuePR) ([]IssuePR, error)
+	PRIssues(ctx context.Context, prID string) ([]store.Link, error)
 	Archive(ctx context.Context, x store.Session) (store.Session, error)
 	AutoArchive(ctx context.Context, project string) ([]Row, error)
 	Unarchive(ctx context.Context, x store.Session) error

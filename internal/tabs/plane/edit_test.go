@@ -344,6 +344,10 @@ func TestStartSession(t *testing.T) {
 		src.Repo != "acme/app" || src.State != "In Progress" || src.URL == "" || src.Template != "" {
 		t.Errorf("source = %+v", src)
 	}
+	// P3.7: the session works on the item's branch, not agent/<name>.
+	if src.Branch != "forge-1-project-switcher" {
+		t.Errorf("branch = %q", src.Branch)
+	}
 }
 
 func TestItemKeysInBoardOverlay(t *testing.T) {

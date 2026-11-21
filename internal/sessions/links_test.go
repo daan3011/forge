@@ -398,3 +398,45 @@ func TestStartRemembersProject(t *testing.T) {
 		t.Errorf("touched = %v, want %s", rec.touched, want)
 	}
 }
+
+func TestLinkIssuePRs(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	pr := store.PRRef("daan/forge", 7)
+	open := IssuePR{Key: "PROJ-12", PR: pr, Meta: store.LinkMeta{URL: "https://github.com/daan/forge/pull/7", Title: "Fix login", State: "open"}}
+	other := IssuePR{Key: "PROJ-13", PR: store.PRRef("daan/forge", 8), Meta: store.LinkMeta{Title: "Other", State: "draft"}}
+
+	added, err := e.svc.LinkIssuePRs(ctx, []IssuePR{open, other})
+	if err != nil || len(added) != 2 || added[0] != open || added[1] != other {
+		t.Fatalf("first: added = %+v, %v", added, err)
+	}
+	// Seen again unchanged: nothing new, nothing written.
+	before, _ := e.st.Links().For(ctx, store.IssueRef("PROJ-12"))
+	if added, err := e.svc.LinkIssuePRs(ctx, []IssuePR{open}); err != nil || len(added) != 0 {
+		t.Errorf("again: added = %+v, %v", added, err)
+	}
+	after, _ := e.st.Links().For(ctx, store.IssueRef("PROJ-12"))
+	if len(after) != 1 || !after[0].UpdatedAt.Equal(before[0].UpdatedAt) {
+		t.Errorf("unchanged link rewritten: %+v -> %+v", before, after)
+	}
+	// Merged: the state is updated, but it isn't new.
+	merged := open
+	merged.Meta.State = "merged"
+	if added, err := e.svc.LinkIssuePRs(ctx, []IssuePR{merged}); err != nil || len(added) != 0 {
+		t.Errorf("merged: added = %+v, %v", added, err)
+	}
+
+	// The Plane item shows the PR (P3.7's "done when"), with the PR's meta.
+	_, prs, err := e.svc.IssueLinks(ctx, "PROJ-12")
+	if err != nil || len(prs) != 1 || prs[0].Other != pr || prs[0].State != "merged" || prs[0].Title != "Fix login" {
+		t.Errorf("IssueLinks prs = %+v, %v", prs, err)
+	}
+	// And the PR shows the item.
+	is, err := e.svc.PRIssues(ctx, pr.ID)
+	if err != nil || len(is) != 1 || is[0].Other != store.IssueRef("PROJ-12") {
+		t.Errorf("PRIssues = %+v, %v", is, err)
+	}
+	if is, err := e.svc.PRIssues(ctx, "daan/forge#99"); err != nil || len(is) != 0 {
+		t.Errorf("unlinked PR: %+v, %v", is, err)
+	}
+}

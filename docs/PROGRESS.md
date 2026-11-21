@@ -436,7 +436,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - `plane.HTMLToEditableMarkdown` keeps mentions (`mention-component`) and images (`image-component`, `img`) verbatim as raw HTML, so they survive an edit. A literal `<` in text is escaped.
     - It also lists what Markdown can't represent: mentions, images, tables, embeds, underline, highlights, sub/superscript and unknown tags. When that list isn't empty, the form shows a warning on both pages.
   - **Comments**: `c` opens a Markdown text field (ctrl+e for `$EDITOR`); a blank comment is refused. Submitting calls `CreateComment` and toasts "commented on FORGE-1". The item's cached details are dropped, so the new comment shows after a reload while the old version stays on screen until then.
-  - **Sessions**: `s` calls `tabs.StartSessionFrom` with `KindPlaneIssue`, the key, URL, title, state name and the repo of the forge project linked to the Plane project. The Sessions tab picks the `implement-issue` template. Branch stays empty until P3.7.
+  - **Sessions**: `s` calls `tabs.StartSessionFrom` with `KindPlaneIssue`, the key, URL, title, state name and the repo of the forge project linked to the Plane project. The Sessions tab picks the `implement-issue` template. Since P3.7 it also passes `plane.BranchFor(item)` as the branch.
   - **Keys / palette**:
     - Keys: `plane_new` (`n`), `plane_edit` (`e`), `plane_comment` (`c`), `plane_session` (`s`). They work in the list, on the board and in the card overlay (one shared `itemAction`).
     - Each has a palette command. They appear in short and full help, and in `default.yaml`.
@@ -504,8 +504,32 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - One project at a time.
     - Counts cover the first 1000 items of the cycle.
     - An item edited out of the cycle keeps counting until the refresh that follows the edit.
-- [ ] P3.7 Branch naming
-  - Note (from P1.9): pass `BranchFor(item)` as `tabs.Source.Branch`; the worktree side (create / reuse / ownership) is done.
+- [x] P3.7 Branch naming: sessions started from a Plane item work on a `proj-123-short-title` branch. PRs whose branch or title names an item key are linked to the item, and show in both detail panes.
+  - **`plane.BranchFor(item)`**: the lower-cased key plus a slug of the title. ASCII only: common Latin accents are folded by a small table (é→e, ß→ss), combining marks and other scripts are dropped, and every other run becomes one `-`. At most 50 bytes, cut at a word boundary where it can be. An empty title gives just the key.
+  - **Sessions**: the Plane tab's `s` passes `BranchFor(item)` as `tabs.Source.Branch`, which replaces `agent/<name>`. Creating, reusing or taking ownership of the worktree works as in P1.9: if the branch already exists, it is reused. `forge new --issue` still uses `agent/<name>` unless `--branch` is given.
+  - **Detection** (`plane.FindKey`): only keys of the workspace's Plane project identifiers count, ignoring case and not inside a longer word. That way `utf-8`, `p3-7` and `myproj-3` don't match. The branch is checked first, then the title.
+  - **Linking**: after each successful PR section fetch, the PRs tab queues that section's PRs for a background run (`prs/backlink.go`). One run happens at a time, so two sections that land together never both treat a link as new.
+    - The identifiers come from the cached Plane projects, else `Projects()`, and are kept on the tab after that.
+    - The new `sessions.Service.LinkIssuePRs` stores an issue → PR link with the PR's URL, title and state. It returns only the links that didn't exist before. A PR whose title or state changed is updated, and an unchanged one isn't written at all.
+    - Errors (for example a bad Plane key) are toasted once per run of forge.
+  - **Detail panes**:
+    - Plane: `IssueLinks` already returned PRs linked directly to the item, so they show under "Linked" with their state, and no change was needed.
+    - PRs: a new **Issues** section under Sessions, from `sessions.Service.PRIssues`. Each line is `◆ PROJ-123`. It is loaded together with the linked sessions, and again for the selected PR after a run adds links.
+  - **Comment** (optional): `plane.comment_on_pr_link` (default `false`). When a run first links an **open or draft** PR, forge posts `<p>Pull request <a href=…>owner/repo#12</a>: title</p>` on the item. Merged and closed PRs never get a comment, so turning the option on doesn't flood old items.
+  - **Tests**:
+    - Table tests: `BranchFor` (punctuation, accents, combining marks, other scripts, empty or junk title, word-boundary cut, hard cut) and `FindKey` (branch, title, branch before title, a path prefix, the longest identifier winning, unknown identifiers, inside a word, none known).
+    - Service: `LinkIssuePRs` (new, unchanged without a rewrite, state update not reported as new). `IssueLinks` then shows the PR on the item, and `PRIssues` shows the item on the PR.
+    - PRs tab:
+      - links from the branch and the title, with meta, and the detail shows `◆ PROJ-12`
+      - identifiers fetched once
+      - comments only on open and draft PRs, and only once across refreshes
+      - an error toasted once
+      - nothing linked without a Plane client
+    - Plane tab: `s` sets `Branch`.
+  - **Limits**:
+    - Only PRs in the configured PR sections are scanned, and only while the PRs tab refreshes (it doesn't refresh while hidden). A PR opened from an issue session is still shown on the item through the session (`SyncPRs`, on GitHub ticks) before then.
+    - If the comment fails, it isn't retried, because the link already exists.
+    - PR-side issue lines show only the key: the item's title isn't stored on the link.
 
 ## Phase 4 — Docs & design artifacts
 

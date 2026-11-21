@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -298,11 +299,56 @@ func TestDetailScroll(t *testing.T) {
 	}
 }
 
-// fakeSessions answers LinkedSessions only.
+// fakeSessions answers LinkedSessions, and PRIssues / LinkIssuePRs from
+// links (nil: none linked, nothing recorded).
 type fakeSessions struct {
 	sessions.API
 	linked map[string][]store.Session
 	err    error
+	links  *fakeIssueLinks
+}
+
+// fakeIssueLinks is the issue -> PR links LinkIssuePRs made.
+type fakeIssueLinks struct {
+	mu    sync.Mutex
+	known map[string]sessions.IssuePR // "KEY>owner/repo#n"
+	calls int
+}
+
+func (f fakeSessions) PRIssues(_ context.Context, id string) ([]store.Link, error) {
+	if f.links == nil {
+		return nil, nil
+	}
+	f.links.mu.Lock()
+	defer f.links.mu.Unlock()
+	var out []store.Link
+	for _, l := range f.links.known {
+		if l.PR.ID == id {
+			out = append(out, store.Link{Other: store.IssueRef(l.Key)})
+		}
+	}
+	return out, nil
+}
+
+func (f fakeSessions) LinkIssuePRs(_ context.Context, ls []sessions.IssuePR) ([]sessions.IssuePR, error) {
+	if f.links == nil {
+		return nil, nil
+	}
+	f.links.mu.Lock()
+	defer f.links.mu.Unlock()
+	f.links.calls++
+	if f.links.known == nil {
+		f.links.known = map[string]sessions.IssuePR{}
+	}
+	var added []sessions.IssuePR
+	for _, l := range ls {
+		k := l.Key + ">" + l.PR.ID
+		if _, ok := f.links.known[k]; !ok {
+			added = append(added, l)
+		}
+		f.links.known[k] = l
+	}
+	return added, nil
 }
 
 func (f fakeSessions) LinkedSessions(_ context.Context, kind store.LinkKind, id string) ([]store.Session, error) {

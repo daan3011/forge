@@ -718,6 +718,7 @@ func (t *Tab) startSession() tea.Cmd {
 	return tabs.StartSessionFrom(tabs.Source{
 		Kind: store.KindPlaneIssue, ID: w.Key(), URL: t.cfg.Plane.IssueURL(w.Key()),
 		Title: w.Name, State: state, Repo: t.repoFor(w.ProjectID),
+		Branch: plane.BranchFor(w), // P3.7: PROJ-123-short-title
 	})
 }
 

@@ -171,6 +171,7 @@ func (t *Tab) overviewView(p github.PR, e *detailEntry, w int) []string {
 	}
 	if t.sessions != nil {
 		section("Sessions", t.sessionLines(p)...)
+		section("Issues", t.issueLines(p, w)...)
 	}
 	if e != nil {
 		section("Description", t.markdown(e.body, e.d.Body, e.mdWidth == w, w, "no description")...)
@@ -383,6 +384,33 @@ func reviewWord(state string) string {
 		return "review requested"
 	}
 	return strings.ToLower(state)
+}
+
+// issueLines lists the Plane work items linked to the PR (P3.7).
+func (t *Tab) issueLines(p github.PR, w int) []string {
+	th := t.theme
+	_, loaded, err := t.linkedFor(p.ID())
+	is := t.det.issues[p.ID()]
+	switch {
+	case err != nil:
+		return []string{th.Hint.Render("—")} // sessionLines shows the error
+	case !loaded:
+		return []string{th.Hint.Render("…")}
+	case len(is) == 0:
+		return []string{th.Hint.Render("none")}
+	}
+	out := make([]string, 0, len(is))
+	for _, l := range is {
+		line := th.PRRepo.Render("◆ ") + th.Body.Render(l.Other.ID)
+		if l.Title != "" {
+			line += " " + th.Body.Render(l.Title)
+		}
+		if l.State != "" {
+			line += th.Hint.Render(" · ") + th.LinkState(l.State).Render(l.State)
+		}
+		out = append(out, ansi.Truncate(line, w, "…"))
+	}
+	return out
 }
 
 // sessionLines lists the forge sessions linked to the PR (P1.9).
