@@ -3,6 +3,7 @@ package plane
 import (
 	"html"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -20,6 +21,22 @@ var (
 // tags are dropped and their text kept.
 func HTMLToMarkdown(s string) string {
 	c := mdConverter{}
+	c.convert(s)
+	return tidyMarkdown(c.out.String())
+}
+
+// HTMLToEditableMarkdown is HTMLToMarkdown for editing: the result is meant
+// to be edited and converted back with MarkdownToHTML. Mentions and images
+// are kept verbatim as raw HTML so they survive the round trip; lossy names
+// everything the Markdown can't represent faithfully (including what was
+// passed through), in first-seen order, so the editor can warn about it.
+func HTMLToEditableMarkdown(s string) (md string, lossy []string) {
+	c := mdConverter{edit: true}
+	c.convert(s)
+	return tidyMarkdown(c.out.String()), c.lossyKinds()
+}
+
+func (c *mdConverter) convert(s string) {
 	pos := 0
 	for _, m := range tokenRe.FindAllStringSubmatchIndex(s, -1) {
 		c.text(s[pos:m[0]])
@@ -29,11 +46,15 @@ func HTMLToMarkdown(s string) string {
 		}
 		closing := m[3] > m[2]
 		name := strings.ToLower(s[m[4]:m[5]])
-		attrs := parseAttrs(s[m[6]:m[7]])
 		selfClosing := m[9] > m[8]
+		if c.edit && c.passthrough(name, s[m[0]:m[1]], closing, selfClosing) {
+			continue
+		}
+		attrs := parseAttrs(s[m[6]:m[7]])
 		if closing {
 			c.close(name)
 		} else {
+			c.note(name)
 			c.open(name, attrs)
 			if selfClosing {
 				c.close(name)
@@ -41,7 +62,98 @@ func HTMLToMarkdown(s string) string {
 		}
 	}
 	c.text(s[pos:])
-	return tidyMarkdown(c.out.String())
+}
+
+// passKinds are the elements kept verbatim when editing, by what the user
+// is warned about.
+var passKinds = map[string]string{
+	"mention-component": "mentions",
+	"image-component":   "images",
+	"img":               "images",
+}
+
+// lossyTags are elements whose text survives editing but whose markup
+// doesn't.
+var lossyTags = map[string]string{
+	"table": "tables", "thead": "tables", "tbody": "tables", "tr": "tables", "td": "tables", "th": "tables",
+	"iframe": "embeds", "video": "embeds", "audio": "embeds", "embed": "embeds", "object": "embeds",
+	"u": "underline", "mark": "highlights", "sub": "sub/superscript", "sup": "sub/superscript",
+}
+
+// knownTags convert to Markdown without loss.
+var knownTags = map[string]bool{
+	"p": true, "div": true, "br": true, "span": true, "label": true, "input": true,
+	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+	"strong": true, "b": true, "em": true, "i": true, "s": true, "del": true, "strike": true,
+	"code": true, "pre": true, "a": true, "ul": true, "ol": true, "li": true,
+	"blockquote": true, "hr": true, "html": true, "body": true,
+}
+
+// passthrough writes mentions and images verbatim while editing. It reports
+// whether the token was consumed.
+func (c *mdConverter) passthrough(name, tok string, closing, selfClosing bool) bool {
+	if c.pass > 0 {
+		c.out.WriteString(tok)
+		if name == c.passName {
+			if closing {
+				c.pass--
+			} else if !selfClosing {
+				c.pass++
+			}
+		}
+		if c.pass == 0 && c.passBlock {
+			c.brk(2)
+		}
+		return true
+	}
+	kind, ok := passKinds[name]
+	if !ok || closing {
+		return false
+	}
+	c.addLossy(kind)
+	// Images are blocks: alone on their lines they form a Markdown HTML
+	// block, so MarkdownToHTML doesn't wrap them in a paragraph.
+	c.passBlock = name != "mention-component" && len(c.lists) == 0 && c.quote == 0
+	if c.passBlock {
+		c.brk(2)
+	}
+	c.raw(tok)
+	if selfClosing || name == "img" {
+		if c.passBlock {
+			c.brk(2)
+		}
+		return true
+	}
+	c.pass, c.passName = 1, name
+	if c.passBlock {
+		c.out.WriteString("\n")
+	}
+	return true
+}
+
+func (c *mdConverter) note(name string) {
+	if !c.edit {
+		return
+	}
+	if kind, ok := lossyTags[name]; ok {
+		c.addLossy(kind)
+	} else if !knownTags[name] && !slices.Contains(c.unknown, name) {
+		c.unknown = append(c.unknown, name)
+	}
+}
+
+func (c *mdConverter) addLossy(kind string) {
+	if !slices.Contains(c.lossy, kind) {
+		c.lossy = append(c.lossy, kind)
+	}
+}
+
+func (c *mdConverter) lossyKinds() []string {
+	out := slices.Clone(c.lossy)
+	if len(c.unknown) > 0 {
+		out = append(out, "unknown tags: "+strings.Join(c.unknown, ", "))
+	}
+	return out
 }
 
 type mdList struct {
@@ -59,6 +171,15 @@ type mdConverter struct {
 	fence   bool   // a code block started; its opening fence isn't written yet
 	lang    string // the code block's language
 	hrefs   []string
+	code    int // inside inline code
+
+	// Editing (HTMLToEditableMarkdown) only.
+	edit      bool
+	pass      int    // depth inside a passed-through element
+	passName  string // its tag
+	passBlock bool   // it stands alone as a block
+	lossy     []string
+	unknown   []string
 }
 
 // prefix starts every line: quote markers and list indentation.
@@ -107,6 +228,10 @@ func (c *mdConverter) text(s string) {
 	if s == "" {
 		return
 	}
+	if c.pass > 0 {
+		c.out.WriteString(s)
+		return
+	}
 	s = html.UnescapeString(s)
 	if c.pre {
 		c.openFence()
@@ -114,6 +239,10 @@ func (c *mdConverter) text(s string) {
 		return
 	}
 	s = strings.ReplaceAll(spaceRe.ReplaceAllString(s, " "), " ", " ")
+	if c.edit && c.code == 0 {
+		// Literal "<" in text would read back as raw HTML.
+		s = strings.ReplaceAll(s, "<", `\<`)
+	}
 	if c.pending > 0 || c.out.Len() == 0 || strings.HasSuffix(c.out.String(), "\n") {
 		s = strings.TrimLeft(s, " ")
 	}
@@ -157,6 +286,7 @@ func (c *mdConverter) open(name string, attrs map[string]string) {
 		c.raw("~~")
 	case "code":
 		if !c.pre {
+			c.code++
 			c.raw("`")
 		} else if m := langRe.FindStringSubmatch(attrs["class"]); m != nil && c.fence {
 			c.lang = m[1]
@@ -231,6 +361,7 @@ func (c *mdConverter) close(name string) {
 		c.raw("~~")
 	case "code":
 		if !c.pre {
+			c.code = max(c.code-1, 0)
 			c.raw("`")
 		}
 	case "pre":

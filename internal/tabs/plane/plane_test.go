@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -90,6 +91,11 @@ type fakePlane struct {
 	statesBy   map[string][]plane.State // project -> states (default Todo, In Progress, Done)
 	updates    []string                 // "project id state_id" per UpdateWorkItem
 	updateErrs []error                  // returned by the next UpdateWorkItem calls, in order
+
+	bodies   []plane.WorkItemUpdate // every UpdateWorkItem body
+	creates  []plane.WorkItemCreate // every CreateWorkItem body
+	posted   []plane.CommentCreate  // every CreateComment body
+	writeErr error                  // fails CreateWorkItem / CreateComment
 }
 
 func samplePlane() *fakePlane {
@@ -212,6 +218,7 @@ func (f *fakePlane) UpdateWorkItem(_ context.Context, project, id string, in pla
 		sid = *in.StateID
 	}
 	f.updates = append(f.updates, project+" "+id+" "+sid)
+	f.bodies = append(f.bodies, in)
 	if len(f.updateErrs) > 0 {
 		err := f.updateErrs[0]
 		f.updateErrs = f.updateErrs[1:]
@@ -336,6 +343,8 @@ func testConfig() *config.Config {
 type harness struct {
 	*Tab
 	linkedMsgs []tabs.PlaneLinkedMsg
+	successes  []string      // success toasts
+	started    []tabs.Source // StartSessionMsg sources
 }
 
 func newHarness(api plane.API, ss sessions.API, project string) *harness {
@@ -364,8 +373,14 @@ func newHarnessWith(api plane.API, ss sessions.API, cfg *config.Config, linker t
 	return h
 }
 
+// isBlink is a cursor blink command: a real timer (Huh's fields start
+// them), skipped so tests don't wait for it.
+func isBlink(cmd tea.Cmd) bool {
+	return strings.HasPrefix(runtime.FuncForPC(reflect.ValueOf(cmd).Pointer()).Name(), "charm.land/bubbles/v2/cursor.")
+}
+
 func runCmd(cmd tea.Cmd) []tea.Msg {
-	if cmd == nil {
+	if cmd == nil || isBlink(cmd) {
 		return nil
 	}
 	msg := cmd()
@@ -393,6 +408,12 @@ func (h *harness) drain(cmd tea.Cmd) (errs, infos []string) {
 			continue
 		}
 		switch m := msg.(type) {
+		case ui.SuccessMsg:
+			h.successes = append(h.successes, m.Text)
+			continue
+		case tabs.StartSessionMsg:
+			h.started = append(h.started, m.Source)
+			continue
 		case ui.ErrMsg:
 			errs = append(errs, m.Err.Error())
 			continue

@@ -161,6 +161,12 @@ type PlaneKeys struct {
 	CollapseColumn key.Binding // fold / unfold the selected column
 	CollapseEmpty  key.Binding // fold / unfold every empty column
 	OpenCard       key.Binding // the card's detail as an overlay (Input.Cancel closes it)
+
+	// Create & edit (P3.4).
+	New     key.Binding // new work item form
+	Edit    key.Binding // edit the selected item
+	Comment key.Binding // comment on the selected item
+	Session key.Binding // start a forge session for the selected item
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -346,6 +352,11 @@ func DefaultKeyMap() *KeyMap {
 			CollapseColumn: bind("collapse column", "z"),
 			CollapseEmpty:  bind("collapse empty columns", "Z"),
 			OpenCard:       bind("open card", "enter"),
+
+			New:     bind("new issue", "n"),
+			Edit:    bind("edit", "e"),
+			Comment: bind("comment", "c"),
+			Session: bind("start session", "s"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -523,6 +534,10 @@ func (k *KeyMap) actions() []action {
 		{"plane_collapse_column", scopePlane, &pl.CollapseColumn},
 		{"plane_collapse_empty", scopePlane, &pl.CollapseEmpty},
 		{"plane_open_card", scopePlane, &pl.OpenCard},
+		{"plane_new", scopePlane, &pl.New},
+		{"plane_edit", scopePlane, &pl.Edit},
+		{"plane_comment", scopePlane, &pl.Comment},
+		{"plane_session", scopePlane, &pl.Session},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

@@ -413,12 +413,56 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Text filter**: `/` filters board cards too, with the list's matching (`ui.RowMatches` on the same row cells, shared with `ui.Table`). It is shared between the views and shows under the filter box. Counts are of the matching cards. Picking a hidden issue from the palette clears it. `b` keeps the selection both ways when the other view has the card.
   - **Moving**: `H`/`L` move the card to the previous / next state of its own project. The board changes at once and the cursor follows. Then `UpdateWorkItem` PATCHes `state_id`. Moves of one card go out one at a time: if the card moved again while a PATCH was in flight, the next PATCH sends the latest target. On failure the card goes back to the last state Plane accepted, with a toast (`FORGE-3: couldn't move to Done: …`). A refresh that lands mid-move keeps the target. On success the new state goes to the links table (`SetIssueStates`). If states haven't loaded yet, it toasts "states still loading". The palette's move commands also work from the list.
   - **Collapse / scroll**: a collapsed column is a 3-wide strip (count, then the name downwards). Cancelled columns start collapsed. `z` collapses or expands the cursor's column. `Z` collapses every empty column, or expands them all when they are all collapsed. The cursor can sit on a strip (drawn in the accent), but no card is selected there, so `j`/`k`/`H`/`L`/`enter` do nothing. A column opens when the wanted card lands in it (moved there with `H`/`L`, or picked from the palette). If every column fits, they share the width (24–40 cells). If not, as many ~28-wide columns as fit fill the width and scroll sideways, with `‹ n` / `n ›` for hidden columns.
-  - **Card detail**: `enter` opens the same detail as the list's pane, as an overlay (lipgloss compositor), and `esc` closes it. `J`/`K`, `o`, `y`, `H`/`L` and `b` work on it. P3.4's `e`/`c`/`s` will act on `selected()`, so they will work there too. Details are only fetched while the overlay is open.
+  - **Card detail**: `enter` opens the same detail as the list's pane, as an overlay (lipgloss compositor), and `esc` closes it. `J`/`K`, `o`, `y`, `H`/`L` and `b` work on it. P3.4's `e`/`c`/`s` work there too. Details are only fetched while the overlay is open.
   - **Keys / palette**: `plane_board`, `plane_col_left`, `plane_col_right`, `plane_move_prev`, `plane_move_next`, `plane_collapse_column` (`z`), `plane_collapse_empty` (`Z`), `plane_open_card`. Board-only commands switch to the board first. The overlay closes with `Input.Cancel` (esc), because a tab binding for esc would clash with the main scope. `TestRemapChangesBehaviourAndHelp` now remaps help to `W` (`H` is taken), and the keymap's help-range test uses `U`–`Y` (`Z` is taken).
   - **Tests**: board tests with the fake API cover columns and fetch filters (with the cutoff), merging across projects, navigation, horizontal scroll at 60 columns, `z` / `Z` (including a strip under the cursor and moving into a collapsed column), the `/` filter (same rows as the list, palette select clears it, `esc`, the wanted card kept while hidden), move / rollback / double move with the second failing / refresh mid-move / missing states, the selection kept by `b`, the overlay (detail, copy, move, esc), palette commands, and table tests for title wrapping and initials. Config tests cover `board_done_days`. The app teatest `TestPlaneBoardMove` is the done-when: `4` → `b` → `L` (PATCH recorded, cursor in Shipped) → `H` → `b`.
   - **Not verified live**: still no Plane workspace on this machine, so only fakes. Try `b`, then `L`, then check the item in Plane's web UI.
   - **Limits**: no reordering within a column (no `sort_order` in our types). Moving a card into a closed state it isn't allowed in (e.g. a Plane workflow rule) shows Plane's error and rolls back.
-- [ ] P3.4 Create & edit
+- [x] P3.4 Create & edit — `n` new, `e` edit, `c` comment and `s` session in the Plane tab (`internal/tabs/plane/edit.go`).
+  - **Forms**: `n` and `e` open a two-page Huh form (through `openDialog`, so esc cancels and the tab captures input).
+    - Page 1: title (required, at most 255 characters), state (ordered like the board; create defaults to the project's `is_default` state), priority (default none), labels (multi-select), assignee (unassigned, me, then members) and cycle (none, then cycles with "(current)").
+    - Page 2: the description, a Huh text field where ctrl+e opens `$EDITOR` on a `.md` file.
+    - With several projects listed, `n` asks for the project first.
+    - The form opens once the project's details are loaded (`loadMeta`) and, for edit, once the full item has arrived (`WorkItem`, for `description_html`). Until then a "loading…" toast shows.
+  - **Saving**:
+    - Create sends `CreateWorkItem` with ids. Its response has no identifier, so the key is built from the project identifier and `sequence_id`.
+    - The new item goes straight into the pooled lists whose filters match it, is selected (list or board) and toasts "created FORGE-5". If the filters hide it, an info toast says so. Then the tab refreshes.
+    - Edit PATCHes only the fields that changed. If nothing changed, it toasts "no changes" and sends nothing.
+    - Clearing the cycle sends `cycle_id: null` (`WorkItemUpdate.MarshalJSON`).
+    - Changing the assignee replaces every assignee with the one picked; leaving it unchanged keeps them all.
+  - **Markdown ↔ HTML**: `plane.MarkdownToHTML` uses goldmark (now a direct dependency) with GFM and raw HTML allowed. Task lists are rewritten to tiptap's `data-type="taskList"` / `data-checked` shape.
+  - **Round-trip safety**:
+    - `description_html` is only sent when the edited Markdown differs from what the form was opened with, so a description you don't touch is never rewritten.
+    - `plane.HTMLToEditableMarkdown` keeps mentions (`mention-component`) and images (`image-component`, `img`) verbatim as raw HTML, so they survive an edit. A literal `<` in text is escaped.
+    - It also lists what Markdown can't represent: mentions, images, tables, embeds, underline, highlights, sub/superscript and unknown tags. When that list isn't empty, the form shows a warning on both pages.
+  - **Comments**: `c` opens a Markdown text field (ctrl+e for `$EDITOR`); a blank comment is refused. Submitting calls `CreateComment` and toasts "commented on FORGE-1". The item's cached details are dropped, so the new comment shows after a reload while the old version stays on screen until then.
+  - **Sessions**: `s` calls `tabs.StartSessionFrom` with `KindPlaneIssue`, the key, URL, title, state name and the repo of the forge project linked to the Plane project. The Sessions tab picks the `implement-issue` template. Branch stays empty until P3.7.
+  - **Keys / palette**:
+    - Keys: `plane_new` (`n`), `plane_edit` (`e`), `plane_comment` (`c`), `plane_session` (`s`). They work in the list, on the board and in the card overlay (one shared `itemAction`).
+    - Each has a palette command. They appear in short and full help, and in `default.yaml`.
+    - New `Theme.FormWarn` style for the warning.
+  - **Tests**:
+    - Table tests: `MarkdownToHTML`, `HTMLToEditableMarkdown` (lossy kinds; mention and image survive HTML→MD→HTML; tables flagged), round-trip stability for plain content, and `WorkItemUpdate` JSON (null cycle).
+    - Tab tests:
+      - create in list and board (payload, toast, selection)
+      - a blank title refused
+      - created but hidden by filters
+      - the project picker with several projects
+      - create failure
+      - an edit that sends only the title (no description)
+      - an edit of priority, cycle and description
+      - no changes
+      - a lossy description: warning shown and not sent when unchanged; mention and image kept when edited
+      - comment (a blank one refused, HTML, toast, detail reload)
+      - session source
+      - keys in the board overlay
+    - The harness skips cursor-blink commands, so form tests don't wait on real timers.
+    - App teatest `TestPlaneCreateIssue`: `4` → `m` → `n` → title → submit → "created FORGE-3", cursor on it.
+  - **Not verified live**: still no Plane workspace on this machine. Worth checking in Plane's web UI: task lists render as checklists, a cleared cycle is accepted as `null`, and an edited description with a mention keeps the mention.
+  - **Limits**:
+    - One assignee in the form.
+    - Tables, embeds and similar content are flattened to text if you edit a description that has them (you are warned first).
+    - The description field's height is set when the form opens.
 - [ ] P3.5 Quick capture
 - [ ] P3.6 Cycle summary
 - [ ] P3.7 Branch naming
