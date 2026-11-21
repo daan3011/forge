@@ -319,3 +319,111 @@ func TestRunLinkInDetail(t *testing.T) {
 		t.Errorf("run line without a run link:\n%s", tab.View())
 	}
 }
+
+// busyRig has pr-12 linked to the PR and working on a turn.
+func busyRig(t *testing.T) (*Tab, *fakeSvc) {
+	t.Helper()
+	busy := linkedRow("pr-12", prLink(12))
+	busy.Status = store.StatusWorking
+	svc := newFakeSvc(busy)
+	return fixTab(t, svc), svc
+}
+
+func (f *fakeSvc) sentTo(name string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.sent[name])
+}
+
+func TestFixBusySessionAsks(t *testing.T) {
+	tab, svc := busyRig(t)
+	pumpForm(tab, tab.StartSession(fixSource(tabs.FixRequest{Reuse: true, Immediate: true})))
+	v := ansi.Strip(tab.View())
+	for _, want := range []string{"pr-12 is busy", "Send now (queued)", "Start a new fix session (own branch off feature/fast)", "Cancel"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("question missing %q:\n%s", want, v)
+		}
+	}
+	if len(svc.sentTo("pr-12")) != 0 {
+		t.Error("pasted into a working session without asking")
+	}
+	starts, _, _ := svc.snapshot()
+	if len(starts) != 0 {
+		t.Errorf("started without asking: %+v", starts)
+	}
+}
+
+func TestFixBusySendNow(t *testing.T) {
+	tab, svc := busyRig(t)
+	pumpForm(tab, tab.StartSession(fixSource(tabs.FixRequest{Reuse: true, Immediate: true})))
+	toasts := answer(tab, press("enter")) // the default: send now
+	if !slices.Contains(toasts, "ok: sent the failure to pr-12") {
+		t.Errorf("toasts = %q", toasts)
+	}
+	if sent := svc.sentTo("pr-12"); len(sent) != 1 || !strings.Contains(sent[0], "--- FAIL: TestParse") {
+		t.Errorf("sent = %q", sent)
+	}
+}
+
+func TestFixBusyStartNew(t *testing.T) {
+	tab, svc := busyRig(t)
+	pumpForm(tab, tab.StartSession(fixSource(tabs.FixRequest{Reuse: true, Immediate: true})))
+	toasts := answer(tab, press("down"), press("enter"))
+	if !slices.Contains(toasts, "ok: fix session pr-12-2 started") {
+		t.Errorf("toasts = %q", toasts)
+	}
+	starts, _, _ := svc.snapshot()
+	if len(starts) != 1 {
+		t.Fatalf("starts = %+v", starts)
+	}
+	o := starts[0]
+	// The busy session holds the PR branch: the new one branches off it.
+	if o.Branch != "" || o.Base != "feature/fast" || o.Template != "fix-ci" ||
+		len(o.Links) != 1 || o.Links[0].To != store.PRRef("daan/forge", 12) {
+		t.Errorf("opts = %+v", o)
+	}
+	if !strings.Contains(o.Prompt, "--- FAIL: TestParse") || !strings.Contains(o.Prompt, "on branch agent/pr-12-2") {
+		t.Errorf("prompt:\n%s", o.Prompt)
+	}
+	if len(svc.sentTo("pr-12")) != 0 {
+		t.Error("also pasted into the busy session")
+	}
+}
+
+func TestFixBusyCancel(t *testing.T) {
+	tab, svc := busyRig(t)
+	pumpForm(tab, tab.StartSession(fixSource(tabs.FixRequest{Reuse: true, Immediate: true})))
+	toasts := answer(tab, press("down"), press("down"), press("enter"))
+	starts, _, _ := svc.snapshot()
+	if len(toasts) != 0 || len(starts) != 0 || len(svc.sentTo("pr-12")) != 0 || tab.dialog != nil {
+		t.Errorf("cancel did something: toasts %q, starts %+v, dialog %v", toasts, starts, tab.dialog != nil)
+	}
+}
+
+func TestFixBusyEditKeyAsksThenEdits(t *testing.T) {
+	tab, svc := busyRig(t)
+	pumpForm(tab, tab.StartSession(fixSource(tabs.FixRequest{Reuse: true})))
+	if !strings.Contains(ansi.Strip(tab.View()), "pr-12 is busy") {
+		t.Fatalf("no question:\n%s", ansi.Strip(tab.View()))
+	}
+	answer(tab, press("enter")) // send now → the prompt, editable
+	if !strings.Contains(ansi.Strip(tab.View()), "Send to pr-12") {
+		t.Fatalf("no editable prompt:\n%s", ansi.Strip(tab.View()))
+	}
+	d := tab.dialog
+	tab.dialog = nil
+	toasts, _ := pump(tab, d.done())
+	if !slices.Contains(toasts, "ok: sent the failure to pr-12") || len(svc.sentTo("pr-12")) != 1 {
+		t.Errorf("toasts = %q", toasts)
+	}
+}
+
+func TestFixIdleSessionStillPastesDirectly(t *testing.T) {
+	idle := linkedRow("pr-12", prLink(12)) // linkedRow is idle
+	svc := newFakeSvc(idle)
+	tab := fixTab(t, svc)
+	toasts, _ := pump(tab, tab.StartSession(fixSource(tabs.FixRequest{Reuse: true, Immediate: true})))
+	if !slices.Contains(toasts, "ok: sent the failure to pr-12") || tab.dialog != nil {
+		t.Errorf("toasts = %q, dialog %v", toasts, tab.dialog != nil)
+	}
+}

@@ -30,9 +30,12 @@ type fixReadyMsg struct {
 	sent    string // the live session the prompt went to
 	sendErr error  // sending to a live session failed; a new one starts
 	// target and prompt: a live session to send prompt to once it has
-	// been edited (alt+f).
+	// been edited (alt+f), or once the user said so (busy).
 	target *store.Session
 	prompt string
+	// busy: target is working, so ask before queueing a prompt into it.
+	busy bool
+	ref  store.Ref
 
 	tmpl    templates.Template
 	found   bool // the request's template exists
@@ -49,8 +52,9 @@ func (t *Tab) startFix(src tabs.Source, req NewRequest) tea.Cmd {
 		return errCmd(errUnavailable)
 	}
 	fix := *src.Fix
+	ref := store.Ref{Kind: src.Kind, ID: src.ID}
 	if fix.Confirm == "" {
-		return t.runFix(src, fix, req)
+		return t.runFix(ref, fix, req)
 	}
 	ok := true
 	f := huh.NewForm(huh.NewGroup(
@@ -61,25 +65,24 @@ func (t *Tab) startFix(src tabs.Source, req NewRequest) tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return t.runFix(src, fix, req)
+		return t.runFix(ref, fix, req)
 	})
 }
 
 // runFix looks for a live linked session (Reuse) and resolves the template
 // (Immediate) in a command; fixReady continues.
-func (t *Tab) runFix(src tabs.Source, fix tabs.FixRequest, req NewRequest) tea.Cmd {
+func (t *Tab) runFix(ref store.Ref, fix tabs.FixRequest, req NewRequest) tea.Cmd {
 	if !fix.Reuse && !fix.Immediate {
 		return t.openNewWith(req)
 	}
 	t.busy++
 	svc, dir, reg, projects := t.svc, t.tmplDir, t.providers, t.cfg.Projects
-	ref := store.Ref{Kind: src.Kind, ID: src.ID}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		ts, errs := loadTemplates(dir)
 		tmpl, found := templates.Find(ts, req.Opts.Template)
-		msg := fixReadyMsg{req: req, fix: fix, templates: ts, loadErrs: errs, tmpl: tmpl, found: found}
+		msg := fixReadyMsg{req: req, fix: fix, templates: ts, loadErrs: errs, tmpl: tmpl, found: found, ref: ref}
 		if fix.Reuse && found {
 			if x, ok := liveLinked(ctx, svc, ref); ok {
 				// The prompt is rendered for the session it goes to.
@@ -87,8 +90,10 @@ func (t *Tab) runFix(src tabs.Source, fix tabs.FixRequest, req NewRequest) tea.C
 				o.Name, o.Project, o.Branch = x.Name, x.Project, x.Branch
 				vals, _, _ := templates.Resolve(ctx, reg, tmpl, TemplateInput(projects, o, req.Refs, req.Vars))
 				prompt := RenderPrompt(tmpl, vals)
-				if !fix.Immediate {
-					msg.target, msg.prompt = &x, prompt
+				if !fix.Immediate || x.Status == store.StatusWorking {
+					// Edit first (alt+f), or ask: a working agent would
+					// only get it queued behind its current turn.
+					msg.target, msg.prompt, msg.busy = &x, prompt, x.Status == store.StatusWorking
 					return msg
 				}
 				err := svc.SendPrompt(ctx, x, prompt)
@@ -140,6 +145,9 @@ func (t *Tab) fixReady(msg fixReadyMsg) tea.Cmd {
 		cmds = append(cmds, success("sent the failure to "+msg.sent), t.liveRefresh())
 		return tea.Batch(cmds...)
 	}
+	if msg.target != nil && msg.busy {
+		return tea.Batch(append(cmds, t.askBusy(msg))...)
+	}
 	if msg.target != nil {
 		return tea.Batch(append(cmds, t.editAndSend(msg))...)
 	}
@@ -162,28 +170,79 @@ func (t *Tab) fixReady(msg fixReadyMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// Answers to the busy-session question.
+const (
+	busySend   = "send"
+	busyNew    = "new"
+	busyCancel = "cancel"
+)
+
+// askBusy asks what to do when the linked session is in the middle of a
+// turn: queue the prompt into it anyway, start a new fix session, or
+// cancel. The new session can't share the PR branch (git checks a branch
+// out once), so it gets its own branch made from the PR head.
+func (t *Tab) askBusy(msg fixReadyMsg) tea.Cmd {
+	x := *msg.target
+	head := msg.req.Opts.Branch
+	choice := busySend
+	newLabel := "Start a new fix session"
+	if head != "" {
+		newLabel += " (own branch off " + head + ")"
+	}
+	f := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().Key("busy").
+			Title(x.Name+" is busy").
+			Description("it is working on a turn; a prompt sent now waits until that turn ends").
+			Options(
+				huh.NewOption("Send now (queued)", busySend),
+				huh.NewOption(newLabel, busyNew),
+				huh.NewOption("Cancel", busyCancel),
+			).Value(&choice),
+	)).WithTheme(t.theme.Huh()).WithKeyMap(t.keys.HuhKeyMap()).WithShowHelp(false)
+	return t.openDialog(x.Name, f, func() tea.Cmd {
+		switch choice {
+		case busySend:
+			if !msg.fix.Immediate {
+				return t.editAndSend(msg) // alt+f: edit, then send
+			}
+			return t.sendFix(msg, x, msg.prompt)
+		case busyNew:
+			req := msg.req
+			if head != "" {
+				req.Opts.Base, req.Opts.Branch = head, ""
+			}
+			return t.runFix(msg.ref, tabs.FixRequest{Immediate: msg.fix.Immediate}, req)
+		}
+		return nil
+	})
+}
+
+// sendFix sends prompt to x in a command; fixReady reports it, and a
+// failed send carries on with a new session.
+func (t *Tab) sendFix(msg fixReadyMsg, x store.Session, prompt string) tea.Cmd {
+	t.busy++
+	svc := t.svc
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+		defer cancel()
+		next := msg
+		next.target, next.prompt, next.busy = nil, "", false
+		if err := svc.SendPrompt(ctx, x, prompt); err != nil {
+			next.sendErr = fmt.Errorf("couldn't send to %s: %w", x.Name, err)
+		} else {
+			next.sent = x.Name
+		}
+		return next
+	}
+}
+
 // editAndSend shows the prompt for a live session, editable, and sends it.
 // A failed send continues as if no session were live (a new one, with the
 // form).
 func (t *Tab) editAndSend(msg fixReadyMsg) tea.Cmd {
 	x, prompt := *msg.target, msg.prompt
 	f := styled(t.theme, t.keys, huh.NewGroup(promptField(&prompt).Lines(12)).Title("Send to "+x.Name))
-	return t.openDialog(x.Name, f, func() tea.Cmd {
-		t.busy++
-		svc := t.svc
-		return func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
-			defer cancel()
-			next := msg
-			next.target, next.prompt = nil, ""
-			if err := svc.SendPrompt(ctx, x, prompt); err != nil {
-				next.sendErr = fmt.Errorf("couldn't send to %s: %w", x.Name, err)
-			} else {
-				next.sent = x.Name
-			}
-			return next
-		}
-	})
+	return t.openDialog(x.Name, f, func() tea.Cmd { return t.sendFix(msg, x, prompt) })
 }
 
 // loadTemplates writes the default templates on first use and loads dir.
