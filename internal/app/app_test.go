@@ -616,10 +616,19 @@ func TestPipelineLiveProgress(t *testing.T) {
 	cfg.Projects = []config.Project{{Name: "forge", Repo: "daan/forge"}}
 	runs := &fakeRuns{}
 	tm := teatest.NewTestModel(t, mustNew(t, cfg, WithRuns(runs)), teatest.WithInitialTermSize(160, 30))
+	// Each WaitFor consumes what it reads, and only changed cells redraw,
+	// so text that arrived with an earlier wait's chunk wouldn't show up
+	// again: keep everything seen and match against all of it.
+	var seen []byte
 	wait := func(s string) {
 		t.Helper()
-		teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return bytes.Contains(b, []byte(s)) },
-			teatest.WithDuration(3*time.Second))
+		teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+			if !bytes.Contains(append(slices.Clip(seen), b...), []byte(s)) {
+				return false
+			}
+			seen = append(seen, b...)
+			return true
+		}, teatest.WithDuration(5*time.Second))
 	}
 	wait("forge")
 	tm.Send(press("2"))
