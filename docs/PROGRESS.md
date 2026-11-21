@@ -68,7 +68,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - then front-matter defaults
     - explicit values (form fields, `--var`) always win
     
-    What's left is asked for in the form, one field per variable (multi-line for `*_body` / `*_log`). The registry is **empty for now**: P2.1 and P3.1 register providers. Until then, the issue/PR title and body are typed in, and that manual fallback stays for sessions with no ticket.
+    What's left is asked for in the form, one field per variable (multi-line for `*_body` / `*_log`). The registry starts empty: P2.1 and P3.1 register providers. Until then, the issue/PR title and body are typed in, and that manual fallback stays for sessions with no ticket.
   - **Form** (`n`):
     - The template picker sits in the main form, with a live preview beside it. The preview is rendered in the tab's `View`, not as a huh Note, because `Note.DescriptionFunc` runs in a command and races the input fields. It shows the description and the body, with built-ins filled in and the rest left as `{var}`.
     - With a template chosen, the prompt field is hidden. The steps after it are chained dialogs:
@@ -369,10 +369,23 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 
 ## Phase 3 — Plane
 
-- [ ] P3.1 Plane client
-  - TODO (from P1.7): register a `templates.ContextProvider` for `plane_issue` (fills `{issue_title}`, `{issue_body}`) through `app.WithTemplates` / `deps.providers`.
-  - TODO (from P1.9): on refresh, `Links.SetState(store.IssueRef(key), state)` so session detail panes show current issue states.
+- [x] P3.1 Plane client — typed client for Plane's **v2** REST API in `internal/plane`, plus the debug command `forge plane ls`.
+  - **Client**: `plane.New(cfg.Plane, key, opts...)`. The base URL comes from config, so self-hosted instances with v2 work too. The key comes from `ResolveAPIKey` (`api_key`, else `$PLANE_API_KEY`) and is sent as `X-API-Key`. Every path ends in `/` as v2 requires.
+    - Methods: `Me`, `Projects` / `Project`, `States`, `Labels`, `Cycles`, `CurrentCycle`, `ProjectMembers` / `WorkspaceMembers`, `WorkItems` / `WorkItem` / `WorkItemByIdentifier("FORGE-12")`, `CreateWorkItem`, `UpdateWorkItem`, `Comments` and `CreateComment`.
+    - Narrow interfaces (`ProjectReader`, `WorkItemLister`, `WorkItemWriter`, `Commenter`) plus the composite `plane.API` give later tabs something to fake.
+    - `WorkItemFilter` covers state / state group / priority / assignee / label (`__in` when there are several values), cycle, search, `updated_at__gte`, archived, `order_by`, `expand` and `fields`. `WorkItemUpdate` uses pointer fields, so PATCH only sends what changed.
+    - Lists page with `paginate=cursor&per_page=200` until `has_more` is false, stop at `Limit`, and give up after 50 pages. `order_by` priority / state_group / sort_order switch to offset paging, which v2 requires.
+    - Errors are `*plane.APIError`, decoded from problem+json (`code`, `detail`, field errors). Helpers: `IsNotFound`, `IsAuthError`, `IsRateLimited`. If `Me` gets a 404, it returns `ErrNoV2`.
+    - There is no "current cycle" filter in v2, so `Cycle.IsCurrent` and `CurrentCycle` go by dates. A date-only end date counts through that whole day.
+    - `HTMLToText` turns description and comment HTML into plain text.
+  - **Rate limits**: a 429 is retried up to 3 times. The wait is `Retry-After` (seconds or an HTTP date, capped at 2 min). Without it, the wait runs until `X-RateLimit-Reset`, or backs off 1s/2s/4s (all clamped to 1–30s). Waits stop when the context is cancelled. `OnResponse` sees every response.
+  - **Cache**: every list is written through to kv_cache (kind `plane`, project = Plane project id, TTL = `plane.refresh_interval`) under `plane:<workspace>:<resource>:<project>:<fnv(query|limit)>`. `CachedWorkItems` / `CachedProjects` read a list back (items, fetched-at, stale) so P3.2 can render first and refresh after (P0.8). Gets, writes and comments aren't cached, and a failed refresh never touches the cache.
+  - **Template provider** (the P1.7 TODO): `main` registers `plane_issue` → `Client.IssueContext`, which fills `{issue_title}` and `{issue_body}` (as plain text) from a key like `FORGE-12`. Config and key load on first use, so a missing Plane setup only fails templates that use an issue, and those fall back to the form.
+  - **`forge plane ls [project]`**: the project is a forge project name (`plane_project_id`), a Plane identifier, UUID or name, or nothing when exactly one forge project has a Plane id. Flags: `--state-group a,b`, `--mine`, `--search`, `--limit` (50, 0 = all), `--json`. Output is a table: `ID STATE PRIO TITLE` (with `expand=state`).
+  - **Tests**: hand-written v2 fixtures in `internal/plane/testdata`, with no real workspace data. Table-driven `httptest` tests check every method's method, path, query, key header, body and decoding. Also covered: cursor paging and limit, the offset fallback, 429 retries (`Retry-After`, `X-RateLimit-Reset`, backoff, giving up, cancellation), problem+json, 401 / 404 / `ErrNoV2` and write-through cache. There are table tests for filter encoding, rate-limit parsing, dates, `IsCurrent` and `HTMLToText`. `cmd/forge` tests run `plane ls` end to end against an httptest server and check the kv_cache row.
+  - **Limits**: v2 only, with no v1 fallback. An instance without `/api/v2` fails with `ErrNoV2`. The v2 rate-limit number isn't documented, so forge only reacts to 429s and doesn't pace itself. Paths and shapes come from the docs (developers.plane.so, v2) and haven't been checked against a live workspace yet.
 - [ ] P3.2 Issue list view
+  - TODO (from P1.9): on refresh, `Links.SetState(store.IssueRef(key), state)` so session detail panes show current issue states.
 - [ ] P3.3 Kanban board
 - [ ] P3.4 Create & edit
 - [ ] P3.5 Quick capture

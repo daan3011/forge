@@ -33,10 +33,11 @@ import (
 var githubPulls = github.NewClient(api.ClientOptions{})
 
 // defaultProviders resolves template variables from links: {pr_title} and
-// {pr_body} through GitHub. Plane issues come with P3.1.
+// {pr_body} through GitHub, {issue_title} and {issue_body} through Plane.
 func defaultProviders() *templates.Registry {
 	r := templates.NewRegistry()
 	r.Register(store.KindGitHubPR, templates.ProviderFunc(githubPulls.PRContext))
+	r.Register(store.KindPlaneIssue, templates.ProviderFunc(planeIssueContext))
 	return r
 }
 

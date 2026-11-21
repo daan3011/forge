@@ -1,0 +1,9 @@
+{
+  "data": [
+    {"id": "p-forge", "name": "Forge", "identifier": "FORGE", "description": "The TUI", "network": 0, "archived_at": null, "created_at": "2026-01-05T10:00:00Z", "updated_at": "2026-11-01T12:30:00.123456Z"},
+    {"id": "p-anvil", "name": "Anvil", "identifier": "ANV", "description": "", "network": 2, "archived_at": null, "created_at": "2026-02-01T09:00:00Z", "updated_at": "2026-10-01T09:00:00Z"}
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "pagination": {"style": "cursor"}
+}
