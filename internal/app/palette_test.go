@@ -125,7 +125,8 @@ func TestPushRecent(t *testing.T) {
 // diff_open is pr_open. The job log viewer's actions are commands only
 // while it is open (the pipelines tab's tests), and its rerun / cancel /
 // fix keys are the pipeline_rerun_failed / pipeline_rerun /
-// pipeline_cancel / pipeline_fix / pipeline_fix_edit commands.
+// pipeline_cancel / pipeline_fix / pipeline_fix_edit commands. The quick
+// capture line's keys edit and submit the line (capture opens it).
 var notRegistered = []string{
 	"force_quit", "palette",
 	"up", "down", "top", "bottom", "page_down", "page_up",
@@ -139,6 +140,9 @@ var notRegistered = []string{
 	"log_toggle_full", "log_search", "log_next_match", "log_prev_match",
 	"log_next_job", "log_prev_job", "log_open", "log_close",
 	"log_rerun_failed", "log_rerun", "log_cancel", "log_fix", "log_fix_edit",
+	"capture_submit", "capture_full_form", "capture_complete", "capture_complete_prev",
+	"capture_left", "capture_right", "capture_home", "capture_end",
+	"capture_delete_word", "capture_delete_forward",
 }
 
 // TestEveryActionIsACommand guards the "every user action is a palette
@@ -258,11 +262,11 @@ func TestPaletteAllProjects(t *testing.T) {
 
 func TestPaletteOverlay(t *testing.T) {
 	var model tea.Model = mustNew(t, twoProjects())
-	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	model, _ = model.Update(ctrlK())
 	m := model.(Model)
 	view := m.render()
-	assertScreen(t, view, 100, 30)
+	assertScreen(t, view, 100, 34)
 	plain := ansi.Strip(view)
 	for _, want := range []string{"⚒ Commands", "Quit forge", "▤ Tabs", "esc cancel"} {
 		if !strings.Contains(plain, want) {
@@ -416,8 +420,11 @@ func (f *fakeStore) Put(_ context.Context, key, kind, _ string, value []byte, tt
 		return f.err
 	}
 	wantKind := map[string]string{recentKey: recentKind, projectKey: projectKind}[key]
-	if strings.HasPrefix(key, "tab:") {
+	switch {
+	case strings.HasPrefix(key, "tab:"):
 		wantKind = tabkit.CacheKind
+	case strings.HasPrefix(key, "notice:"):
+		wantKind = noticeKind
 	}
 	if wantKind == "" || kind != wantKind || ttl != 0 {
 		return errors.New("unexpected key, kind or ttl")

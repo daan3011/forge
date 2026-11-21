@@ -267,6 +267,21 @@ func TestClientRequests(t *testing.T) {
 			},
 		},
 		{
+			// Plane orders labels by sort_order, which it can't cursor-page
+			// (400 "This ordering can't be used with cursor pagination").
+			name:    "labels use offset paging",
+			replies: []reply{ok("labels.json")},
+			call:    func(c *Client) (any, error) { return c.Labels(ctx, "p-forge") },
+			wantReqs: []seen{{method: "GET", path: wsBase + "projects/p-forge/labels/", query: url.Values{
+				"order_by": {"sort_order"}, "paginate": nil,
+			}}},
+			check: func(t *testing.T, got any) {
+				if ls := got.([]Label); len(ls) != 2 || ls[0].Name != "bug" {
+					t.Errorf("labels = %+v", ls)
+				}
+			},
+		},
+		{
 			name:     "work item by id",
 			replies:  []reply{ok("work_item.json")},
 			call:     func(c *Client) (any, error) { return c.WorkItem(ctx, "p-forge", "w-12") },

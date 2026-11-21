@@ -138,3 +138,24 @@ func TestResetConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestDefaultConfigBindsCapture(t *testing.T) {
+	conf := string(DefaultConfig(ConfigColors{Bg: "#000000", Fg: "#ffffff", Accent: "#ff0000", Muted: "#888888"}))
+	if !strings.Contains(conf, `bind -n M-c display-popup -E -w 76 -h 8 "forge capture"`) {
+		t.Errorf("no M-c capture binding:\n%s", conf)
+	}
+}
+
+func TestConfigVersionOf(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "old.conf")
+	if err := os.WriteFile(old, []byte("# forge-tmux-config v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := ConfigVersionOf(old); !ok || v != 1 {
+		t.Errorf("old = %d, %v", v, ok)
+	}
+	if _, ok := ConfigVersionOf(filepath.Join(dir, "missing.conf")); ok {
+		t.Error("missing file has a version")
+	}
+}

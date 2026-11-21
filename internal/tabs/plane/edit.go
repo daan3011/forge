@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 
+	"github.com/daan3011/forge/internal/capture"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/store"
@@ -22,9 +24,6 @@ import (
 // form for the selected one, `c` a comment form, `s` the Sessions tab's
 // new-session form for the item. Descriptions and comments are written as
 // Markdown (ctrl+e opens $EDITOR) and sent to Plane as HTML.
-
-// maxTitle is Plane's limit on a work item's name.
-const maxTitle = 255
 
 // formKind is the form a pendingForm opens.
 type formKind int
@@ -41,6 +40,34 @@ type pendingForm struct {
 	project string
 	itemID  string
 	item    *plane.WorkItem
+	draft   *IssueDraft // prefills a create form
+}
+
+// IssueDraft prefills the create form: quick capture's shift+enter (P3.5)
+// opens it with what the line said.
+type IssueDraft struct {
+	Title       string
+	Priority    plane.Priority
+	LabelIDs    []string
+	AssigneeIDs []string // the first is used; the form has one assignee
+}
+
+// values are the form's starting values for d in a project whose default
+// state is state.
+func (d *IssueDraft) values(state string) issueValues {
+	v := issueValues{state: state, priority: plane.PriorityNone}
+	if d == nil {
+		return v
+	}
+	v.title = d.Title
+	if d.Priority != "" {
+		v.priority = d.Priority
+	}
+	v.labels = slices.Clone(d.LabelIDs)
+	if len(d.AssigneeIDs) > 0 {
+		v.assignee = d.AssigneeIDs[0]
+	}
+	return v
 }
 
 // issueValues are the form's fields.
@@ -137,7 +164,7 @@ func (t *Tab) newItem() tea.Cmd {
 	case 0:
 		return errCmd(errors.New("plane: no Plane project linked to this project"))
 	case 1:
-		return t.prepareForm(formCreate, ids[0], "")
+		return t.prepareForm(formCreate, ids[0], "", nil)
 	}
 	pick := ids[0]
 	opts := make([]huh.Option[string], len(ids))
@@ -151,7 +178,17 @@ func (t *Tab) newItem() tea.Cmd {
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().Key("project").Title("New issue in").Options(opts...).Value(&pick),
 	))
-	return t.openDialog(form, func() tea.Cmd { return t.prepareForm(formCreate, pick, "") })
+	return t.openDialog(form, func() tea.Cmd { return t.prepareForm(formCreate, pick, "", nil) })
+}
+
+// NewIssue opens the create form for Plane project project, prefilled
+// from d (quick capture's shift+enter).
+func (t *Tab) NewIssue(project string, d IssueDraft) tea.Cmd {
+	if t.api == nil {
+		return errCmd(errors.New("plane isn't set up"))
+	}
+	t.dialog, t.onDone = nil, nil // a capture replaces whatever form was open
+	return t.prepareForm(formCreate, project, "", &d)
 }
 
 // editSelected opens the edit form for the selected item.
@@ -160,13 +197,13 @@ func (t *Tab) editSelected() tea.Cmd {
 	if !ok || t.api == nil {
 		return nil
 	}
-	return t.prepareForm(formEdit, w.ProjectID, w.ID)
+	return t.prepareForm(formEdit, w.ProjectID, w.ID, nil)
 }
 
 // prepareForm fetches what the form needs and opens it once everything
 // has arrived (at once when it is all known).
-func (t *Tab) prepareForm(kind formKind, project, itemID string) tea.Cmd {
-	t.queued = &pendingForm{kind: kind, project: project, itemID: itemID}
+func (t *Tab) prepareForm(kind formKind, project, itemID string, draft *IssueDraft) tea.Cmd {
+	t.queued = &pendingForm{kind: kind, project: project, itemID: itemID, draft: draft}
 	cmds := []tea.Cmd{t.loadMeta(project)}
 	if kind == formEdit {
 		api := t.api
@@ -224,14 +261,14 @@ func (t *Tab) openPending() tea.Cmd {
 		return errCmd(errors.New("plane: the project's states didn't load"))
 	}
 	if p.kind == formCreate {
-		return t.openCreate(p.project, m, states)
+		return t.openCreate(p.project, m, states, p.draft)
 	}
 	return t.openEdit(*p.item, m, states)
 }
 
-func (t *Tab) openCreate(project string, m *projectMeta, states []plane.State) tea.Cmd {
-	v := &issueValues{state: defaultState(states).ID, priority: plane.PriorityNone}
-	form := t.issueForm("New issue", m, states, v, nil)
+func (t *Tab) openCreate(project string, m *projectMeta, states []plane.State, draft *IssueDraft) tea.Cmd {
+	v := new(draft.values(defaultState(states).ID))
+	form := issueForm(t.formCtx(), "New issue", m, states, v, nil)
 	return t.openDialog(form, func() tea.Cmd { return t.submitCreate(project, *v) })
 }
 
@@ -249,7 +286,7 @@ func (t *Tab) openEdit(w plane.WorkItem, m *projectMeta, states []plane.State) t
 	}
 	v := orig
 	v.labels = slices.Clone(orig.labels)
-	form := t.issueForm("Edit "+w.Key(), m, states, &v, lossy)
+	form := issueForm(t.formCtx(), "Edit "+w.Key(), m, states, &v, lossy)
 	return t.openDialog(form, func() tea.Cmd { return t.submitEdit(w, orig, v) })
 }
 
@@ -265,7 +302,22 @@ func defaultState(states []plane.State) plane.State {
 
 // --- the form ----------------------------------------------------------------------
 
-func (t *Tab) issueForm(title string, m *projectMeta, states []plane.State, v *issueValues, lossy []string) *huh.Form {
+// formCtx is what the issue form needs from its surroundings, so it can
+// also run outside the tab (RunCreateForm).
+type formCtx struct {
+	theme  *ui.Theme
+	me     plane.User
+	now    time.Time
+	height int                             // rows for the form
+	nameOf func(project, id string) string // a user's name, for an assignee not in the project
+}
+
+func (t *Tab) formCtx() formCtx {
+	_, h := t.dialogSize()
+	return formCtx{theme: t.theme, me: t.me, now: t.now(), height: h, nameOf: t.memberName}
+}
+
+func issueForm(fc formCtx, title string, m *projectMeta, states []plane.State, v *issueValues, lossy []string) *huh.Form {
 	stateOpts := make([]huh.Option[string], len(states))
 	for i, s := range states {
 		stateOpts[i] = huh.NewOption(s.Name, s.ID)
@@ -282,7 +334,7 @@ func (t *Tab) issueForm(title string, m *projectMeta, states []plane.State, v *i
 	descHelp := "Markdown · ctrl+e opens $EDITOR"
 	var fields []huh.Field
 	if len(lossy) > 0 {
-		warn := t.theme.FormWarn.Render(
+		warn := fc.theme.FormWarn.Render(
 			"This description has content forge can't round-trip: " + strings.Join(lossy, ", ") +
 				". Editing it may lose that content; leave it unchanged to keep it.")
 		descHelp += "\n" + warn
@@ -290,7 +342,7 @@ func (t *Tab) issueForm(title string, m *projectMeta, states []plane.State, v *i
 	}
 
 	fields = append(fields,
-		huh.NewInput().Key("title").Title(title).Placeholder("Title").Value(&v.title).Validate(validateTitle),
+		huh.NewInput().Key("title").Title(title).Placeholder("Title").Value(&v.title).Validate(capture.ValidateTitle),
 		huh.NewSelect[string]().Key("state").Title("State").Options(stateOpts...).Value(&v.state),
 		huh.NewSelect[plane.Priority]().Key("priority").Title("Priority").Options(prioOpts...).Value(&v.priority),
 	)
@@ -299,30 +351,18 @@ func (t *Tab) issueForm(title string, m *projectMeta, states []plane.State, v *i
 			Height(min(len(labelOpts), 8)+1).Value(&v.labels)) // +1: the title
 	}
 	fields = append(fields,
-		huh.NewSelect[string]().Key("assignee").Title("Assignee").Options(t.memberOptions(m, v.assignee)...).Value(&v.assignee),
-		huh.NewSelect[string]().Key("cycle").Title("Cycle").Options(t.cycleOptions(m, v.cycle)...).Value(&v.cycle),
+		huh.NewSelect[string]().Key("assignee").Title("Assignee").Options(memberOptions(fc, m, v.assignee)...).Value(&v.assignee),
+		huh.NewSelect[string]().Key("cycle").Title("Cycle").Options(cycleOptions(fc, m, v.cycle)...).Value(&v.cycle),
 	)
 	// The description gets a page of its own, with room to read it.
-	_, h := t.dialogSize()
 	desc := huh.NewText().Key("description").Title(title + " · description").Description(descHelp).
-		Editor(editor.Command()...).EditorExtension("md").Lines(max(h-8, 4)).Value(&v.desc)
+		Editor(editor.Command()...).EditorExtension("md").Lines(max(fc.height-8, 4)).Value(&v.desc)
 	return huh.NewForm(huh.NewGroup(fields...), huh.NewGroup(desc))
 }
 
 // priorities are Plane's priorities, most urgent first.
 var priorities = []plane.Priority{
 	plane.PriorityUrgent, plane.PriorityHigh, plane.PriorityMedium, plane.PriorityLow, plane.PriorityNone,
-}
-
-func validateTitle(s string) error {
-	s = strings.TrimSpace(s)
-	switch {
-	case s == "":
-		return errors.New("a title is required")
-	case len([]rune(s)) > maxTitle:
-		return fmt.Errorf("at most %d characters", maxTitle)
-	}
-	return nil
 }
 
 func validateBody(s string) error {
@@ -334,7 +374,7 @@ func validateBody(s string) error {
 
 // memberOptions are unassigned, me, then the project's other members;
 // current is kept when it isn't a member.
-func (t *Tab) memberOptions(m *projectMeta, current string) []huh.Option[string] {
+func memberOptions(fc formCtx, m *projectMeta, current string) []huh.Option[string] {
 	opts := []huh.Option[string]{huh.NewOption("Unassigned", "")}
 	have := current == ""
 	var others []huh.Option[string]
@@ -343,7 +383,7 @@ func (t *Tab) memberOptions(m *projectMeta, current string) []huh.Option[string]
 			continue
 		}
 		have = have || mem.MemberID == current
-		if t.me.ID != "" && mem.MemberID == t.me.ID {
+		if fc.me.ID != "" && mem.MemberID == fc.me.ID {
 			opts = append(opts, huh.NewOption(userName(*mem.Member)+" (me)", mem.MemberID))
 			continue
 		}
@@ -351,17 +391,21 @@ func (t *Tab) memberOptions(m *projectMeta, current string) []huh.Option[string]
 	}
 	opts = append(opts, others...)
 	if !have {
-		opts = append(opts, huh.NewOption(t.memberName(m.project.ID, current), current))
+		name := "someone"
+		if fc.nameOf != nil {
+			name = fc.nameOf(m.project.ID, current)
+		}
+		opts = append(opts, huh.NewOption(name, current))
 	}
 	return opts
 }
 
 // cycleOptions are none and the project's cycles; current is kept when it
 // is archived.
-func (t *Tab) cycleOptions(m *projectMeta, current string) []huh.Option[string] {
+func cycleOptions(fc formCtx, m *projectMeta, current string) []huh.Option[string] {
 	opts := []huh.Option[string]{huh.NewOption("None", "")}
 	have := current == ""
-	now := t.now()
+	now := fc.now
 	for _, c := range m.cycles {
 		if !c.ArchivedAt.IsZero() && c.ID != current {
 			continue
@@ -381,10 +425,11 @@ func (t *Tab) cycleOptions(m *projectMeta, current string) []huh.Option[string] 
 
 // --- submitting ---------------------------------------------------------------------
 
-func (t *Tab) submitCreate(project string, v issueValues) tea.Cmd {
+// createInput is the create form's values as a WorkItemCreate.
+func createInput(v issueValues) (plane.WorkItemCreate, error) {
 	html, err := plane.MarkdownToHTML(v.desc)
 	if err != nil {
-		return errCmd(fmt.Errorf("plane: description: %w", err))
+		return plane.WorkItemCreate{}, fmt.Errorf("plane: description: %w", err)
 	}
 	in := plane.WorkItemCreate{
 		Name: strings.TrimSpace(v.title), DescriptionHTML: html,
@@ -392,6 +437,14 @@ func (t *Tab) submitCreate(project string, v issueValues) tea.Cmd {
 	}
 	if v.assignee != "" {
 		in.AssigneeIDs = []string{v.assignee}
+	}
+	return in, nil
+}
+
+func (t *Tab) submitCreate(project string, v issueValues) tea.Cmd {
+	in, err := createInput(v)
+	if err != nil {
+		return errCmd(err)
 	}
 	api := t.api
 	return func() tea.Msg {
@@ -483,9 +536,32 @@ func (t *Tab) created(msg createdMsg) tea.Cmd {
 	if msg.err != nil {
 		return errCmd(fmt.Errorf("plane: couldn't create the issue: %s", reason(msg.err)))
 	}
-	w := msg.item
+	w, shown := t.addCreated(msg.project, msg.item)
+	cmds := []tea.Cmd{func() tea.Msg { return ui.SuccessMsg{Text: "created " + w.Key()} }}
+	if shown {
+		cmds = append(cmds, t.Select(w.ID))
+	} else {
+		cmds = append(cmds, func() tea.Msg { return ui.InfoMsg{Text: w.Key() + " is hidden by the current filters"} })
+	}
+	return tea.Batch(append(cmds, t.Refresh())...)
+}
+
+// Created shows an item created outside the tab (quick capture, P3.5) in
+// the lists whose filters match it, selects it and refreshes; the creator
+// reports it.
+func (t *Tab) Created(project string, item plane.WorkItem) tea.Cmd {
+	w, shown := t.addCreated(project, item)
+	if shown {
+		return tea.Batch(t.Select(w.ID), t.Refresh())
+	}
+	return t.Refresh()
+}
+
+// addCreated fills in what a create response lacks, inserts the item and
+// reports whether the current view shows it.
+func (t *Tab) addCreated(project string, w plane.WorkItem) (plane.WorkItem, bool) {
 	if w.ProjectID == "" {
-		w.ProjectID = msg.project
+		w.ProjectID = project
 	}
 	if m := t.meta[w.ProjectID]; w.Identifier == "" && m != nil && m.project.Identifier != "" && w.SequenceID > 0 {
 		w.Identifier = fmt.Sprintf("%s-%d", m.project.Identifier, w.SequenceID)
@@ -496,13 +572,7 @@ func (t *Tab) created(msg createdMsg) tea.Cmd {
 	w = t.withState(w)
 	shown := t.insertItem(w)
 	t.setRows()
-	cmds := []tea.Cmd{func() tea.Msg { return ui.SuccessMsg{Text: "created " + w.Key()} }}
-	if shown {
-		cmds = append(cmds, t.Select(w.ID))
-	} else {
-		cmds = append(cmds, func() tea.Msg { return ui.InfoMsg{Text: w.Key() + " is hidden by the current filters"} })
-	}
-	return tea.Batch(append(cmds, t.Refresh())...)
+	return w, shown
 }
 
 // updated puts the saved item in place of the old one and refreshes, so

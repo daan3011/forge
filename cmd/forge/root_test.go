@@ -35,27 +35,6 @@ func run(t *testing.T, d deps, args ...string) (stdout, stderr string, err error
 	return out.String(), errb.String(), err
 }
 
-func TestStubSubcommands(t *testing.T) {
-	tests := []struct {
-		args    []string
-		feature string
-	}{
-		{[]string{"capture", "fix the thing"}, "P3.5"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.args[0], func(t *testing.T) {
-			_, stderr, err := run(t, deps{}, tt.args...)
-			if err != nil {
-				t.Fatalf("execute: %v", err)
-			}
-			want := "forge " + tt.args[0] + ": not implemented yet (" + tt.feature + ")"
-			if !strings.Contains(stderr, want) {
-				t.Fatalf("stderr = %q, want it to contain %q", stderr, want)
-			}
-		})
-	}
-}
-
 func TestConfigPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

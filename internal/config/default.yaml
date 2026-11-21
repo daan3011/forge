@@ -103,6 +103,7 @@ keybinds:
   # palette: ["ctrl+k"]        # command palette; also works while typing
   # projects: ["ctrl+p"]       # project switcher; also works while typing
   # goto_session: ["ctrl+g"]   # session picker: attach (resuming if needed)
+  # capture: ["ctrl+n"]        # quick capture a Plane issue: title #project !prio @me +label
   # Lists
   # up: ["k", "up"]
   # down: ["j", "down"]
@@ -223,6 +224,17 @@ keybinds:
   # log_fix_edit: ["alt+f"]
   # log_open: ["o"]                # the job in the browser
   # log_close: ["esc", "q"]
+  # Quick capture line (ctrl+n, `forge capture`)
+  # capture_submit: ["enter"]                    # create in the background
+  # capture_full_form: ["shift+enter", "alt+enter"]  # the full form, prefilled
+  # capture_complete: ["tab"]                    # complete the token / apply "did you mean"
+  # capture_complete_prev: ["shift+tab"]
+  # capture_left: ["left", "ctrl+b"]
+  # capture_right: ["right", "ctrl+f"]
+  # capture_home: ["home", "ctrl+a"]
+  # capture_end: ["end", "ctrl+e"]
+  # capture_delete_word: ["ctrl+w", "alt+backspace"]
+  # capture_delete_forward: ["delete"]
   # Text inputs (filter, palette)
   # cancel: ["esc"]
   # accept: ["enter"]

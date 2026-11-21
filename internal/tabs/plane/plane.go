@@ -431,29 +431,35 @@ func (t *Tab) loadMeta(id string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
-		var (
-			m    projectMeta
-			err  error
-			errs []error
-		)
-		if m.project, err = api.Project(ctx, id); err != nil {
-			errs = append(errs, err)
-		}
-		if m.states, err = api.States(ctx, id); err != nil {
-			errs = append(errs, err)
-		}
-		if m.labels, err = api.Labels(ctx, id); err != nil {
-			errs = append(errs, err)
-		}
-		if m.cycles, err = api.Cycles(ctx, id); err != nil {
-			errs = append(errs, err)
-		}
-		if m.members, err = api.ProjectMembers(ctx, id); err != nil {
-			errs = append(errs, err)
-		}
+		m, err := fetchMeta(ctx, api, id)
 		m.at = now()
-		return metaMsg{id: id, meta: m, err: errors.Join(errs...)}
+		return metaMsg{id: id, meta: m, err: err}
 	}
+}
+
+// fetchMeta fetches project id's metadata: what loaded, with the errors.
+func fetchMeta(ctx context.Context, api plane.ProjectReader, id string) (projectMeta, error) {
+	var (
+		m    projectMeta
+		err  error
+		errs []error
+	)
+	if m.project, err = api.Project(ctx, id); err != nil {
+		errs = append(errs, err)
+	}
+	if m.states, err = api.States(ctx, id); err != nil {
+		errs = append(errs, err)
+	}
+	if m.labels, err = api.Labels(ctx, id); err != nil {
+		errs = append(errs, err)
+	}
+	if m.cycles, err = api.Cycles(ctx, id); err != nil {
+		errs = append(errs, err)
+	}
+	if m.members, err = api.ProjectMembers(ctx, id); err != nil {
+		errs = append(errs, err)
+	}
+	return m, errors.Join(errs...)
 }
 
 func (t *Tab) itemsLoaded(msg itemsMsg) tea.Cmd {
