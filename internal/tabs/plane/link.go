@@ -114,8 +114,9 @@ func (t *Tab) autoLink() tea.Cmd {
 	var links []tabs.PlaneLink
 	activeMatched := false
 	for _, p := range t.undecided() {
-		id, ok := projects.PlaneMatch(p.Repo, t.link.planeProjects)
-		if !ok {
+		// The same rule as `forge plane ls` (projects.ResolvePlane).
+		id, src := projects.PlaneLinkOf(*p, t.link.planeProjects)
+		if src != projects.PlaneMatched {
 			continue
 		}
 		links = append(links, tabs.PlaneLink{Repo: p.Repo, PlaneProjectID: id})

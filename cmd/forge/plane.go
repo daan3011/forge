@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -13,6 +12,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/plane"
+	"github.com/daan3011/forge/internal/projects"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/templates"
 )
@@ -66,9 +66,16 @@ func newPlaneCmd(d deps) *cobra.Command {
 	ls := &cobra.Command{
 		Use:   "ls [project]",
 		Short: "List a project's Plane work items",
-		Long: `List work items of a Plane project. project is a forge project name (its
-plane_project_id), a Plane project identifier (e.g. FORGE) or UUID; it can be
-left out inside a repo linked to Plane, or when exactly one project is.`,
+		Long: `List work items of a Plane project, found like the Plane tab finds it:
+
+  1. project is a forge project name (left out: the repo you're in, else
+     the only project linked to Plane);
+  2. its saved link (picked on the Plane tab, or plane_project_id in config);
+  3. else the Plane project whose identifier or name matches the repo name,
+     which is then saved as its link;
+  4. else project is a Plane project identifier (e.g. FORGE), name or UUID.
+
+Without a match the error lists the workspace's Plane projects.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _, _, err := config.LoadOrCreate()
@@ -89,12 +96,23 @@ left out inside a repo linked to Plane, or when exactly one project is.`,
 			if len(args) == 1 {
 				arg = args[0]
 			}
-			if arg == "" && here != "" && slices.ContainsFunc(cfg.Projects, func(p config.Project) bool {
-				return p.Name == here && p.PlaneProjectID != ""
-			}) {
-				arg = here // the repo you're in, when it's linked to Plane
+			res, err := projects.ResolvePlane(cmd.Context(), arg, here, cfg.Projects, c.Projects)
+			if err != nil {
+				return err
 			}
-			return planeLs(cmd.Context(), cmd.OutOrStdout(), c, cfg.Projects, arg, o)
+			if res.Source == projects.PlaneMatched && res.Project != nil {
+				// Save it like the Plane tab does, so it is a link from now on.
+				what := res.Plane.Identifier
+				if what == "" {
+					what = res.ID
+				}
+				if err := st.Projects().SetPlane(cmd.Context(), res.Project.Repo, res.ID); err != nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), "warning: save Plane link:", err)
+				} else {
+					fmt.Fprintf(cmd.ErrOrStderr(), "linked %s to Plane project %s\n", res.Project.Repo, what)
+				}
+			}
+			return planeLs(cmd.Context(), cmd.OutOrStdout(), c, res.ID, o)
 		},
 	}
 	ls.Flags().StringSliceVar(&o.groups, "state-group", nil, "only these state groups (backlog, unstarted, started, completed, cancelled, triage)")
@@ -115,11 +133,7 @@ type planeLsOpts struct {
 	json   bool
 }
 
-func planeLs(ctx context.Context, w io.Writer, c plane.API, projects []config.Project, arg string, o planeLsOpts) error {
-	projectID, err := resolvePlaneProject(ctx, c, projects, arg)
-	if err != nil {
-		return err
-	}
+func planeLs(ctx context.Context, w io.Writer, c plane.API, projectID string, o planeLsOpts) error {
 	f := plane.WorkItemFilter{Search: o.search, Limit: o.limit, Expand: []string{"state"}}
 	for _, g := range o.groups {
 		f.StateGroups = append(f.StateGroups, plane.StateGroup(strings.ToLower(strings.TrimSpace(g))))
@@ -157,49 +171,4 @@ func planeLs(ctx context.Context, w io.Writer, c plane.API, projects []config.Pr
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", it.Key(), state, it.Priority, it.Name)
 	}
 	return tw.Flush()
-}
-
-// resolvePlaneProject turns arg into a Plane project UUID: a forge project
-// name, else a Plane project UUID, identifier or name; "" picks the only
-// forge project with a plane_project_id.
-func resolvePlaneProject(ctx context.Context, c plane.ProjectReader, projects []config.Project, arg string) (string, error) {
-	arg = strings.TrimSpace(arg)
-	if arg == "" {
-		var linked []config.Project
-		for _, p := range projects {
-			if p.PlaneProjectID != "" {
-				linked = append(linked, p)
-			}
-		}
-		switch len(linked) {
-		case 1:
-			return linked[0].PlaneProjectID, nil
-		case 0:
-			return "", fmt.Errorf("no forge project has a plane_project_id; name a Plane project (identifier or UUID)")
-		default:
-			names := make([]string, len(linked))
-			for i, p := range linked {
-				names[i] = p.Name
-			}
-			return "", fmt.Errorf("several projects use Plane; pick one of: %s", strings.Join(names, ", "))
-		}
-	}
-	for _, p := range projects {
-		if strings.EqualFold(p.Name, arg) {
-			if p.PlaneProjectID == "" {
-				return "", fmt.Errorf("project %s has no plane_project_id", p.Name)
-			}
-			return p.PlaneProjectID, nil
-		}
-	}
-	ps, err := c.Projects(ctx)
-	if err != nil {
-		return "", err
-	}
-	for _, p := range ps {
-		if p.ID == arg || strings.EqualFold(p.Identifier, arg) || strings.EqualFold(p.Name, arg) {
-			return p.ID, nil
-		}
-	}
-	return "", fmt.Errorf("no forge or Plane project %q", arg)
 }

@@ -96,14 +96,14 @@ func TestPlaneLs(t *testing.T) {
 			want: []string{`"identifier": "FORGE-10"`, `"name": "Done"`},
 		},
 		{
-			name:    "forge project without plane id",
+			name:    "forge project without a match",
 			args:    []string{"plane", "ls", "other"},
-			wantErr: "other has no plane_project_id",
+			wantErr: "no Plane project matches other (daan/other); name one of: Anvil (ANV), Forge (FORGE)",
 		},
 		{
 			name:    "unknown project",
 			args:    []string{"plane", "ls", "nope"},
-			wantErr: `no forge or Plane project "nope"`,
+			wantErr: `no forge or Plane project "nope"; name one of: Anvil (ANV), Forge (FORGE)`,
 		},
 	}
 	for _, tt := range tests {
@@ -174,5 +174,73 @@ func TestPlaneLsCachesList(t *testing.T) {
 	if !found {
 		b, _ := json.Marshal(stats)
 		t.Errorf("no cached plane list: %s", b)
+	}
+}
+
+// countingPlane counts Projects calls on a real client.
+type countingPlane struct {
+	plane.API
+	mu       sync.Mutex
+	projects int
+}
+
+func (c *countingPlane) Projects(ctx context.Context) ([]plane.Project, error) {
+	c.mu.Lock()
+	c.projects++
+	c.mu.Unlock()
+	return c.API.Projects(ctx)
+}
+
+// TestPlaneLsLinksAutomatically: an unlinked project whose repo name
+// matches a Plane project is listed and its link saved, as the Plane tab
+// does; the next run uses the saved link without listing projects.
+func TestPlaneLsLinksAutomatically(t *testing.T) {
+	d, _ := newEnvCLI(t, `plane: {workspace_slug: smithy, api_key: k3y}
+projects:
+  - {name: forge, repo: daan/forge, path: /tmp}
+`)
+	srv, _ := newPlaneServer(t)
+	var client *countingPlane
+	d.newPlane = func(cfg config.Plane, cache plane.Cache) (plane.API, error) {
+		cfg.BaseURL = srv.URL
+		c, err := plane.New(cfg, "k3y", plane.WithCache(cache, cfg.RefreshInterval.Duration))
+		client = &countingPlane{API: c}
+		return client, err
+	}
+
+	stdout, stderr, err := run(t, d, "plane", "ls", "FORGE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "FORGE-10") || !strings.Contains(stderr, "linked daan/forge to Plane project FORGE") {
+		t.Fatalf("stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if client.projects != 1 {
+		t.Fatalf("%d project lists, want 1", client.projects)
+	}
+
+	st, err := store.Open(context.Background(), d.dbPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.Projects().List(context.Background())
+	st.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := false
+	for _, r := range rows {
+		saved = saved || r.Repo == "daan/forge" && r.PlaneProjectID == "p-forge" && r.PlaneDecided
+	}
+	if !saved {
+		t.Fatalf("link not saved: %+v", rows)
+	}
+
+	stdout, stderr, err = run(t, d, "plane", "ls", "forge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "FORGE-10") || strings.Contains(stderr, "linked") || client.projects != 0 {
+		t.Fatalf("second run: %d project lists, stderr %q", client.projects, stderr)
 	}
 }
