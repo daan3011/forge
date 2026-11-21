@@ -216,6 +216,18 @@ type Theme struct {
 	PaletteSelected       lipgloss.Style
 	PaletteSelectedDetail lipgloss.Style
 	PaletteSelectedHint   lipgloss.Style
+
+	// Quick capture line (P3.5).
+	CaptureBox         lipgloss.Style // the box around the line
+	CapturePrompt      lipgloss.Style // ⚒ before the text
+	CaptureText        lipgloss.Style
+	CaptureToken       lipgloss.Style // #project !prio @person +label
+	CaptureCursor      lipgloss.Style
+	CapturePlaceholder lipgloss.Style
+	CaptureSuggest     lipgloss.Style // a completion candidate
+	CaptureSuggestSel  lipgloss.Style // the candidate tab put in
+	CaptureError       lipgloss.Style
+	CaptureInfo        lipgloss.Style
 }
 
 // NewTheme builds the theme for a dark or light terminal, applying colour
@@ -340,6 +352,17 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		PaletteSelected:       lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		PaletteSelectedDetail: lipgloss.NewStyle().Foreground(p.Muted).Background(p.Surface),
 		PaletteSelectedHint:   lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
+
+		CaptureBox:         lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
+		CapturePrompt:      lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		CaptureText:        base,
+		CaptureToken:       lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		CaptureCursor:      lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent),
+		CapturePlaceholder: lipgloss.NewStyle().Foreground(p.Muted).Italic(true),
+		CaptureSuggest:     lipgloss.NewStyle().Foreground(p.Muted),
+		CaptureSuggestSel:  lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
+		CaptureError:       lipgloss.NewStyle().Foreground(p.Error),
+		CaptureInfo:        lipgloss.NewStyle().Foreground(p.Muted),
 	}
 }
 

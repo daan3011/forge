@@ -173,3 +173,37 @@ func touchProject(s ProjectStore, p *config.Project) tea.Cmd {
 		return nil
 	}
 }
+
+// notice is a message shown once ever, remembered in the store by id.
+type notice struct{ id, text string }
+
+// noticeKind is the kv_cache kind of shown notices.
+const noticeKind = "notice"
+
+// WithNotice shows text as an info toast at startup unless the notice id
+// was shown before (remembered in the store; without one, every start).
+func WithNotice(id, text string) Option {
+	return func(m *Model) { m.notices = append(m.notices, notice{id: id, text: text}) }
+}
+
+// showNotices shows the notices not shown before and remembers them.
+func showNotices(s KVStore, ns []notice) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(ns))
+	for _, n := range ns {
+		cmds = append(cmds, func() tea.Msg {
+			if s != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), recentTimeout)
+				defer cancel()
+				key := "notice:" + n.id
+				if _, err := s.Get(ctx, key); err == nil {
+					return nil
+				}
+				if err := s.Put(ctx, key, noticeKind, "", []byte(time.Now().UTC().Format(time.RFC3339)), 0); err != nil {
+					return ui.ErrMsg{Err: fmt.Errorf("notice: %w", err)}
+				}
+			}
+			return ui.InfoMsg{Text: n.text}
+		})
+	}
+	return tea.Batch(cmds...)
+}

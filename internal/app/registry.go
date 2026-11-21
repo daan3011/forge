@@ -90,6 +90,11 @@ func (m Model) paletteItems() []item {
 			id: "goto_session", title: "Go to session…", group: groupCommands, hint: hint(g.GotoSession),
 			run: func(m Model) (Model, tea.Cmd) { return m.openSessions() },
 		},
+		{
+			id: "capture", title: "Quick capture issue…", group: groupCommands, hint: hint(g.Capture),
+			detail: "title #project !priority @me +label",
+			run:    func(m Model) (Model, tea.Cmd) { return m.openCapture() },
+		},
 	}
 	if m.templatesDir != "" {
 		dir := m.templatesDir

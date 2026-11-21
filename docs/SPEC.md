@@ -208,10 +208,19 @@ All three are palette commands too ("tmux: …").
 | `Alt+d` (`M-d`) | Detach from an agent / close the popup, back to forge |
 | `Alt+[` (`M-[`) | Scroll mode (`q` to leave); with mouse on, the wheel works too |
 | `Alt+w` (`M-w`) | Pick any agent window from a tree |
+| `Alt+c` (`M-c`) | Quick capture a Plane issue in a popup (`forge capture`, P3.5) |
 
 If your own `~/.tmux.conf` binds `M-d` in its root table, your tmux catches it before forge's popup does. forge warns you about this when it opens a popup; remove that binding (e.g. `unbind -n M-d`) and reload your tmux config.
 
 Check your version with `tmux -V`; aim for 3.3 or newer (`display-popup` and `extended-keys` need 3.2+).
+
+`Alt+c` is in forge's tmux.conf since config v2. A forge started with an older file shows a one-time notice to run `forge tmux config --reset`. To capture from **anywhere in your own tmux**, add this line to your `~/.tmux.conf` (forge never edits it):
+
+```tmux
+bind -n M-c display-popup -E -w 76 -h 8 "forge capture"
+```
+
+`shift+enter` (open the full form) needs `set -s extended-keys on` in that tmux; `alt+enter` does the same without it.
 
 ## How to use the prompts
 

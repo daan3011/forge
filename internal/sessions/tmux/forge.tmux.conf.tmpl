@@ -54,6 +54,8 @@ bind -n M-d detach-client
 bind -n M-[ copy-mode
 # Alt+w: pick any agent window from a tree, zoomed.
 bind -n M-w choose-tree -Zw
+# Alt+c: quick capture a Plane issue in a popup (forge capture; tmux 3.2+).
+bind -n M-c display-popup -E -w 76 -h 8 "forge capture"
 
 # --- Status line (forge colours: ember on charcoal) ---------------------------
 
@@ -69,5 +71,5 @@ set -g window-status-format ""
 set -g window-status-current-format ""
 # Give the right side room for the key hints.
 set -g status-right-length 60
-# Right: the three keys you need, muted.
-set -g status-right "#[fg={{.Muted}}]M-d back · M-[ scroll · M-w windows "
+# Right: the keys you need, muted.
+set -g status-right "#[fg={{.Muted}}]M-d back · M-[ scroll · M-w windows · M-c capture "

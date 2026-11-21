@@ -15,8 +15,23 @@ import (
 )
 
 // ConfigVersion is the version of the embedded default config, written in
-// its first line as "# forge-tmux-config v<N>".
-const ConfigVersion = 1
+// its first line as "# forge-tmux-config v<N>". v2 added M-c (quick
+// capture, P3.5).
+const ConfigVersion = 2
+
+// ConfigNews is what ConfigVersion added, for the "your config is old"
+// notice.
+const ConfigNews = "Alt+c capture"
+
+// ConfigVersionOf reads the version header of the config at path; ok is
+// false when the file is missing, unreadable or has no header.
+func ConfigVersionOf(path string) (version int, ok bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	return ParseConfigVersion(data)
+}
 
 //go:embed forge.tmux.conf.tmpl
 var configTemplate string

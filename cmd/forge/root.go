@@ -149,6 +149,9 @@ func newRootCmd(d deps) *cobra.Command {
 			if dir, err := templates.Dir(); err == nil {
 				opts = append(opts, app.WithTemplates(dir, d.providers))
 			}
+			if n, ok := tmuxNotice(); ok {
+				opts = append(opts, n)
+			}
 			model, err := app.New(cfg, opts...)
 			if err != nil {
 				return fmt.Errorf("%s: %w", path, err)
@@ -168,7 +171,7 @@ func newRootCmd(d deps) *cobra.Command {
 	}
 	root.AddCommand(
 		newHookCmd(d),
-		stubCmd("capture [title]", "Quick-capture a Plane issue", "P3.5", cobra.ArbitraryArgs),
+		newCaptureCmd(d),
 		newNewCmd(d),
 		newConfigCmd(d),
 		newTmuxCmd(d),
@@ -178,15 +181,17 @@ func newRootCmd(d deps) *cobra.Command {
 	return root
 }
 
-// stubCmd returns a placeholder subcommand until its feature is built.
-func stubCmd(use, short, feature string, args cobra.PositionalArgs) *cobra.Command {
-	return &cobra.Command{
-		Use:   use,
-		Short: short,
-		Args:  args,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "forge %s: not implemented yet (%s)\n", cmd.Name(), feature)
-			return err
-		},
+// tmuxNotice tells once per config version that forge's tmux.conf is
+// older than the built-in one (an existing file is never rewritten).
+func tmuxNotice() (app.Option, bool) {
+	path, err := config.TmuxConfPath()
+	if err != nil {
+		return nil, false
 	}
+	v, ok := tmux.ConfigVersionOf(path)
+	if !ok || v >= tmux.ConfigVersion {
+		return nil, false
+	}
+	return app.WithNotice(fmt.Sprintf("tmux-config-v%d", tmux.ConfigVersion),
+		"forge's tmux config has updates ("+tmux.ConfigNews+"). Run `forge tmux config --reset` to apply (your file is backed up)."), true
 }

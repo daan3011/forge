@@ -79,8 +79,11 @@ type Model struct {
 
 	palette ui.CommandPalette
 	overlay paletteMode
-	items   []item // registry snapshot taken when the palette opened
-	shown   []item // ranked results
+	capture ui.CaptureInput // the quick capture line (P3.5)
+	cap     captureState
+	notices []notice // shown once ever (WithNotice)
+	items   []item   // registry snapshot taken when the palette opened
+	shown   []item   // ranked results
 	recent  []string
 	store   KVStore
 
@@ -116,6 +119,7 @@ const (
 	overlayCommands             // ctrl+k: every action and entity
 	overlayProjects             // ctrl+p: the project switcher
 	overlaySessions             // ctrl+g: the session picker
+	overlayCapture              // ctrl+n: quick capture (not a picker)
 )
 
 // New returns the root model for the given config. It fails if the keybinds
@@ -159,6 +163,7 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		keys:    keys,
 		help:    ui.NewHelpView(theme, keys),
 		palette: ui.NewCommandPalette(theme, keys),
+		capture: ui.NewCaptureInput(theme, keys, nil),
 		tabs:    ts,
 		toast:   ui.NewToast(theme),
 		status:  ui.NewStatusBar(theme),
@@ -203,7 +208,7 @@ func (m Model) findProject(name string) *config.Project {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.store), m.sched.Start(), m.checkWaiting()}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, clockTick(), loadRecents(m.store), m.sched.Start(), m.checkWaiting(), showNotices(m.store, m.notices)}
 	for _, t := range m.tabs {
 		cmds = append(cmds, t.Init())
 	}
@@ -254,6 +259,8 @@ func (m Model) animating() bool {
 	case m.splash != nil, len(m.bursts) > 0, m.activeFetching():
 		return true
 	case m.overlay != overlayNone && !m.slideIn.Settled(f):
+		return true
+	case m.overlay == overlayCapture && m.capture.Busy():
 		return true
 	case m.helpOpen || len(m.tabs) == 0:
 		return false
@@ -358,6 +365,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tabs.ShowRunsMsg:
 		return m.handleShowRuns(msg)
 
+	case captureCatalogMsg:
+		return m.handleCaptureCatalog(msg)
+
+	case captureCreatedMsg:
+		return m.handleCaptureCreated(msg)
+
 	case tea.FocusMsg:
 		m.focused = true
 		return m, nil
@@ -395,6 +408,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.overlay == overlayCapture {
+		if key.Matches(msg, g.Capture) {
+			m.overlay = overlayNone
+			return m, nil
+		}
+		return m.handleCaptureKey(msg)
+	}
 	if m.overlay != overlayNone {
 		return m.handlePaletteKey(msg)
 	}
@@ -415,6 +435,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, g.GotoSession):
 		return m.openSessions()
+	case key.Matches(msg, g.Capture):
+		return m.openCapture()
 	case key.Matches(msg, g.NextTab):
 		return m.switchTo((m.active + 1) % len(m.tabs))
 	case key.Matches(msg, g.PrevTab):
@@ -555,6 +577,9 @@ func (m *Model) openHelp() {
 // statusKeys are the status bar hints: the tab's own, plus help unless the
 // tab is taking text input (where ? would be typed).
 func (m Model) statusKeys(active tabs.Tab) []key.Binding {
+	if m.overlay == overlayCapture {
+		return m.keys.CaptureHelp()
+	}
 	if m.overlay != overlayNone {
 		in := m.keys.Input
 		return []key.Binding{in.Next, in.Prev, in.Cancel, in.Accept}
@@ -844,7 +869,11 @@ func (m Model) render() string {
 
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(screen)}
 	if m.overlay != overlayNone {
-		if l := m.paletteLayer(); l != nil {
+		l := m.paletteLayer()
+		if m.overlay == overlayCapture {
+			l = m.captureLayer()
+		}
+		if l != nil {
 			layers = append(layers, l)
 		}
 	}

@@ -33,9 +33,12 @@ type KeyMap struct {
 	Diff DiffKeys
 	// Log drives the job log viewer (P2.7), which takes over the Pipelines
 	// tab while open.
-	Log  LogKeys
-	Demo DemoKeys
-	Tmux TmuxDemoKeys
+	Log LogKeys
+	// Capture drives the quick capture line (P3.5): the ctrl+n overlay
+	// and `forge capture`.
+	Capture CaptureKeys
+	Demo    DemoKeys
+	Tmux    TmuxDemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -52,6 +55,8 @@ type GlobalKeys struct {
 	Projects   key.Binding // project switcher; also works while a text input has focus
 	// GotoSession opens the session picker; picking one attaches to it.
 	GotoSession key.Binding
+	// Capture opens the quick capture line (P3.5).
+	Capture key.Binding
 }
 
 // ListKeys drive the list/detail layout every tab uses. Tab-specific groups
@@ -226,6 +231,21 @@ type DiffKeys struct {
 	Close          key.Binding
 }
 
+// CaptureKeys are active while the quick capture line has focus, together
+// with the input Cancel, DeleteBack and ClearInput keys.
+type CaptureKeys struct {
+	Submit       key.Binding // create the item in the background
+	FullForm     key.Binding // open the full create form instead
+	Complete     key.Binding // complete the token, or apply the suggestion
+	CompletePrev key.Binding // previous completion
+	Left         key.Binding
+	Right        key.Binding
+	Home         key.Binding
+	End          key.Binding
+	DeleteWord   key.Binding
+	DeleteFwd    key.Binding
+}
+
 // DemoKeys drive the hidden `forge demo anim` showcase. They are not
 // configurable and not palette commands: the demo is its own program.
 type DemoKeys struct {
@@ -266,6 +286,7 @@ func DefaultKeyMap() *KeyMap {
 			Projects:   bind("switch project", "ctrl+p"),
 
 			GotoSession: bind("go to session", "ctrl+g"),
+			Capture:     bind("quick capture", "ctrl+n"),
 		},
 		List: ListKeys{
 			Up:         bind("up", "k", "up"),
@@ -406,6 +427,18 @@ func DefaultKeyMap() *KeyMap {
 			Open:        bind("open job in browser", "o"),
 			Close:       bind("close", "esc", "q"),
 		},
+		Capture: CaptureKeys{
+			Submit:       bind("create", "enter"),
+			FullForm:     bind("full form", "shift+enter", "alt+enter"),
+			Complete:     bind("complete", "tab"),
+			CompletePrev: bind("prev completion", "shift+tab"),
+			Left:         bind("left", "left", "ctrl+b"),
+			Right:        bind("right", "right", "ctrl+f"),
+			Home:         bind("start of line", "home", "ctrl+a"),
+			End:          bind("end of line", "end", "ctrl+e"),
+			DeleteWord:   bind("delete word", "ctrl+w", "alt+backspace"),
+			DeleteFwd:    bind("delete char under cursor", "delete"),
+		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
 			Burst:   bind("spark burst", "space"),
@@ -447,6 +480,9 @@ const (
 	scopeDiff = "diff"
 	// scopeLog is modal too: the job log viewer (P2.7).
 	scopeLog = "log"
+	// scopeCapture is modal too: the quick capture line (P3.5), live
+	// with the input keys.
+	scopeCapture = "capture"
 )
 
 // isTabScope reports whether scope belongs to one tab (and is active
@@ -455,7 +491,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
-	pp, lg, pl := &k.Pipelines, &k.Log, &k.Plane
+	pp, lg, pl, cp := &k.Pipelines, &k.Log, &k.Plane, &k.Capture
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -468,6 +504,7 @@ func (k *KeyMap) actions() []action {
 		{"palette", scopeMain, &g.Palette},
 		{"projects", scopeMain, &g.Projects},
 		{"goto_session", scopeMain, &g.GotoSession},
+		{"capture", scopeMain, &g.Capture},
 		{"up", scopeMain, &l.Up},
 		{"down", scopeMain, &l.Down},
 		{"top", scopeMain, &l.Top},
@@ -580,6 +617,16 @@ func (k *KeyMap) actions() []action {
 		{"log_fix_edit", scopeLog, &lg.FixEdit},
 		{"log_open", scopeLog, &lg.Open},
 		{"log_close", scopeLog, &lg.Close},
+		{"capture_submit", scopeCapture, &cp.Submit},
+		{"capture_full_form", scopeCapture, &cp.FullForm},
+		{"capture_complete", scopeCapture, &cp.Complete},
+		{"capture_complete_prev", scopeCapture, &cp.CompletePrev},
+		{"capture_left", scopeCapture, &cp.Left},
+		{"capture_right", scopeCapture, &cp.Right},
+		{"capture_home", scopeCapture, &cp.Home},
+		{"capture_end", scopeCapture, &cp.End},
+		{"capture_delete_word", scopeCapture, &cp.DeleteWord},
+		{"capture_delete_forward", scopeCapture, &cp.DeleteFwd},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},
@@ -701,7 +748,14 @@ func helpKey(keys []string) string {
 // GlobalHelp returns the bindings that work on every tab, for the help overlay.
 func (k *KeyMap) GlobalHelp() []key.Binding {
 	g := k.Global
-	return []key.Binding{g.Palette, g.Projects, g.GotoSession, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
+	return []key.Binding{g.Palette, g.Projects, g.GotoSession, g.Capture, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
+}
+
+// CaptureHelp returns the quick capture line's keys, for the status bar
+// and `forge capture`.
+func (k *KeyMap) CaptureHelp() []key.Binding {
+	c := k.Capture
+	return []key.Binding{c.Submit, c.FullForm, c.Complete, k.Input.Cancel}
 }
 
 // HuhKeyMap is the key map for Huh forms embedded in forge: Huh's defaults,
