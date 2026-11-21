@@ -210,3 +210,25 @@ func TestHTMLToMarkdown(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkItemUpdateJSON(t *testing.T) {
+	none, c, name := "", "c-1", "x"
+	tests := []struct {
+		name string
+		in   WorkItemUpdate
+		want string
+	}{
+		{"only set fields", WorkItemUpdate{Name: &name}, `{"name":"x"}`},
+		{"cycle", WorkItemUpdate{CycleID: &c}, `{"cycle_id":"c-1"}`},
+		{"out of cycle", WorkItemUpdate{CycleID: &none}, `{"cycle_id":null}`},
+		{"empty labels", WorkItemUpdate{LabelIDs: &[]string{}}, `{"label_ids":[]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := json.Marshal(tt.in)
+			if err != nil || string(b) != tt.want {
+				t.Errorf("got %s, %v; want %s", b, err, tt.want)
+			}
+		})
+	}
+}

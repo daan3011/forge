@@ -229,6 +229,17 @@ type WorkItemUpdate struct {
 	TargetDate      *string   `json:"target_date,omitempty"`
 }
 
+// MarshalJSON implements json.Marshaler: a CycleID pointing to "" takes
+// the item out of its cycle (null; Plane rejects "" as a UUID).
+func (u WorkItemUpdate) MarshalJSON() ([]byte, error) {
+	type plain WorkItemUpdate
+	b, err := json.Marshal(plain(u))
+	if err != nil || u.CycleID == nil || *u.CycleID != "" {
+		return b, err
+	}
+	return bytes.Replace(b, []byte(`"cycle_id":""`), []byte(`"cycle_id":null`), 1), nil
+}
+
 // CommentCreate is the body of CreateComment.
 type CommentCreate struct {
 	CommentHTML string `json:"comment_html"`

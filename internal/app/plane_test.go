@@ -25,6 +25,36 @@ type fakePlane struct {
 	states  []plane.State
 	updates []string // "id state_id" per UpdateWorkItem
 	lists   int      // WorkItems calls
+	creates []plane.WorkItemCreate
+}
+
+// CreateWorkItem adds the item; the response has its sequence, not its
+// identifier, like Plane's.
+func (f *fakePlane) CreateWorkItem(_ context.Context, project string, in plane.WorkItemCreate) (plane.WorkItem, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.creates = append(f.creates, in)
+	seq := len(f.items) + 1
+	w := plane.WorkItem{
+		ID: in.Name, Name: in.Name, SequenceID: seq, ProjectID: project, StateID: in.StateID,
+		Priority: in.Priority, UpdatedAt: plane.Date{Time: time.Now()},
+	}
+	listed := w
+	listed.Identifier = "FORGE-" + string(rune('0'+seq))
+	for _, st := range f.states {
+		if st.ID == in.StateID {
+			s := st
+			listed.State = &s
+		}
+	}
+	f.items = append(f.items, listed)
+	return w, nil
+}
+
+func (f *fakePlane) createCalls() []plane.WorkItemCreate {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.creates)
 }
 
 func (f *fakePlane) Me(context.Context) (plane.User, error) {
@@ -242,6 +272,60 @@ func TestPlaneBoardMove(t *testing.T) {
 	}
 	tm.Send(press("b"))
 	wait("state: open")
+
+	tm.Send(press("q"))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
+// TestPlaneCreateIssue is the P3.4 "done when" for creating: a new item
+// from the keyboard, its key in a toast, the cursor on it.
+func TestPlaneCreateIssue(t *testing.T) {
+	cfg := planeConfig()
+	todo := plane.State{ID: "s-todo", Name: "Todo", Group: plane.GroupUnstarted, Sequence: 1, IsDefault: true}
+	doing := plane.State{ID: "s-doing", Name: "Doing", Group: plane.GroupStarted, Sequence: 2}
+	api := &fakePlane{
+		states: []plane.State{todo, doing},
+		items: []plane.WorkItem{
+			planeItem(1, "Project switcher", plane.GroupStarted, "u-me"),
+			planeItem(2, "Board columns", plane.GroupUnstarted, "u-bob"),
+		},
+	}
+	m, err := New(cfg, withFetchDelay(0), WithGitHub(fakeGitHub{}), WithPlane(api, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(170, 40))
+
+	var seen []byte
+	wait := func(s string) {
+		t.Helper()
+		teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+			if !bytes.Contains(append(slices.Clip(seen), b...), []byte(s)) {
+				return false
+			}
+			seen = append(seen, b...)
+			return true
+		}, teatest.WithDuration(5*time.Second))
+	}
+	wait("forge")
+	tm.Send(press("4")) // Plane
+	wait("Project switcher")
+	tm.Send(press("m")) // everyone's: the new item is unassigned
+	wait("Board columns")
+	tm.Send(press("n"))
+	wait("New issue")
+	for _, r := range "Palette" {
+		tm.Send(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	// title → state → priority → assignee → cycle → description → submit
+	for range 6 {
+		tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
+	wait("created FORGE-3")
+	wait("issue 1/3") // the cursor on the new (newest) item
+	if got := api.createCalls(); len(got) != 1 || got[0].Name != "Palette" || got[0].StateID != "s-todo" {
+		t.Fatalf("creates = %+v", got)
+	}
 
 	tm.Send(press("q"))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))

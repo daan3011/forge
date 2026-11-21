@@ -125,6 +125,8 @@ type Tab struct {
 
 	det  detailState
 	link linkState
+
+	queued *pendingForm // a create / edit form waiting for its data
 }
 
 var (
@@ -503,10 +505,11 @@ func (t *Tab) metaLoaded(msg metaMsg) tea.Cmd {
 	m := msg.meta
 	t.meta[msg.id] = &m
 	t.setRows() // names the list didn't expand
+	open := t.openPending()
 	if msg.err != nil {
-		return t.toastOnce(fmt.Errorf("project details: %w", msg.err))
+		return tea.Batch(open, t.toastOnce(fmt.Errorf("project details: %w", msg.err)))
 	}
-	return nil
+	return open
 }
 
 // toastOnce reports err unless this refresh already reported one.
@@ -577,6 +580,9 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	if cmd, ok := t.updateDetail(msg); ok {
 		return cmd
 	}
+	if cmd, ok := t.updateEdit(msg); ok {
+		return cmd
+	}
 	switch msg := msg.(type) {
 	case itemsMsg:
 		return t.itemsLoaded(msg)
@@ -606,6 +612,9 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	}
 	if t.mode == modeBoard {
 		return t.updateBoard(kp)
+	}
+	if cmd, ok := t.itemAction(kp); ok {
+		return cmd
 	}
 	l, pk := t.keys.List, t.keys.Plane
 	switch {
@@ -824,6 +833,7 @@ func (t *Tab) resizeTable() {
 // dropped; assignee and states stay.
 func (t *Tab) SetProject(p *config.Project) {
 	t.project = p
+	t.queued = nil
 	t.filt.project, t.filt.label, t.filt.cycle = "", "", ""
 	if t.filter.Visible() {
 		t.clearFilter()
@@ -852,11 +862,11 @@ func (t *Tab) ShortHelp() []key.Binding {
 	pk := t.keys.Plane
 	switch {
 	case t.mode == modeBoard && t.overlay:
-		return []key.Binding{t.keys.Input.Cancel, pk.MovePrev, pk.MoveNext, pk.DetailDown, pk.Open}
+		return []key.Binding{t.keys.Input.Cancel, pk.MovePrev, pk.MoveNext, pk.Edit, pk.Comment, pk.Session, pk.Open}
 	case t.mode == modeBoard:
-		return []key.Binding{pk.ColLeft, pk.ColRight, pk.MovePrev, pk.MoveNext, pk.OpenCard, t.keys.List.Filter, pk.Board}
+		return []key.Binding{pk.ColLeft, pk.ColRight, pk.MovePrev, pk.MoveNext, pk.OpenCard, pk.New, pk.Edit, pk.Board}
 	}
-	return []key.Binding{pk.Filters, pk.Mine, t.keys.List.Filter, pk.Board, pk.Open}
+	return []key.Binding{pk.New, pk.Edit, pk.Comment, pk.Filters, pk.Mine, t.keys.List.Filter, pk.Board}
 }
 
 // FullHelp implements tabs.Tab.
@@ -868,12 +878,14 @@ func (t *Tab) FullHelp() [][]key.Binding {
 			{pk.MovePrev, pk.MoveNext, pk.CollapseColumn, pk.CollapseEmpty, pk.OpenCard, in.Cancel},
 			{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, pk.Board},
 			{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL},
+			{pk.New, pk.Edit, pk.Comment, pk.Session},
 		}
 	}
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, l.ShrinkPane, l.GrowPane},
 		{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL, pk.Board},
+		{pk.New, pk.Edit, pk.Comment, pk.Session},
 		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
 	}
 }
@@ -908,6 +920,10 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "plane_link_project", Title: "Plane: link project…", Run: t.linkProject},
 		{ID: "plane_open", Title: "Issue: open in browser", Key: pk.Open, Run: t.openInBrowser},
 		{ID: "plane_copy_url", Title: "Issue: copy URL", Key: pk.CopyURL, Run: t.copyURL},
+		{ID: "plane_new", Title: "Issue: new…", Key: pk.New, Run: t.newItem},
+		{ID: "plane_edit", Title: "Issue: edit…", Key: pk.Edit, Run: t.editSelected},
+		{ID: "plane_comment", Title: "Issue: comment…", Key: pk.Comment, Run: t.commentSelected},
+		{ID: "plane_session", Title: "Issue: start a forge session", Key: pk.Session, Run: t.startSession},
 		{ID: "plane_board", Title: board, Key: pk.Board, Run: t.toggleBoard},
 		{ID: "plane_col_left", Title: "Board: previous column", Key: pk.ColLeft, Run: boardOnly(func() tea.Cmd { return t.moveColumn(-1) })},
 		{ID: "plane_col_right", Title: "Board: next column", Key: pk.ColRight, Run: boardOnly(func() tea.Cmd { return t.moveColumn(1) })},

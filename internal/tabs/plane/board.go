@@ -344,6 +344,9 @@ func (b *boardState) toggleEmpty() {
 // updateBoard handles keys on the board, and on its card overlay.
 func (t *Tab) updateBoard(kp tea.KeyPressMsg) tea.Cmd {
 	l, pk, b := t.keys.List, t.keys.Plane, &t.board
+	if cmd, ok := t.itemAction(kp); ok {
+		return cmd
+	}
 	if t.overlay {
 		switch {
 		case key.Matches(kp, t.keys.Input.Cancel):

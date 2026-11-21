@@ -134,6 +134,8 @@ type Theme struct {
 	ToastError   lipgloss.Style
 	ToastSuccess lipgloss.Style
 
+	FormWarn lipgloss.Style // a warning inside a form field
+
 	HelpTitle   lipgloss.Style
 	HelpSection lipgloss.Style
 	HelpKey     lipgloss.Style
@@ -261,6 +263,8 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		Toast:        lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Highlight).Foreground(p.Text).Padding(0, 1),
 		ToastError:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Error).Foreground(p.Text).Padding(0, 1),
 		ToastSuccess: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Foreground(p.Highlight).Bold(true).Padding(0, 1),
+
+		FormWarn: lipgloss.NewStyle().Foreground(p.Error),
 
 		HelpTitle:   lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		HelpSection: lipgloss.NewStyle().Foreground(p.Highlight).Bold(true).Underline(true),
