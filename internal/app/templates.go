@@ -34,6 +34,11 @@ func WithGitHub(g github.PRClient) Option {
 	return func(m *Model) { m.github = g }
 }
 
+// WithRuns lets the Pipelines tab list workflow runs (P2.6).
+func WithRuns(r github.RunsClient) Option {
+	return func(m *Model) { m.runs = r }
+}
+
 // WithCheckout lets the PRs tab check PRs out locally (P2.3).
 func WithCheckout(c checkout.Checker) Option {
 	return func(m *Model) { m.checkout = c }

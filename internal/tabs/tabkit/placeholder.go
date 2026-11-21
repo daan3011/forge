@@ -66,6 +66,9 @@ type Deps struct {
 	// Delta colours PR diffs (P2.4); nil, or not installed, falls back to
 	// Lip Gloss colours.
 	Delta delta.Renderer
+	// Runs lists workflow runs and their jobs for the Pipelines tab
+	// (P2.6); nil shows that GitHub isn't available.
+	Runs github.RunsClient
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

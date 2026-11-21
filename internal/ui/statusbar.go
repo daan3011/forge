@@ -155,6 +155,36 @@ func FormatAgo(d time.Duration) string {
 	}
 }
 
+// ShortDuration formats a duration for table cells: "45s", "2m14s",
+// "1h05m".
+func ShortDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
+}
+
+// StateDuration is a check's, job's or run's duration by its state ("fail",
+// "running", "pending", "pass", "skipped", as CheckIcon takes): "2m14s",
+// "running 1m03s", "queued", "skipped" or "—".
+func StateDuration(state string, d time.Duration) string {
+	switch {
+	case state == "running":
+		return "running " + ShortDuration(d)
+	case state == "pending":
+		return "queued"
+	case state == "skipped" && d == 0:
+		return "skipped"
+	case d == 0:
+		return "—"
+	}
+	return ShortDuration(d)
+}
+
 // ShortAge formats a duration as a compact age for table cells: "now",
 // "5m", "3h", "2d", "1w", "4mo", "1y".
 func ShortAge(d time.Duration) string {

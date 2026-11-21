@@ -318,6 +318,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.startSession()
 	case key.Matches(kp, pk.Diff):
 		return t.openDiff()
+	case key.Matches(kp, pk.Runs):
+		return t.showRuns()
 	default:
 		return t.table.Update(kp)
 	}
@@ -776,7 +778,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{pk.NextSection, pk.PrevSection, l.Filter, pk.RepoFilter, pk.StaleOnly, l.ShrinkPane, l.GrowPane},
 		{pk.DetailNext, pk.DetailPrev, pk.DetailDown, pk.DetailUp},
-		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session, pk.Diff},
+		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session, pk.Diff, pk.Runs},
 		{df.Down, df.Up, df.PageDown, df.PageUp, df.Top, df.Bottom, df.NextFile, df.PrevFile},
 		{df.Approve, df.RequestChanges, df.Comment, df.Open, df.Close},
 		{pk.UpdateBranch, pk.Merge, pk.AutoMerge, pk.ToggleDraft},
@@ -845,6 +847,7 @@ func (t *Tab) Commands() []tabs.Command {
 		tabs.Command{ID: "pr_auto_merge", Title: "PR: enable auto-merge…", Key: pk.AutoMerge, Run: t.openAutoMerge},
 		tabs.Command{ID: "pr_toggle_draft", Title: "PR: toggle draft / ready", Key: pk.ToggleDraft, Run: t.toggleDraft},
 		tabs.Command{ID: "pr_session", Title: "PR: start a forge session", Key: pk.Session, Run: t.startSession},
+		tabs.Command{ID: "pr_runs", Title: "PR: show pipeline runs", Key: pk.Runs, Run: t.showRuns},
 	)
 }
 

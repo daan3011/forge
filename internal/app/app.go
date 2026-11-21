@@ -95,6 +95,7 @@ type Model struct {
 	checkout     checkout.Checker    // from WithCheckout
 	clipboard    clipboard.Copier    // from WithClipboard
 	delta        delta.Renderer      // from WithDelta
+	runs         github.RunsClient   // from WithRuns
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -129,6 +130,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Config: cfg, Sessions: m.sessions, Live: m.live,
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
+		Runs: m.runs,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
@@ -336,6 +338,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tabs.StartSessionMsg:
 		return m.handleStartSession(msg)
+
+	case tabs.ShowRunsMsg:
+		return m.handleShowRuns(msg)
 
 	case tea.FocusMsg:
 		m.focused = true
@@ -654,6 +659,21 @@ func (m Model) handleStartSession(msg tabs.StartSessionMsg) (Model, tea.Cmd) {
 		return m, tea.Batch(switchCmd, ss.StartSession(msg.Source))
 	}
 	return m, func() tea.Msg { return ui.ErrMsg{Err: errors.New("sessions are unavailable")} }
+}
+
+// handleShowRuns switches to the tab that lists workflow runs and shows the
+// runs of a repo's branch (tabs.ShowRuns, P2.6).
+func (m Model) handleShowRuns(msg tabs.ShowRunsMsg) (Model, tea.Cmd) {
+	for i, t := range m.tabs {
+		rs, ok := t.(tabs.RunsShower)
+		if !ok {
+			continue
+		}
+		show := rs.ShowRuns(msg.Repo, msg.Branch)
+		m, switchCmd := m.switchTo(i)
+		return m, tea.Batch(switchCmd, show)
+	}
+	return m, func() tea.Msg { return ui.ErrMsg{Err: errors.New("pipelines are unavailable")} }
 }
 
 // handleRateLimit records the GitHub rate limit and backs the GitHub

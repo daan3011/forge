@@ -30,6 +30,8 @@ type Client struct {
 	diffOnce sync.Once // REST asking for diffs (P2.4)
 	diffC    *api.RESTClient
 	diffErr  error
+
+	viewer viewerCache // the login, once known (P2.6)
 }
 
 var (

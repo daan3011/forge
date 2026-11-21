@@ -454,3 +454,17 @@ func (t *Tab) startSession() tea.Cmd {
 		Title: p.Title, State: p.State, Repo: p.Repo, Base: p.BaseRef, Branch: p.HeadRef,
 	})
 }
+
+// showRuns jumps to the Pipelines tab with the PR head branch's workflow
+// runs (P2.6). Runs of fork PRs live in the base repo under the fork's
+// branch name, so the PR's own repo is the one to list.
+func (t *Tab) showRuns() tea.Cmd {
+	p, ok := t.selected()
+	if !ok {
+		return nil
+	}
+	if p.HeadRef == "" {
+		return errCmd(fmt.Errorf("#%d has no head branch", p.Number))
+	}
+	return tabs.ShowRuns(p.Repo, p.HeadRef)
+}

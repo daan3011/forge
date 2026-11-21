@@ -409,6 +409,21 @@ func (t *Theme) StatePill(state string) lipgloss.Style {
 	return s.Background(t.Accent)
 }
 
+// CheckPill is the state pill of a workflow run or job (the github.Check*
+// values), as StatePill is a PR's.
+func (t *Theme) CheckPill(state string) lipgloss.Style {
+	s := lipgloss.NewStyle().Foreground(t.OnAccent).Bold(true).Padding(0, 1)
+	switch state {
+	case "fail":
+		return s.Background(t.Error)
+	case "running", "pending":
+		return s.Background(t.Highlight)
+	case "pass":
+		return s.Background(t.Success)
+	}
+	return s.Background(t.Muted)
+}
+
 // LabelChip is the style of a GitHub label: its own colour ("d73a4a", with
 // or without "#") as background, with dark or light text for contrast. A
 // missing or bad colour gives a surface-coloured chip.

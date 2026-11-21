@@ -142,7 +142,7 @@ func (r *actionRig) feed(cmd tea.Cmd) (toasts, []tea.Msg) {
 		case ui.SuccessMsg:
 			out.success = append(out.success, m.Text)
 			continue
-		case tabs.StartSessionMsg:
+		case tabs.StartSessionMsg, tabs.ShowRunsMsg:
 			other = append(other, m)
 			continue
 		}
@@ -419,6 +419,29 @@ func TestStartSession(t *testing.T) {
 	}
 	if fmt.Sprint(src) != fmt.Sprint(want) {
 		t.Errorf("source = %+v\nwant %+v", src, want)
+	}
+}
+
+func TestShowRuns(t *testing.T) {
+	r := newActionRig(t)
+	_, other := r.keys("p")
+	if len(other) != 1 {
+		t.Fatalf("messages = %v", other)
+	}
+	if got, want := other[0], (tabs.ShowRunsMsg{Repo: "acme/bubbletea", Branch: "feat-1"}); got != want {
+		t.Errorf("msg = %+v, want %+v", got, want)
+	}
+	var cmd *tabs.Command
+	for _, c := range r.tb.Commands() {
+		if c.ID == "pr_runs" {
+			cmd = &c
+		}
+	}
+	if cmd == nil {
+		t.Fatal("no pr_runs palette command")
+	}
+	if _, other := r.feed(cmd.Run()); len(other) != 1 {
+		t.Errorf("palette command sent %v", other)
 	}
 }
 
