@@ -170,6 +170,9 @@ type Theme struct {
 	DiffAdd         lipgloss.Style // +additions
 	DiffDel         lipgloss.Style // -deletions
 	PRTime          lipgloss.Style // updated / created ages
+	PRStale         lipgloss.Style // updated age past github.stale_after_days (amber)
+	PRVeryStale     lipgloss.Style // updated age past twice that (red)
+	PRStaleIcon     lipgloss.Style // the dim clock under a stale PR's age
 
 	// PR diff viewer (P2.4), when delta isn't installed.
 	DiffHunk       lipgloss.Style // @@ -1,4 +1,5 @@
@@ -277,6 +280,9 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		DiffAdd:         lipgloss.NewStyle().Foreground(p.Success),
 		DiffDel:         lipgloss.NewStyle().Foreground(p.Error),
 		PRTime:          base,
+		PRStale:         lipgloss.NewStyle().Foreground(Mix(p.Accent, p.Highlight, 0.5)),
+		PRVeryStale:     lipgloss.NewStyle().Foreground(p.Error),
+		PRStaleIcon:     lipgloss.NewStyle().Foreground(p.Muted),
 
 		DiffHunk:       lipgloss.NewStyle().Foreground(p.Accent),
 		DiffMeta:       lipgloss.NewStyle().Foreground(p.Muted),

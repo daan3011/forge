@@ -124,6 +124,10 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if c.GitHub.StaleAfterDays < 0 {
+		add("github.stale_after_days", "must be 0 or more, got %d", c.GitHub.StaleAfterDays)
+	}
+
 	if u, err := url.Parse(c.Plane.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		add("plane.base_url", "must be an http(s) URL, got %q", c.Plane.BaseURL)
 	}

@@ -84,10 +84,12 @@ type Tab struct {
 	sections []*section
 	active   int
 	repo     string // repo filter ("owner/name"); "" = all repos
-	dialog   *huh.Form
-	onDone   func() tea.Cmd // runs when the dialog is completed
-	authErr  bool           // the last fetch failed for want of a gh login
-	errShown bool           // a fetch error was toasted since the last Refresh
+	// staleOnly hides PRs updated within github.stale_after_days (P2.5).
+	staleOnly bool
+	dialog    *huh.Form
+	onDone    func() tea.Cmd // runs when the dialog is completed
+	authErr   bool           // the last fetch failed for want of a gh login
+	errShown  bool           // a fetch error was toasted since the last Refresh
 
 	det detailState // the detail pane (P2.2)
 
@@ -284,6 +286,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		t.switchSection(t.active - 1)
 	case key.Matches(kp, pk.RepoFilter):
 		return t.openRepoFilter()
+	case key.Matches(kp, pk.StaleOnly):
+		return t.toggleStale()
 	case key.Matches(kp, pk.DetailNext):
 		t.setDetailTab(t.det.tab + 1)
 	case key.Matches(kp, pk.DetailPrev):
@@ -370,18 +374,43 @@ func errCmd(err error) tea.Cmd {
 	return func() tea.Msg { return ui.ErrMsg{Err: err} }
 }
 
-// shownPRs is a section's PRs after the repo filter.
+// shownPRs is a section's PRs after the repo and stale-only filters.
 func (t *Tab) shownPRs(s *section) []github.PR {
-	if t.repo == "" {
+	if t.repo == "" && !t.staleOnly {
 		return s.res.PRs
 	}
 	var out []github.PR
 	for _, p := range s.res.PRs {
-		if strings.EqualFold(p.Repo, t.repo) {
+		if t.shows(p) {
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// shows reports whether p passes the repo and stale-only filters.
+func (t *Tab) shows(p github.PR) bool { return t.inRepo(p) && (!t.staleOnly || t.isStale(p)) }
+
+// inRepo reports whether p passes the repo filter.
+func (t *Tab) inRepo(p github.PR) bool { return t.repo == "" || strings.EqualFold(p.Repo, t.repo) }
+
+// staleDays is github.stale_after_days; 0 means no stale markers.
+func (t *Tab) staleDays() int { return t.cfg.GitHub.StaleAfterDays }
+
+func (t *Tab) isStale(p github.PR) bool {
+	return staleLevel(p.UpdatedAt, t.now(), t.staleDays()) != fresh
+}
+
+// toggleStale switches the stale-only filter, which applies to every
+// section. With the markers off there is nothing to filter on.
+func (t *Tab) toggleStale() tea.Cmd {
+	if !t.staleOnly && t.staleDays() <= 0 {
+		return errCmd(errors.New("stale markers are off (github.stale_after_days is 0)"))
+	}
+	t.staleOnly = !t.staleOnly
+	t.table.SetRows(nil)
+	t.setRows()
+	return nil
 }
 
 // rowsChanged re-lays the table if s is the section on screen.
@@ -397,9 +426,9 @@ func (t *Tab) setRows() {
 	sel := t.selectedID()
 	var rows [][]string
 	if s := t.cur(); s != nil {
-		now := t.now()
+		now, days := t.now(), t.staleDays()
 		for _, p := range t.shownPRs(s) {
-			rows = append(rows, prRow(p, now))
+			rows = append(rows, prRow(p, now, days))
 		}
 	}
 	t.table.SetRows(rows)
@@ -633,7 +662,7 @@ func (t *Tab) SetProject(p *config.Project) {
 		}
 	}
 	if changed {
-		t.repo = ""
+		t.repo, t.staleOnly = "", false
 		t.table.SetRows(nil)
 	}
 }
@@ -692,6 +721,9 @@ func (t *Tab) searchBox(width int) string {
 	if t.repo != "" {
 		line += t.theme.SectionSep.Render(" · ") + t.theme.SearchIcon.Render("repo: ") + t.theme.Body.Render(t.repo)
 	}
+	if t.staleOnly {
+		line += t.theme.SectionSep.Render(" · ") + t.theme.PRStale.Render("◷ stale only")
+	}
 	return t.theme.SearchBox.Render(ui.Box(line, inner, 1))
 }
 
@@ -707,6 +739,8 @@ func (t *Tab) emptyView(w, h int) string {
 		msg = "not logged in to GitHub: run `gh auth login`"
 	case t.cur() != nil && !t.cur().loaded:
 		msg = "heating up…"
+	case t.staleOnly && t.cur() != nil && slices.ContainsFunc(t.cur().res.PRs, t.inRepo):
+		msg = "no stale PRs here · " + t.keys.PRs.StaleOnly.Help().Key + " shows all"
 	case t.repo != "" && t.cur() != nil && len(t.cur().res.PRs) > 0:
 		msg = "no PRs from " + t.repo + " here · " + t.keys.PRs.RepoFilter.Help().Key + " changes the repo"
 	}
@@ -732,7 +766,7 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	}
 	pk := t.keys.PRs
-	return []key.Binding{pk.PrevSection, pk.NextSection, pk.DetailPrev, pk.DetailNext, pk.RepoFilter, t.keys.List.Filter, pk.Diff, pk.Open, pk.Checkout, pk.Merge}
+	return []key.Binding{pk.PrevSection, pk.NextSection, pk.DetailPrev, pk.DetailNext, pk.RepoFilter, pk.StaleOnly, t.keys.List.Filter, pk.Diff, pk.Open, pk.Checkout, pk.Merge}
 }
 
 // FullHelp implements tabs.Tab.
@@ -740,7 +774,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	l, in, pk, df := t.keys.List, t.keys.Input, t.keys.PRs, t.keys.Diff
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
-		{pk.NextSection, pk.PrevSection, l.Filter, pk.RepoFilter, l.ShrinkPane, l.GrowPane},
+		{pk.NextSection, pk.PrevSection, l.Filter, pk.RepoFilter, pk.StaleOnly, l.ShrinkPane, l.GrowPane},
 		{pk.DetailNext, pk.DetailPrev, pk.DetailDown, pk.DetailUp},
 		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session, pk.Diff},
 		{df.Down, df.Up, df.PageDown, df.PageUp, df.Top, df.Bottom, df.NextFile, df.PrevFile},
@@ -779,6 +813,14 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "pr_prev_section", Title: "PRs: previous section", Key: pk.PrevSection, Run: do(func() { t.switchSection(t.active - 1) })},
 		{ID: "pr_repo_filter", Title: "PRs: filter by repo…", Key: pk.RepoFilter, Run: t.openRepoFilter},
 	}...)
+	staleTitle := "PRs: show stale only"
+	if t.staleOnly {
+		staleTitle = "PRs: show all (not just stale)"
+	}
+	cmds = append(cmds, tabs.Command{ID: "pr_stale_only", Title: staleTitle, Key: pk.StaleOnly, Run: func() tea.Cmd {
+		cmd := t.toggleStale()
+		return tea.Batch(cmd, t.syncDetail())
+	}})
 	if t.repo != "" {
 		cmds = append(cmds, tabs.Command{ID: "pr_repo_clear", Title: "PRs: show all repos", Run: do(func() { t.setRepo(allRepos) })})
 	}
@@ -839,8 +881,12 @@ func (t *Tab) Select(id string) tea.Cmd {
 		}
 	}
 	for _, i := range order {
-		if !slices.ContainsFunc(t.sections[i].res.PRs, func(p github.PR) bool { return p.ID() == id }) {
+		at := slices.IndexFunc(t.sections[i].res.PRs, func(p github.PR) bool { return p.ID() == id })
+		if at < 0 {
 			continue
+		}
+		if t.staleOnly && !t.isStale(t.sections[i].res.PRs[at]) {
+			t.staleOnly = false
 		}
 		if t.filter.Visible() {
 			t.clearFilter()

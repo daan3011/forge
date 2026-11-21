@@ -70,6 +70,9 @@ func (p Project) DocsPath() string {
 type GitHub struct {
 	RefreshInterval Duration    `yaml:"refresh_interval"`
 	PRSections      []PRSection `yaml:"pr_sections"`
+	// StaleAfterDays marks PRs not updated in this many days as stale (twice
+	// as long: very stale). 0 turns the markers off.
+	StaleAfterDays int `yaml:"stale_after_days"`
 }
 
 // PRSection is one titled PR list backed by a GitHub search query.
@@ -200,6 +203,7 @@ func Default() *Config {
 				{Title: "Review requested", Query: "is:open review-requested:@me"},
 				{Title: "Involved", Query: "is:open involves:@me"},
 			},
+			StaleAfterDays: 5,
 		},
 		Plane: Plane{
 			BaseURL:         "https://api.plane.so",

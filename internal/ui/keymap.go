@@ -90,6 +90,7 @@ type PRKeys struct {
 	NextSection key.Binding
 	PrevSection key.Binding
 	RepoFilter  key.Binding // pick a repo to narrow every section to
+	StaleOnly   key.Binding // show only stale PRs (P2.5)
 	// The detail pane (P2.2): its Overview / Checks / Activity tabs and
 	// scrolling, while the list keeps j / k.
 	DetailNext key.Binding
@@ -218,6 +219,7 @@ func DefaultKeyMap() *KeyMap {
 			NextSection: bind("next section", "l", "right"),
 			PrevSection: bind("prev section", "h", "left"),
 			RepoFilter:  bind("filter by repo", "f"),
+			StaleOnly:   bind("stale only", "S"),
 			DetailNext:  bind("next detail tab", "]"),
 			DetailPrev:  bind("prev detail tab", "["),
 			DetailDown:  bind("scroll detail down", "J"),
@@ -339,6 +341,7 @@ func (k *KeyMap) actions() []action {
 		{"pr_next_section", scopePRs, &pr.NextSection},
 		{"pr_prev_section", scopePRs, &pr.PrevSection},
 		{"pr_repo_filter", scopePRs, &pr.RepoFilter},
+		{"pr_stale_only", scopePRs, &pr.StaleOnly},
 		{"pr_detail_next", scopePRs, &pr.DetailNext},
 		{"pr_detail_prev", scopePRs, &pr.DetailPrev},
 		{"pr_detail_down", scopePRs, &pr.DetailDown},

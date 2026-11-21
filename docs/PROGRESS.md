@@ -263,7 +263,14 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - tab: open / n / p / scroll / close / cache, modal keys, delta and resize re-render, delta failure fallback, errors, stale results, approve, request changes needing a body, esc, guards, palette, colouriser, `shortenLeft`.
     - app: teatest done-when `TestPRReviewFlow` (`2` → `v` → `n` → `a` → enter → enter → "approved #101").
   - **Limits**: no inline (line) comments, only whole-PR reviews. No pending-review drafts. Re-opening after a review refetches the diff (updatedAt changed). delta isn't installed on the dev machine, so the delta path is only tested with fakes and a stand-in script; `brew install git-delta` to try it.
-- [ ] P2.5 Stale PR markers
+- [x] P2.5 Stale PR markers
+  - **Config**: `github.stale_after_days` (default 5, must be ≥ 0; 0 turns markers and the filter off).
+  - **Markers**: a PR whose `updatedAt` is at least the threshold old is stale: its ◷ (updated) age turns amber (`PRStale`, ember mixed with molten) and a dim ◷ (`PRStaleIcon`) sits on the row's second line. Twice the threshold turns the age red (`PRVeryStale`, error colour). The created column is unchanged.
+    - A column's `Render` only sees its own cell, so the level rides in the updated cell after a `\x1f` separator (`updatedCell` / `splitUpdatedCell` in `rows.go`). It can't be typed, so `/` is unaffected.
+  - **Filter**: `pr_stale_only` S (scope `tab:prs`) toggles "stale only" for every section, on top of the repo filter: counts, rows and the status detail follow, the search box shows "◷ stale only", and an emptied section says "no stale PRs here · S shows all". With the markers off, S toasts instead. `Select` (palette jump) drops the filter when the target PR isn't stale; changing project resets it.
+  - **Palette**: "PRs: show stale only" / "PRs: show all (not just stale)" (`pr_stale_only`).
+  - **Tests**: `staleLevel` boundaries, cell encoding, `renderUpdated`; tab tests for S, counts, empty hint, palette command, `Select`, markers off; config default and validation; app teatest `TestPRStaleFilter` (`2` → `S` → only #98). The app's fake PRs now use clock-relative `updatedAt` so they stay fresh / stale over time.
+  - **Limits**: staleness is GitHub's `updatedAt`, which bot comments, CI status pushes and label changes also bump, so "stale" means "nothing touched it", not "no human activity". Ages are computed when rows are laid out (each fetch / filter change), not ticked live.
 - [ ] P2.6 Pipelines list
 - [ ] P2.7 Log tail & rerun
 - [ ] P2.8 "Fix this" from CI
