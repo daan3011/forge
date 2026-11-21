@@ -1,0 +1,8 @@
+{
+  "data": [
+    {"id": "cm-1", "work_item_id": "w-12", "parent_id": null, "comment_html": "<p>Repro on kitty too.</p>", "comment_stripped": "Repro on kitty too.", "access": "INTERNAL", "actor_id": "u-bob", "edited_at": null, "created_at": "2026-11-18T17:00:00Z", "updated_at": "2026-11-18T17:00:00Z"}
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "pagination": {"style": "cursor"}
+}

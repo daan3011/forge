@@ -1,0 +1,11 @@
+{
+  "data": [
+    {"id": "s-backlog", "name": "Backlog", "color": "#a3a3a3", "group": "backlog", "sequence": 15000, "is_default": true, "is_triage": false},
+    {"id": "s-todo", "name": "Todo", "color": "#3a3a3a", "group": "unstarted", "sequence": 25000, "is_default": false, "is_triage": false},
+    {"id": "s-doing", "name": "In Progress", "color": "#f59e0b", "group": "started", "sequence": 35000, "is_default": false, "is_triage": false},
+    {"id": "s-done", "name": "Done", "color": "#16a34a", "group": "completed", "sequence": 45000, "is_default": false, "is_triage": false}
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "pagination": {"style": "cursor"}
+}

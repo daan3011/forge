@@ -35,7 +35,7 @@ github:
   stale_after_days: 5
 
 plane:
-  # Plane API base URL; change it for self-hosted Plane.
+  # Plane API base URL; change it for self-hosted Plane (it must serve /api/v2).
   base_url: https://api.plane.so
   # Your workspace slug (the part after the host in Plane URLs).
   workspace_slug: ""

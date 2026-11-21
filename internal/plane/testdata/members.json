@@ -1,0 +1,9 @@
+{
+  "data": [
+    {"id": "m-1", "member_id": "u-ada", "role": "owner", "member": {"id": "u-ada", "display_name": "ada", "email": "ada@example.com", "avatar_url": ""}},
+    {"id": "m-2", "member_id": "u-bob", "role": "member", "member": {"id": "u-bob", "display_name": "bob", "email": "bob@example.com", "avatar_url": ""}}
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "pagination": {"style": "cursor"}
+}

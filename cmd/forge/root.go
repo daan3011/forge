@@ -19,6 +19,7 @@ import (
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/notify"
+	"github.com/daan3011/forge/internal/plane"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/live"
@@ -35,7 +36,7 @@ type deps struct {
 	// runForm runs a Huh form on the terminal; nil means no terminal.
 	runForm func(*huh.Form) error
 	// providers resolve {issue_*} / {pr_*} template variables; nil has
-	// none (main sets the GitHub one; Plane comes with P3.1).
+	// none (main sets the GitHub and Plane ones).
 	providers *templates.Registry
 	// db is the database path; empty means store.DefaultPath().
 	db string
@@ -54,6 +55,8 @@ type deps struct {
 	notifier notify.Notifier
 	// loadConfig replaces loading the config in `forge hook`.
 	loadConfig func() (*config.Config, error)
+	// newPlane builds the Plane client; nil means the real one.
+	newPlane func(config.Plane, plane.Cache) (plane.API, error)
 }
 
 func (d deps) sessions(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -156,6 +159,7 @@ func newRootCmd(d deps) *cobra.Command {
 		newNewCmd(d),
 		newConfigCmd(d),
 		newTmuxCmd(d),
+		newPlaneCmd(d),
 		newDemoCmd(),
 	)
 	return root

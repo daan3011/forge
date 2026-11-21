@@ -1,0 +1,1 @@
+{"type": "https://developers.plane.so/api-reference/v2/errors#rate_limited", "code": "rate_limited", "title": "Too many requests", "status": 429, "detail": "Rate limit exceeded."}

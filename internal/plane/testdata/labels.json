@@ -1,0 +1,9 @@
+{
+  "data": [
+    {"id": "l-bug", "name": "bug", "description": "", "color": "#ef4444", "parent_id": null, "sort_order": 65535},
+    {"id": "l-ui", "name": "ui", "description": "Visual work", "color": "#6366f1", "parent_id": null, "sort_order": 131070}
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "pagination": {"style": "cursor"}
+}

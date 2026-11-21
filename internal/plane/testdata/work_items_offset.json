@@ -1,0 +1,9 @@
+{
+  "data": [
+    {"id": "w-11", "name": "Plane client", "identifier": "FORGE-11", "sequence_id": 11, "project_id": "p-forge", "state_id": "s-todo", "priority": "urgent", "assignee_ids": [], "label_ids": []}
+  ],
+  "next": null,
+  "previous": null,
+  "total_count": 1,
+  "pagination": {"style": "offset"}
+}
