@@ -211,11 +211,11 @@ func TestEveryTabFits(t *testing.T) {
 }
 
 // TestRemapChangesBehaviourAndHelp is the P0.5 "done when": a keybinds
-// override changes what the key does and what the help says. (H, not h:
-// h is the PRs tab's previous section.)
+// override changes what the key does and what the help says. (W: h is
+// the PRs tab's previous section and H moves a Plane card.)
 func TestRemapChangesBehaviourAndHelp(t *testing.T) {
 	cfg := config.Default()
-	cfg.Keybinds = map[string][]string{"quit": {"Q"}, "help": {"H"}}
+	cfg.Keybinds = map[string][]string{"quit": {"Q"}, "help": {"W"}}
 	var model tea.Model = mustNew(t, cfg)
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 
@@ -227,7 +227,7 @@ func TestRemapChangesBehaviourAndHelp(t *testing.T) {
 	}
 
 	status := ansi.Strip(model.(Model).render())
-	if !strings.Contains(status, "H help") || strings.Contains(status, "? help") {
+	if !strings.Contains(status, "W help") || strings.Contains(status, "? help") {
 		t.Fatalf("status bar should show the remapped help key:\n%s", status)
 	}
 
@@ -235,15 +235,15 @@ func TestRemapChangesBehaviourAndHelp(t *testing.T) {
 	if model.(Model).helpOpen {
 		t.Fatal("? should no longer open help")
 	}
-	model, _ = model.Update(press("H"))
+	model, _ = model.Update(press("W"))
 	if !model.(Model).helpOpen {
-		t.Fatal("H should open help")
+		t.Fatal("W should open help")
 	}
 	help := strings.Join(strings.Fields(ansi.Strip(model.(Model).render())), " ")
 	if !strings.Contains(help, "Q quit") || strings.Contains(help, "q quit") {
 		t.Fatalf("help should list Q for quit:\n%s", help)
 	}
-	if !strings.Contains(help, "H help") || !strings.Contains(help, "Home") {
+	if !strings.Contains(help, "W help") || !strings.Contains(help, "Home") {
 		t.Fatalf("help should list global and tab sections:\n%s", help)
 	}
 }

@@ -99,21 +99,33 @@ func (t *Table) SetFilter(q string) {
 func (t *Table) Filter() string { return t.filter }
 
 func (t *Table) applyFilter() {
-	q := strings.ToLower(strings.TrimSpace(t.filter))
-	if q == "" {
+	if strings.TrimSpace(t.filter) == "" {
 		t.visible = t.rows
 	} else {
 		t.visible = nil
 		for _, row := range t.rows {
-			for _, cell := range row {
-				if strings.Contains(strings.ToLower(cell), q) {
-					t.visible = append(t.visible, row)
-					break
-				}
+			if RowMatches(row, t.filter) {
+				t.visible = append(t.visible, row)
 			}
 		}
 	}
 	t.clamp()
+}
+
+// RowMatches reports whether a cell of row contains q (case-insensitive,
+// trimmed); an empty q matches every row. It is the table's filter, for
+// views that show the same rows another way (the Plane board).
+func RowMatches(row []string, q string) bool {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return true
+	}
+	for _, cell := range row {
+		if strings.Contains(strings.ToLower(cell), q) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetSize sets the outer size of the table, header included.

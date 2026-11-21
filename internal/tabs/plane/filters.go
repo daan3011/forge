@@ -1,6 +1,7 @@
 package plane
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,6 +82,7 @@ func (t *Tab) updateFilter(msg tea.KeyPressMsg) {
 	default:
 		if t.filter.Update(msg) {
 			t.table.SetFilter(t.filter.Value())
+			t.rebuildBoard()
 		}
 	}
 }
@@ -89,6 +91,7 @@ func (t *Tab) clearFilter() {
 	t.filter.Clear()
 	t.table.SetFilter("")
 	t.resizeTable()
+	t.rebuildBoard()
 }
 
 // --- filter form -------------------------------------------------------------------
@@ -284,7 +287,7 @@ func (t *Tab) filterBox(width int) string {
 	sep := th.SectionSep.Render(" · ")
 	label := func(k, v string) string { return th.SearchIcon.Render(k+": ") + th.Body.Render(v) }
 	var parts []string
-	switch len(t.lists) {
+	switch n := len(t.projectIDs()); n {
 	case 0:
 	case 1:
 		name := t.projectLabel(t.lists[0].id)
@@ -293,7 +296,7 @@ func (t *Tab) filterBox(width int) string {
 		}
 		parts = append(parts, th.SearchQuery.Render(name))
 	default:
-		parts = append(parts, th.SearchQuery.Render(strconv.Itoa(len(t.lists))+" projects"))
+		parts = append(parts, th.SearchQuery.Render(strconv.Itoa(n)+" projects"))
 	}
 	switch t.filt.assignee {
 	case "":
@@ -310,7 +313,9 @@ func (t *Tab) filterBox(width int) string {
 		}
 		parts = append(parts, label("assignee", t.memberName(id, t.filt.assignee)))
 	}
-	if g := groupsLabel(t.filt.groups); g != "" {
+	if t.mode == modeBoard {
+		parts = append(parts, label("board", fmt.Sprintf("every state, closed ≤ %dd", t.cfg.Plane.DoneDays())))
+	} else if g := groupsLabel(t.filt.groups); g != "" {
 		parts = append(parts, label("state", g))
 	}
 	if t.single() {

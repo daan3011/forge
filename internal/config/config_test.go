@@ -42,6 +42,9 @@ func TestDefault(t *testing.T) {
 	if d.Sessions.WorktreeRoot != "/data/forge/worktrees" {
 		t.Errorf("worktree_root = %q", d.Sessions.WorktreeRoot)
 	}
+	if d.Plane.BoardDoneDays != 14 || (Plane{}).DoneDays() != 14 || (Plane{BoardDoneDays: 3}).DoneDays() != 3 {
+		t.Errorf("board_done_days = %d", d.Plane.BoardDoneDays)
+	}
 	if d.Plane.RefreshInterval.Duration != 2*time.Minute || d.Sessions.RefreshInterval.Duration != 10*time.Second {
 		t.Errorf("refresh intervals: plane %s, sessions %s", d.Plane.RefreshInterval, d.Sessions.RefreshInterval)
 	}

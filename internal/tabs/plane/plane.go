@@ -50,11 +50,12 @@ const (
 // renders on its own.
 var listExpand = []string{"state", "labels", "assignees"}
 
-// projectItems is one Plane project's items for the current filters.
+// projectItems is one Plane project's items for one filter.
 type projectItems struct {
 	id         string // Plane project id
 	name       string // forge project name, or "" when not configured
 	key        string // project + filters the list is for
+	filter     plane.WorkItemFilter
 	items      []plane.WorkItem
 	loaded     bool
 	fresh      bool // a fetch for key has landed; ignore older cached data
@@ -100,7 +101,16 @@ type Tab struct {
 	filt    filters
 	me      plane.User
 	asking  bool // Me is being fetched
-	lists   []*projectItems
+	mode    viewMode
+	// lists are the current view's lists: one per project for the list,
+	// two (open / recently closed) for the board.
+	lists []*projectItems
+	// pool keeps both views' lists, so `b` shows data at once.
+	pool map[string]*projectItems
+
+	board   boardState
+	overlay bool                    // the board's card detail is open
+	moves   map[string]*pendingMove // state changes on their way, by item id
 
 	meta     map[string]*projectMeta // by Plane project id
 	metaBusy map[string]bool
@@ -144,6 +154,9 @@ func newTab(d tabkit.Deps) *Tab {
 		filter:   ui.NewFilter(d.Theme, d.Keys),
 		filt:     defaultFilters(),
 		meta:     map[string]*projectMeta{},
+		pool:     map[string]*projectItems{},
+		moves:    map[string]*pendingMove{},
+		board:    newBoardState(),
 		metaBusy: map[string]bool{},
 		synced:   map[string]string{},
 		det:      newDetailState(),
@@ -192,9 +205,20 @@ func (t *Tab) forgeName(id string) string {
 	return ""
 }
 
+// projectIDs are the listed Plane projects, once each.
+func (t *Tab) projectIDs() []string {
+	var out []string
+	for _, l := range t.lists {
+		if !slices.Contains(out, l.id) {
+			out = append(out, l.id)
+		}
+	}
+	return out
+}
+
 // single reports whether exactly one project is listed (label and cycle
 // filters only make sense then).
-func (t *Tab) single() bool { return len(t.lists) == 1 }
+func (t *Tab) single() bool { return len(t.projectIDs()) == 1 }
 
 // apiFilter is what Plane is asked for in project id.
 func (t *Tab) apiFilter(single bool) plane.WorkItemFilter {
@@ -222,27 +246,68 @@ func (t *Tab) apiFilter(single bool) plane.WorkItemFilter {
 	return f
 }
 
-// listKey identifies a project's list under the current filters.
-func listKey(id string, f plane.WorkItemFilter) string {
-	return fmt.Sprintf("%s|%v|%v|%v|%s", id, f.StateGroups, f.AssigneeIDs, f.LabelIDs, f.CycleID)
+// closedGroups are the state groups the board limits by age.
+var closedGroups = []plane.StateGroup{plane.GroupCompleted, plane.GroupCancelled}
+
+// viewFilters are what Plane is asked for per project in mode: the list's
+// filter, or for the board every state (closed ones updated since the
+// cutoff day) with the other filters kept.
+func (t *Tab) viewFilters(mode viewMode, single bool) []plane.WorkItemFilter {
+	f := t.apiFilter(single)
+	if mode == modeList {
+		return []plane.WorkItemFilter{f}
+	}
+	open, closed := f, f
+	open.StateGroups = slices.Clone(openGroups)
+	closed.StateGroups = slices.Clone(closedGroups)
+	closed.UpdatedAfter = t.doneCutoff()
+	return []plane.WorkItemFilter{open, closed}
 }
 
-// rebuildLists lays out the lists for the current project and filters,
-// keeping lists whose key is unchanged.
-func (t *Tab) rebuildLists() {
-	old := map[string]*projectItems{}
-	for _, l := range t.lists {
-		old[l.key] = l
+// doneCutoff is the start of the day board_done_days ago, so the closed
+// lists' cache key stays the same all day.
+func (t *Tab) doneCutoff() time.Time {
+	n := t.now()
+	return time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, n.Location()).AddDate(0, 0, -t.cfg.Plane.DoneDays())
+}
+
+// listKey identifies a project's list under a filter.
+func listKey(id string, f plane.WorkItemFilter) string {
+	after := ""
+	if !f.UpdatedAfter.IsZero() {
+		after = f.UpdatedAfter.UTC().Format(time.RFC3339)
 	}
+	return fmt.Sprintf("%s|%v|%v|%v|%s|%s", id, f.StateGroups, f.AssigneeIDs, f.LabelIDs, f.CycleID, after)
+}
+
+// rebuildLists lays out the lists for the current project, filters and
+// view. The pool keeps both views' lists for the current project and
+// filters and drops the rest.
+func (t *Tab) rebuildLists() {
 	ps := t.projects()
+	single := len(ps) == 1
+	keep := map[string]bool{}
 	t.lists = nil
-	for _, p := range ps {
-		k := listKey(p.id, t.apiFilter(len(ps) == 1))
-		if l := old[k]; l != nil {
-			t.lists = append(t.lists, l)
-			continue
+	for _, mode := range []viewMode{modeList, modeBoard} {
+		for _, p := range ps {
+			for _, f := range t.viewFilters(mode, single) {
+				k := listKey(p.id, f)
+				keep[k] = true
+				l := t.pool[k]
+				if l == nil {
+					l = &projectItems{id: p.id, name: p.name, key: k, filter: f}
+					t.pool[k] = l
+				}
+				if mode == t.mode {
+					t.lists = append(t.lists, l)
+				}
+			}
 		}
-		t.lists = append(t.lists, &projectItems{id: p.id, name: p.name, key: k})
+	}
+	for k := range t.pool {
+		if !keep[k] {
+			delete(t.pool, k)
+		}
 	}
 }
 
@@ -272,10 +337,9 @@ func (t *Tab) Refresh() tea.Cmd {
 	if t.filt.assignee == assigneeMe && t.me.ID == "" {
 		return tea.Batch(append(cmds, t.askMe())...)
 	}
-	single := t.single()
 	for _, l := range t.lists {
 		cmds = append(cmds, t.loadMeta(l.id))
-		f := t.apiFilter(single)
+		f := l.filter
 		if !l.cacheAsked {
 			l.cacheAsked = true
 			cmds = append(cmds, loadCached(t.api, l.key, l.id, f))
@@ -400,6 +464,7 @@ func (t *Tab) itemsLoaded(msg itemsMsg) tea.Cmd {
 			return nil
 		}
 		l.items, l.loaded, l.updated = msg.items, true, msg.at
+		t.reapplyMoves(l)
 		t.setRows()
 		return nil
 	}
@@ -410,6 +475,7 @@ func (t *Tab) itemsLoaded(msg itemsMsg) tea.Cmd {
 	}
 	t.fetchErr = nil
 	l.items, l.loaded, l.fresh, l.updated = msg.items, true, true, msg.at
+	t.reapplyMoves(l)
 	t.setRows()
 	return t.syncStates(l.items)
 }
@@ -522,6 +588,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.planeProjectsLoaded(msg)
 	case linkFailedMsg:
 		return t.linkFailed(msg)
+	case moveDoneMsg:
+		return t.moveDone(msg)
 	case clipboardFallbackMsg:
 		return tea.Batch(tea.SetClipboard(msg.text), func() tea.Msg { return ui.InfoMsg{Text: "copied " + msg.text} })
 	}
@@ -536,12 +604,17 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		t.updateFilter(kp)
 		return nil
 	}
+	if t.mode == modeBoard {
+		return t.updateBoard(kp)
+	}
 	l, pk := t.keys.List, t.keys.Plane
 	switch {
 	case key.Matches(kp, l.Filter):
 		t.startFilter()
 	case key.Matches(kp, t.keys.Input.Cancel) && t.filter.Value() != "":
 		t.clearFilter()
+	case key.Matches(kp, pk.Board):
+		return t.toggleBoard()
 	case key.Matches(kp, pk.Filters):
 		return t.openFilters()
 	case key.Matches(kp, pk.Mine):
@@ -570,11 +643,22 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 
 // --- items & rows ----------------------------------------------------------------
 
-// items is every loaded item, most recently updated first.
+// items is every loaded item of the current view, once each (the newest
+// copy), most recently updated first.
 func (t *Tab) items() []plane.WorkItem {
 	var out []plane.WorkItem
+	at := map[string]int{}
 	for _, l := range t.lists {
-		out = append(out, l.items...)
+		for _, w := range l.items {
+			if i, ok := at[w.ID]; ok {
+				if w.UpdatedAt.After(out[i].UpdatedAt.Time) {
+					out[i] = w
+				}
+				continue
+			}
+			at[w.ID] = len(out)
+			out = append(out, w)
+		}
 	}
 	slices.SortStableFunc(out, func(a, b plane.WorkItem) int {
 		if c := b.UpdatedAt.Compare(a.UpdatedAt.Time); c != 0 {
@@ -600,9 +684,13 @@ func (t *Tab) setRows() {
 	if sel != "" {
 		t.selectID(sel)
 	}
+	t.rebuildBoard()
 }
 
 func (t *Tab) selectedID() string {
+	if t.mode == modeBoard {
+		return t.board.selID
+	}
 	if row := t.table.SelectedRow(); row != nil {
 		return row[len(row)-1]
 	}
@@ -628,8 +716,16 @@ func (t *Tab) selected() (plane.WorkItem, bool) {
 	return t.itemByID(id)
 }
 
+// itemByID finds an item in the current view, else in the other one.
 func (t *Tab) itemByID(id string) (plane.WorkItem, bool) {
 	for _, l := range t.lists {
+		for _, w := range l.items {
+			if w.ID == id {
+				return w, true
+			}
+		}
+	}
+	for _, l := range t.pool {
 		for _, w := range l.items {
 			if w.ID == id {
 				return w, true
@@ -733,8 +829,11 @@ func (t *Tab) SetProject(p *config.Project) {
 		t.clearFilter()
 	}
 	t.lists = nil
+	t.pool = map[string]*projectItems{}
+	t.overlay = false
 	t.rebuildLists()
 	t.table.SetRows(nil)
+	t.rebuildBoard()
 }
 
 // --- interfaces ------------------------------------------------------------------
@@ -751,16 +850,30 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	}
 	pk := t.keys.Plane
-	return []key.Binding{pk.Filters, pk.Mine, t.keys.List.Filter, pk.Open}
+	switch {
+	case t.mode == modeBoard && t.overlay:
+		return []key.Binding{t.keys.Input.Cancel, pk.MovePrev, pk.MoveNext, pk.DetailDown, pk.Open}
+	case t.mode == modeBoard:
+		return []key.Binding{pk.ColLeft, pk.ColRight, pk.MovePrev, pk.MoveNext, pk.OpenCard, t.keys.List.Filter, pk.Board}
+	}
+	return []key.Binding{pk.Filters, pk.Mine, t.keys.List.Filter, pk.Board, pk.Open}
 }
 
 // FullHelp implements tabs.Tab.
 func (t *Tab) FullHelp() [][]key.Binding {
 	l, in, pk := t.keys.List, t.keys.Input, t.keys.Plane
+	if t.mode == modeBoard {
+		return [][]key.Binding{
+			{pk.ColLeft, pk.ColRight, l.Up, l.Down, l.Top, l.Bottom},
+			{pk.MovePrev, pk.MoveNext, pk.CollapseColumn, pk.CollapseEmpty, pk.OpenCard, in.Cancel},
+			{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, pk.Board},
+			{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL},
+		}
+	}
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, l.ShrinkPane, l.GrowPane},
-		{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL},
+		{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL, pk.Board},
 		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
 	}
 }
@@ -773,6 +886,18 @@ func (t *Tab) Commands() []tabs.Command {
 	if t.filt.assignee == assigneeMe {
 		mine = "Plane: show everyone's"
 	}
+	board := "Plane: show board"
+	if t.mode == modeBoard {
+		board = "Plane: show list"
+	}
+	boardOnly := func(f func() tea.Cmd) func() tea.Cmd {
+		return func() tea.Cmd {
+			if t.mode != modeBoard {
+				return tea.Batch(t.toggleBoard(), f())
+			}
+			return f()
+		}
+	}
 	return []tabs.Command{
 		{ID: "filter", Title: "Filter issues", Key: l.Filter, Run: do(t.startFilter)},
 		{ID: "plane_filters", Title: "Plane: filters…", Key: pk.Filters, Run: t.openFilters},
@@ -783,6 +908,14 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "plane_link_project", Title: "Plane: link project…", Run: t.linkProject},
 		{ID: "plane_open", Title: "Issue: open in browser", Key: pk.Open, Run: t.openInBrowser},
 		{ID: "plane_copy_url", Title: "Issue: copy URL", Key: pk.CopyURL, Run: t.copyURL},
+		{ID: "plane_board", Title: board, Key: pk.Board, Run: t.toggleBoard},
+		{ID: "plane_col_left", Title: "Board: previous column", Key: pk.ColLeft, Run: boardOnly(func() tea.Cmd { return t.moveColumn(-1) })},
+		{ID: "plane_col_right", Title: "Board: next column", Key: pk.ColRight, Run: boardOnly(func() tea.Cmd { return t.moveColumn(1) })},
+		{ID: "plane_move_prev", Title: "Issue: move to previous state", Key: pk.MovePrev, Run: func() tea.Cmd { return t.moveCard(-1) }},
+		{ID: "plane_move_next", Title: "Issue: move to next state", Key: pk.MoveNext, Run: func() tea.Cmd { return t.moveCard(1) }},
+		{ID: "plane_collapse_column", Title: "Board: collapse / expand column", Key: pk.CollapseColumn, Run: boardOnly(t.toggleColumn)},
+		{ID: "plane_collapse_empty", Title: "Board: collapse / expand empty columns", Key: pk.CollapseEmpty, Run: boardOnly(t.toggleCollapseEmpty)},
+		{ID: "plane_open_card", Title: "Board: open card", Key: pk.OpenCard, Run: boardOnly(t.openCard)},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(func() { t.split.Grow(); t.resizeTable() })},
 		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(func() { t.split.Shrink(); t.resizeTable() })},
 	}
@@ -825,6 +958,14 @@ func (t *Tab) projectLabel(id string) string {
 // Select implements tabs.EntityProvider, dropping the text filter if it
 // hides the item.
 func (t *Tab) Select(id string) tea.Cmd {
+	if t.mode == modeBoard {
+		t.board.pick(id)
+		t.rebuildBoard()
+		if t.board.selID != id && t.filter.Visible() {
+			t.clearFilter() // the / filter hides it
+		}
+		return t.syncDetail()
+	}
 	if t.selectID(id) {
 		return t.syncDetail()
 	}
@@ -874,12 +1015,17 @@ func (t *Tab) StatusDetail() string {
 	if t.me.ID != "" {
 		parts = append(parts, "@"+userName(t.me))
 	}
-	n := len(t.table.VisibleRows())
-	pos := 0
-	if n > 0 {
-		pos = t.table.Cursor() + 1
+	var s string
+	if t.mode == modeBoard {
+		s = t.boardStatus()
+	} else {
+		n := len(t.table.VisibleRows())
+		pos := 0
+		if n > 0 {
+			pos = t.table.Cursor() + 1
+		}
+		s = fmt.Sprintf("issue %d/%d", pos, n)
 	}
-	s := fmt.Sprintf("issue %d/%d", pos, n)
 	if slices.ContainsFunc(t.lists, func(l *projectItems) bool { return len(l.items) >= listLimit }) {
 		s += fmt.Sprintf(" (first %d per project)", listLimit)
 	}
@@ -894,13 +1040,17 @@ func (t *Tab) View() string {
 		w, h := t.dialogSize()
 		return t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), w, h))
 	}
+	if t.mode == modeBoard {
+		return t.boardScreen()
+	}
 	lw, _ := t.split.LeftSize()
 	list := t.filterBox(lw)
 	if t.filter.Visible() {
 		list += "\n" + t.filter.View(lw)
 	}
 	list += "\n" + t.table.View()
-	return t.split.View(list, t.detail(), true)
+	rw, rh := t.split.RightSize()
+	return t.split.View(list, t.detailView(rw, rh), true)
 }
 
 func (t *Tab) emptyView(w, h int) string {

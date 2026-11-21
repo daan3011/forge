@@ -153,6 +153,9 @@ func newRootCmd(d deps) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}
+			for _, w := range model.Warnings() {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
+			}
 			p := tea.NewProgram(model, tea.WithContext(cmd.Context()))
 			githubPulls.OnResponse = func(resp *http.Response) {
 				if msg := github.Observe(resp, time.Now()); msg != nil {

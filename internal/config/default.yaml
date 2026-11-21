@@ -54,6 +54,8 @@ plane:
   api_key_env: PLANE_API_KEY
   # How often Plane lists refresh in the background (min 5s).
   refresh_interval: 2m
+  # How many days back the board's Done / Cancelled columns reach (min 1).
+  board_done_days: 14
 
 sessions:
   # Where agent worktrees are created
@@ -164,6 +166,14 @@ keybinds:
   # plane_detail_up: ["K"]
   # plane_open: ["o"]              # the work item in the browser
   # plane_copy_url: ["y"]
+  # plane_board: ["b"]             # list <-> kanban board
+  # plane_col_left: ["h", "left"]  # board: previous column
+  # plane_col_right: ["l", "right"]
+  # plane_move_prev: ["H"]         # board: card to the previous state
+  # plane_move_next: ["L"]         # board: card to the next state
+  # plane_collapse_column: ["z"]   # board: collapse / expand the selected column
+  # plane_collapse_empty: ["Z"]    # board: collapse / expand every empty column
+  # plane_open_card: ["enter"]     # board: the card's detail (esc closes it)
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

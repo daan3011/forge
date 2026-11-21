@@ -210,8 +210,15 @@ func (m Model) Init() tea.Cmd {
 	if len(m.tabs) > 0 {
 		cmds = append(cmds, setVisible(m.tabs[m.active], true))
 	}
+	for _, w := range m.Warnings() {
+		cmds = append(cmds, func() tea.Msg { return ui.InfoMsg{Text: "warning: " + w} })
+	}
 	return tea.Batch(cmds...)
 }
+
+// Warnings are startup problems worth telling the user about that don't
+// stop forge, such as refresh intervals clamped to the minimum.
+func (m Model) Warnings() []string { return m.sched.Warnings() }
 
 // setVisible tells a tab that wants to know whether it is on screen.
 func setVisible(t tabs.Tab, v bool) tea.Cmd {
