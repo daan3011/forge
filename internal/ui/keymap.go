@@ -29,6 +29,9 @@ type KeyMap struct {
 	// Diff drives the PR diff viewer (P2.4), which takes over the PRs tab
 	// while open.
 	Diff DiffKeys
+	// Log drives the job log viewer (P2.7), which takes over the Pipelines
+	// tab while open.
+	Log  LogKeys
 	Demo DemoKeys
 	Tmux TmuxDemoKeys
 }
@@ -123,6 +126,33 @@ type PipelineKeys struct {
 	DetailDown   key.Binding
 	DetailUp     key.Binding
 	Open         key.Binding // the run in the browser
+	// Logs and reruns (P2.7).
+	Logs        key.Binding // the failed jobs' logs, collapsed to errors
+	RerunFailed key.Binding
+	RerunAll    key.Binding
+	CancelRun   key.Binding
+}
+
+// LogKeys are active while the job log viewer is open; nothing else (not
+// even the global keys) is.
+type LogKeys struct {
+	Up          key.Binding
+	Down        key.Binding
+	PageUp      key.Binding
+	PageDown    key.Binding
+	Top         key.Binding
+	Bottom      key.Binding
+	ToggleFull  key.Binding // error context <-> the full log
+	Search      key.Binding
+	NextMatch   key.Binding
+	PrevMatch   key.Binding
+	NextJob     key.Binding // the run's next failed job
+	PrevJob     key.Binding
+	RerunFailed key.Binding
+	RerunAll    key.Binding
+	CancelRun   key.Binding
+	Open        key.Binding // the job in the browser
+	Close       key.Binding
 }
 
 // TranscriptKeys are active while the transcript viewer is open; nothing
@@ -258,6 +288,10 @@ func DefaultKeyMap() *KeyMap {
 			DetailDown:   bind("scroll detail down", "J"),
 			DetailUp:     bind("scroll detail up", "K"),
 			Open:         bind("open in browser", "o"),
+			Logs:         bind("job logs", "l"),
+			RerunFailed:  bind("rerun failed jobs", "t"),
+			RerunAll:     bind("rerun whole run", "ctrl+r"),
+			CancelRun:    bind("cancel run", "X"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -285,6 +319,25 @@ func DefaultKeyMap() *KeyMap {
 			Comment:        bind("comment", "C"),
 			Open:           bind("open in browser", "o"),
 			Close:          bind("close", "esc", "q"),
+		},
+		Log: LogKeys{
+			Up:          bind("scroll up", "k", "up"),
+			Down:        bind("scroll down", "j", "down"),
+			PageUp:      bind("page up", "ctrl+u", "pgup"),
+			PageDown:    bind("page down", "ctrl+d", "pgdown", "space"),
+			Top:         bind("top", "g", "home"),
+			Bottom:      bind("bottom", "G", "end"),
+			ToggleFull:  bind("full log / errors", "e"),
+			Search:      bind("search", "/"),
+			NextMatch:   bind("next match", "n"),
+			PrevMatch:   bind("prev match", "N"),
+			NextJob:     bind("next failed job", "]"),
+			PrevJob:     bind("prev failed job", "["),
+			RerunFailed: bind("rerun failed jobs", "t", "R"),
+			RerunAll:    bind("rerun whole run", "ctrl+r"),
+			CancelRun:   bind("cancel run", "X"),
+			Open:        bind("open job in browser", "o"),
+			Close:       bind("close", "esc", "q"),
 		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
@@ -324,6 +377,8 @@ const (
 	scopeTranscript = "transcript"
 	// scopeDiff is modal too: the PR diff viewer (P2.4).
 	scopeDiff = "diff"
+	// scopeLog is modal too: the job log viewer (P2.7).
+	scopeLog = "log"
 )
 
 // isTabScope reports whether scope belongs to one tab (and is active
@@ -332,7 +387,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
-	pp := &k.Pipelines
+	pp, lg := &k.Pipelines, &k.Log
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -388,6 +443,10 @@ func (k *KeyMap) actions() []action {
 		{"pipeline_detail_down", scopePipes, &pp.DetailDown},
 		{"pipeline_detail_up", scopePipes, &pp.DetailUp},
 		{"pipeline_open", scopePipes, &pp.Open},
+		{"pipeline_logs", scopePipes, &pp.Logs},
+		{"pipeline_rerun_failed", scopePipes, &pp.RerunFailed},
+		{"pipeline_rerun", scopePipes, &pp.RerunAll},
+		{"pipeline_cancel", scopePipes, &pp.CancelRun},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},
@@ -411,6 +470,23 @@ func (k *KeyMap) actions() []action {
 		{"diff_comment", scopeDiff, &df.Comment},
 		{"diff_open", scopeDiff, &df.Open},
 		{"diff_close", scopeDiff, &df.Close},
+		{"log_up", scopeLog, &lg.Up},
+		{"log_down", scopeLog, &lg.Down},
+		{"log_page_up", scopeLog, &lg.PageUp},
+		{"log_page_down", scopeLog, &lg.PageDown},
+		{"log_top", scopeLog, &lg.Top},
+		{"log_bottom", scopeLog, &lg.Bottom},
+		{"log_toggle_full", scopeLog, &lg.ToggleFull},
+		{"log_search", scopeLog, &lg.Search},
+		{"log_next_match", scopeLog, &lg.NextMatch},
+		{"log_prev_match", scopeLog, &lg.PrevMatch},
+		{"log_next_job", scopeLog, &lg.NextJob},
+		{"log_prev_job", scopeLog, &lg.PrevJob},
+		{"log_rerun_failed", scopeLog, &lg.RerunFailed},
+		{"log_rerun", scopeLog, &lg.RerunAll},
+		{"log_cancel", scopeLog, &lg.CancelRun},
+		{"log_open", scopeLog, &lg.Open},
+		{"log_close", scopeLog, &lg.Close},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},

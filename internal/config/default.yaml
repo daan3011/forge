@@ -138,6 +138,10 @@ keybinds:
   # pipeline_detail_down: ["J"]
   # pipeline_detail_up: ["K"]
   # pipeline_open: ["o"]           # the run in the browser
+  # pipeline_logs: ["l"]           # failed job logs, collapsed to error context
+  # pipeline_rerun_failed: ["t"]   # rerun failed jobs ("retry")
+  # pipeline_rerun: ["ctrl+r"]     # rerun the whole run
+  # pipeline_cancel: ["X"]         # cancel a queued / running run
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
@@ -163,6 +167,24 @@ keybinds:
   # diff_comment: ["C"]            # comment (body required)
   # diff_open: ["o"]               # open the PR in the browser
   # diff_close: ["esc", "q"]
+  # Job log viewer (only these keys are live while it is open)
+  # log_up: ["k", "up"]
+  # log_down: ["j", "down"]
+  # log_page_up: ["ctrl+u", "pgup"]
+  # log_page_down: ["ctrl+d", "pgdown", "space"]
+  # log_top: ["g", "home"]
+  # log_bottom: ["G", "end"]
+  # log_toggle_full: ["e"]         # error context <-> full log
+  # log_search: ["/"]
+  # log_next_match: ["n"]
+  # log_prev_match: ["N"]
+  # log_next_job: ["]"]            # the run's next failed job
+  # log_prev_job: ["["]
+  # log_rerun_failed: ["t", "R"]
+  # log_rerun: ["ctrl+r"]
+  # log_cancel: ["X"]
+  # log_open: ["o"]                # the job in the browser
+  # log_close: ["esc", "q"]
   # Text inputs (filter, palette)
   # cancel: ["esc"]
   # accept: ["enter"]

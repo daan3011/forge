@@ -1,0 +1,29 @@
+﻿2026-11-20T10:00:00.0000000Z ##[group]Run actions/checkout@v4
+2026-11-20T10:00:00.1000000Z with:
+2026-11-20T10:00:00.2000000Z   repository: daan3011/forge
+2026-11-20T10:00:01.0000000Z ##[endgroup]
+2026-11-20T10:00:02.0000000Z Syncing repository
+2026-11-20T10:00:03.0000000Z ##[group]Run make test
+2026-11-20T10:00:03.1000000Z go test ./...
+2026-11-20T10:00:04.0000000Z ok  	github.com/daan3011/forge/internal/store	0.4s
+2026-11-20T10:00:05.0000000Z ok  	github.com/daan3011/forge/internal/ui	0.2s
+2026-11-20T10:00:06.0000000Z ok  	github.com/daan3011/forge/internal/config	0.1s
+2026-11-20T10:00:07.0000000Z ok  	github.com/daan3011/forge/internal/refresh	0.1s
+2026-11-20T10:00:08.0000000Z ok  	github.com/daan3011/forge/internal/notify	0.1s
+2026-11-20T10:00:09.0000000Z ok  	github.com/daan3011/forge/internal/editor	0.1s
+2026-11-20T10:00:10.0000000Z [31m--- FAIL: TestPipelineLiveProgress (0.02s)[0m
+2026-11-20T10:00:10.1000000Z     pipelines_test.go:412: want running, got done
+2026-11-20T10:00:10.2000000Z FAIL
+2026-11-20T10:00:10.3000000Z FAIL	github.com/daan3011/forge/internal/tabs/pipelines	0.3s
+2026-11-20T10:00:11.0000000Z ok  	github.com/daan3011/forge/internal/github	0.5s
+2026-11-20T10:00:12.0000000Z ok  	github.com/daan3011/forge/internal/browser	0.1s
+2026-11-20T10:00:13.0000000Z ok  	github.com/daan3011/forge/internal/clipboard	0.1s
+2026-11-20T10:00:14.0000000Z ok  	github.com/daan3011/forge/internal/checkout	0.1s
+2026-11-20T10:00:15.0000000Z ok  	github.com/daan3011/forge/internal/delta	0.1s
+2026-11-20T10:00:16.0000000Z ok  	github.com/daan3011/forge/internal/shell	0.1s
+2026-11-20T10:00:17.0000000Z ok  	github.com/daan3011/forge/internal/templates	0.1s
+2026-11-20T10:00:18.0000000Z ok  	github.com/daan3011/forge/internal/sessions	0.9s
+2026-11-20T10:00:19.0000000Z make: *** [Makefile:12: test] Error 1
+2026-11-20T10:00:19.1000000Z ##[error]Process completed with exit code 2.
+2026-11-20T10:00:19.2000000Z ##[endgroup]
+2026-11-20T10:00:20.0000000Z Post job cleanup.

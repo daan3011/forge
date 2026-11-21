@@ -306,7 +306,26 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - prs: `p` and its palette command send `ShowRunsMsg`.
     - app: done-when teatest `TestPipelineLiveProgress` (`2` → `p` → the running run with steps → it finishes → refresh → "succeeded" and the finished job).
   - **Limits**: 30 runs per repo and the latest attempt's jobs only. The 15s loop doesn't follow the app's rate-limit backoff: one list call per repo per tick, only while visible and something runs. Workflow names come from loaded runs. For P2.7, `Job.ID` / `Job.URL` are there for the log tail.
-- [ ] P2.7 Log tail & rerun
+- [x] P2.7 Log tail & rerun — `l` on a run opens a full-screen log viewer on its failed jobs, collapsed to the error context. `t` / `ctrl+r` / `X` rerun the failed jobs, rerun the whole run, or cancel it. Code: `internal/cilog` (pure parsing), `internal/tabs/pipelines/logview.go` (viewer) and `actions.go` (reruns / cancel); client in `internal/github/runs.go`.
+  - **Client** (`github.RunsClient` grew four methods):
+    - `JobLogs(repo, jobID)` is `GET …/actions/jobs/{id}/logs`. GitHub 302s to a signed URL; the HTTP client follows it, and go-gh only sends the token to github.com. The download is capped at 32 MB (`ErrLogTooLarge`). A 404 / 410 becomes `ErrLogsUnavailable` ("expired, or the job hasn't finished").
+    - `RerunFailedJobs` / `RerunRun` / `CancelRun` are `POST …/runs/{id}/rerun-failed-jobs | rerun | cancel`.
+    - Checked live against a failed run of this repo: the log downloads and the `--- FAIL` / `##[error]` context is what the viewer opens on.
+  - **Parsing** (`internal/cilog`, no I/O, table-tested against `testdata/job.log`):
+    - `Clean` strips the BOM, GitHub timestamps, ANSI and `\r` (keeping a progress bar's last frame) and expands tabs. It turns `##[group]X` into `▸ X` and drops `##[endgroup]`.
+    - `IsErrorLine`: `##[error]`, `FAIL`, `failed`, `exit code`, or `error` / `panic` as whole words, so "prone to errors" and `-Werror` don't match.
+    - `Extract` keeps ±5 lines around each match and merges touching windows. `Collapse` puts `⋯ N lines hidden ⋯` between hunks; with no matches it shows the last 40 lines.
+  - **Viewer** (modal, scope `log`; takes over the tab like the PR diff viewer):
+    - The jobs are the run's failed ones. On a green run they are its finished jobs, with a note. A run with no finished jobs toasts. Jobs that aren't loaded yet are fetched first.
+    - Title `repo · workflow #n › job (k/N failed)`. The rule shows the mode (`errors · N hunks` / `full log · N lines` / `no error lines found · showing the tail`), the search state and the position. Line numbers are the full log's.
+    - `e` toggles error context and the full log, keeping the top line. `/` searches as you type (case-insensitive) and `n` / `N` cycle matches. A query found only in hidden lines switches to the full log on enter. `]` / `[` switch failed jobs, `o` opens the job, esc clears the search and then closes.
+    - Logs are downloaded and parsed off the update loop. The last 8 are kept in memory, so switching jobs back is instant. Only visible lines are rendered, so big logs scroll cheaply.
+  - **Error summary for P2.8**: each loaded *failed* job's collapsed context is saved in kv_cache as a `cilog.Summary` (repo, run id / number / attempt, workflow, branch, sha, job id / name / URL, lines, tail flag). Kind is `ci_errors` and the key is `cilog.SummaryKey(repo, runID, jobID)` = `ci_errors:<repo>#<run>:<job>`. Lines are capped at 200 / 16 KB, with no TTL. Job ids change on a rerun, so attempts don't overwrite each other.
+  - **Reruns / cancel**: these act on the viewer's run, else the selected one.
+    - `t` (no confirm) only works when the run finished as failure / cancelled / timed_out / startup_failure; otherwise it toasts.
+    - `ctrl+r` (completed runs) and `X` (active runs) ask with a huh confirm first.
+    - A second press while the call is in flight toasts. On success a toast shows and the runs refresh 3s later; the 15s fast refresh takes over once the new attempt shows as running.
+  - **Keys**: `pipeline_logs` l, `pipeline_rerun_failed` t, `pipeline_rerun` ctrl+r, `pipeline_cancel` X (scope `tab:pipelines`). The viewer (scope `log`) has `log_up`/`log_down`/`log_page_*`/`log_top`/`log_bottom`, `log_toggle_full` e, `log_search` /, `log_next_match` n, `log_prev_match` N, `log_next_job` ], `log_prev_job` [, `log_rerun_failed` t/R, `log_rerun` ctrl+r, `log_cancel` X, `log_open` o and `log_close` esc/q. `R` stays global refresh-all; the viewer is modal, so `R` is free there. All of them are palette commands (the viewer's while it is open) and are documented in `default.yaml`.
 - [ ] P2.8 "Fix this" from CI
   - Note (from P1.9): find a linked session with `Service.LinkedSessions(github_pr, "owner/repo#n")`; otherwise `StartSessionFrom` with `Branch` = the PR's head and `Vars{"failing_log": …}`.
 

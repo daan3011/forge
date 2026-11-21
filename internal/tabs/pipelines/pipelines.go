@@ -104,6 +104,12 @@ type Tab struct {
 	fastOn  bool // a fast refresh timer is armed
 
 	det detailState
+
+	// The log viewer (P2.7); nil when closed.
+	log    *logView
+	logID  int
+	logs   logCache
+	acting map[string]bool // run keys with a rerun / cancel in flight
 }
 
 var (
@@ -133,6 +139,7 @@ func newTab(d tabkit.Deps) *Tab {
 		split:  ui.NewSplitPane(d.Theme),
 		filter: ui.NewFilter(d.Theme, d.Keys),
 		det:    newDetailState(),
+		acting: map[string]bool{},
 	}
 	t.split.SetRatio(listRatio)
 	t.buildTable(false)
@@ -285,6 +292,12 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 
 func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	if cmd, ok := t.updateDetail(msg); ok {
+		if jl, isJobs := msg.(jobsLoadedMsg); isJobs {
+			cmd = tea.Batch(cmd, t.logJobsLoaded(jl))
+		}
+		return cmd
+	}
+	if cmd, ok := t.updateLogMsg(msg); ok {
 		return cmd
 	}
 	switch msg := msg.(type) {
@@ -297,6 +310,10 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.viewerLoaded(msg)
 	case fastTickMsg:
 		return t.fastTick(msg)
+	case runActionMsg:
+		return t.actionDone(msg)
+	case refreshSoonMsg:
+		return t.Refresh()
 	}
 	if t.dialog != nil {
 		return t.updateDialog(msg)
@@ -304,6 +321,9 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	kp, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
+	}
+	if t.log != nil {
+		return t.updateLog(kp)
 	}
 	if t.filter.Active() {
 		t.updateFilter(kp)
@@ -327,6 +347,14 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		t.scrollDetail(-1)
 	case key.Matches(kp, pk.Open):
 		return t.openInBrowser()
+	case key.Matches(kp, pk.Logs):
+		return t.openLogs()
+	case key.Matches(kp, pk.RerunFailed):
+		return t.rerunFailed()
+	case key.Matches(kp, pk.RerunAll):
+		return t.rerunAll()
+	case key.Matches(kp, pk.CancelRun):
+		return t.cancelRun()
 	case key.Matches(kp, l.GrowPane):
 		t.split.Grow()
 		t.resizeTable()
@@ -737,21 +765,7 @@ func (t *Tab) openInBrowser() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	if t.browser == nil {
-		return errCmd(errors.New("can't open a browser here"))
-	}
-	if r.URL == "" {
-		return errCmd(fmt.Errorf("run %d has no URL", r.ID))
-	}
-	b, url := t.browser, r.URL
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := b.Open(ctx, url); err != nil {
-			return ui.ErrMsg{Err: fmt.Errorf("open run: %w", err)}
-		}
-		return nil
-	}
+	return t.openURL(r.URL, "open run")
 }
 
 // --- layout ----------------------------------------------------------------------
@@ -762,6 +776,9 @@ func (t *Tab) SetSize(width, height int) {
 	t.split.SetSize(width, height)
 	t.resizeTable()
 	t.sizeDialog()
+	if t.log != nil {
+		t.clampLog()
+	}
 }
 
 func (t *Tab) resizeTable() {
@@ -777,6 +794,7 @@ func (t *Tab) resizeTable() {
 // Refresh loads them; filters and the override are dropped.
 func (t *Tab) SetProject(p *config.Project) {
 	t.project = p
+	t.log = nil
 	t.override = ""
 	t.filt = filters{}
 	if t.filter.Visible() {
@@ -797,20 +815,24 @@ func (t *Tab) ShortHelp() []key.Binding {
 	switch {
 	case t.dialog != nil:
 		return t.keys.FormHelp()
+	case t.log != nil:
+		return t.logHelp()
 	case t.filter.Active():
 		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
 	}
 	pk := t.keys.Pipelines
-	return []key.Binding{pk.Filters, pk.Mine, pk.ClearFilters, t.keys.List.Filter, pk.Open}
+	return []key.Binding{pk.Logs, pk.RerunFailed, pk.Filters, pk.Mine, t.keys.List.Filter, pk.Open}
 }
 
 // FullHelp implements tabs.Tab.
 func (t *Tab) FullHelp() [][]key.Binding {
-	l, in, pk := t.keys.List, t.keys.Input, t.keys.Pipelines
+	l, in, pk, lg := t.keys.List, t.keys.Input, t.keys.Pipelines, t.keys.Log
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, l.ShrinkPane, l.GrowPane},
-		{pk.DetailDown, pk.DetailUp, pk.Open},
+		{pk.DetailDown, pk.DetailUp, pk.Open, pk.Logs, pk.RerunFailed, pk.RerunAll, pk.CancelRun},
+		{lg.Down, lg.Up, lg.PageDown, lg.PageUp, lg.Top, lg.Bottom, lg.ToggleFull, lg.Search, lg.NextMatch, lg.PrevMatch},
+		{lg.NextJob, lg.PrevJob, lg.RerunFailed, lg.RerunAll, lg.CancelRun, lg.Open, lg.Close},
 		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
 	}
 }
@@ -823,12 +845,25 @@ func (t *Tab) Commands() []tabs.Command {
 	if t.filt.mine {
 		mine = "Pipelines: show everyone's"
 	}
-	cmds := []tabs.Command{
+	var cmds []tabs.Command
+	// In the viewer the action keys are its own (t also takes R there).
+	logs, rerunF, rerunA, cancel := pk.Logs, pk.RerunFailed, pk.RerunAll, pk.CancelRun
+	if t.log != nil {
+		cmds = t.logCommands()
+		logs, rerunF, rerunA, cancel = key.Binding{}, t.keys.Log.RerunFailed, t.keys.Log.RerunAll, t.keys.Log.CancelRun
+	}
+	cmds = append(cmds,
+		tabs.Command{ID: "pipeline_logs", Title: "Run: view failed job logs", Key: logs, Run: t.openLogs},
+		tabs.Command{ID: "pipeline_rerun_failed", Title: "Run: rerun failed jobs", Key: rerunF, Run: t.rerunFailed},
+		tabs.Command{ID: "pipeline_rerun", Title: "Run: rerun whole run…", Key: rerunA, Run: t.rerunAll},
+		tabs.Command{ID: "pipeline_cancel", Title: "Run: cancel…", Key: cancel, Run: t.cancelRun},
+	)
+	cmds = append(cmds, []tabs.Command{
 		{ID: "filter", Title: "Filter runs", Key: l.Filter, Run: do(t.startFilter)},
 		{ID: "pipeline_filters", Title: "Pipelines: filters…", Key: pk.Filters, Run: t.openFilters},
 		{ID: "pipeline_mine", Title: mine, Key: pk.Mine, Run: t.toggleMine},
 		{ID: "pipeline_clear_filters", Title: "Pipelines: clear filters", Key: pk.ClearFilters, Run: t.clearFilters},
-	}
+	}...)
 	return append(cmds,
 		tabs.Command{ID: "pipeline_detail_down", Title: "Pipelines: scroll detail down", Key: pk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
 		tabs.Command{ID: "pipeline_detail_up", Title: "Pipelines: scroll detail up", Key: pk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
@@ -872,7 +907,7 @@ func (t *Tab) Select(id string) tea.Cmd {
 }
 
 // CapturingInput implements tabs.InputCapturer.
-func (t *Tab) CapturingInput() bool { return t.dialog != nil || t.filter.Active() }
+func (t *Tab) CapturingInput() bool { return t.dialog != nil || t.filter.Active() || t.log != nil }
 
 // LastUpdated implements tabs.Updater: the oldest repo fetch, zero until
 // every repo has data.
@@ -936,6 +971,9 @@ func (t *Tab) View() string {
 	if t.dialog != nil {
 		w, h := t.dialogSize()
 		return t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), w, h))
+	}
+	if t.log != nil {
+		return t.logViewString()
 	}
 	lw, _ := t.split.LeftSize()
 	list := t.filterBox(lw)

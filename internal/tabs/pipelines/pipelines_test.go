@@ -37,6 +37,48 @@ type fakeRuns struct {
 	lists   []string // "repo branch=… status=… actor=…"
 	jobCall []int64
 	viewers int
+	logs    map[int64][]byte // job id -> raw log
+	logErr  error
+	logCall []int64
+	actions []string // "rerun-failed 10", …
+	actErr  error
+}
+
+func (f *fakeRuns) JobLogs(_ context.Context, _ string, id int64) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.logCall = append(f.logCall, id)
+	if f.logErr != nil {
+		return nil, f.logErr
+	}
+	return f.logs[id], nil
+}
+
+func (f *fakeRuns) act(name string, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.actions = append(f.actions, fmt.Sprintf("%s %d", name, id))
+	return f.actErr
+}
+
+func (f *fakeRuns) RerunFailedJobs(_ context.Context, _ string, id int64) error {
+	return f.act("rerun-failed", id)
+}
+
+func (f *fakeRuns) RerunRun(_ context.Context, _ string, id int64) error { return f.act("rerun", id) }
+
+func (f *fakeRuns) CancelRun(_ context.Context, _ string, id int64) error { return f.act("cancel", id) }
+
+func (f *fakeRuns) logCalls() []int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.logCall)
+}
+
+func (f *fakeRuns) actionCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.actions)
 }
 
 func (f *fakeRuns) ListRuns(_ context.Context, repo string, fl github.RunFilter) ([]github.Run, error) {
@@ -237,7 +279,7 @@ func (h *harness) drain(cmd tea.Cmd) (errs []string, other []tea.Msg) {
 		case ui.ErrMsg:
 			errs = append(errs, m.Err.Error())
 			continue
-		case tabs.ShowRunsMsg, tabs.StartSessionMsg:
+		case tabs.ShowRunsMsg, tabs.StartSessionMsg, ui.InfoMsg:
 			other = append(other, m)
 			continue
 		}
@@ -262,6 +304,8 @@ func press(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "tab":
 		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "ctrl+r":
+		return tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}
 	}
 	return tea.KeyPressMsg{Code: rune(s[0]), Text: s}
 }

@@ -2,8 +2,10 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -222,5 +224,96 @@ func TestClientViewerMemoised(t *testing.T) {
 	var seen []string
 	if _, err := restServer(&seen, 200, `{}`).Viewer(context.Background()); err == nil {
 		t.Error("want error without a login")
+	}
+}
+
+func TestJobLogsFollowsRedirect(t *testing.T) {
+	var paths []string
+	c := NewClient(api.ClientOptions{
+		Host: "github.com", AuthToken: "t",
+		Transport: roundTrip(func(req *http.Request) (*http.Response, error) {
+			paths = append(paths, req.URL.Host+req.URL.Path)
+			if req.URL.Host == "api.github.com" {
+				resp := respond(req, http.StatusFound, "")
+				resp.Header.Set("Location", "https://logs.example.com/job/7?sig=x")
+				return resp, nil
+			}
+			return respond(req, 200, "2026-11-20T10:00:00Z hello\n"), nil
+		}),
+	})
+	b, err := c.JobLogs(context.Background(), "daan/forge", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "2026-11-20T10:00:00Z hello\n" {
+		t.Errorf("log = %q", b)
+	}
+	want := []string{"api.github.com/repos/daan/forge/actions/jobs/7/logs", "logs.example.com/job/7"}
+	if !slices.Equal(paths, want) {
+		t.Errorf("requests = %v, want %v", paths, want)
+	}
+}
+
+func TestJobLogsErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		repo   string
+		status int
+		body   string
+		want   error
+	}{
+		{"expired", "daan/forge", http.StatusGone, `{"message":"Gone"}`, ErrLogsUnavailable},
+		{"missing", "daan/forge", http.StatusNotFound, `{"message":"Not Found"}`, ErrLogsUnavailable},
+		{"too large", "daan/forge", 200, strings.Repeat("x", MaxLogBytes+1), ErrLogTooLarge},
+		{"bad repo", "forge", 200, "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req *http.Request
+			var body string
+			c := diffServer(&req, &body, tt.status, tt.body)
+			_, err := c.JobLogs(context.Background(), tt.repo, 7)
+			if err == nil {
+				t.Fatal("no error")
+			}
+			if tt.want != nil && !errors.Is(err, tt.want) {
+				t.Errorf("err = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunActions(t *testing.T) {
+	tests := []struct {
+		name     string
+		do       func(*Client) error
+		wantPath string
+	}{
+		{"rerun failed", func(c *Client) error { return c.RerunFailedJobs(context.Background(), "daan/forge", 42) }, "/repos/daan/forge/actions/runs/42/rerun-failed-jobs"},
+		{"rerun", func(c *Client) error { return c.RerunRun(context.Background(), "daan/forge", 42) }, "/repos/daan/forge/actions/runs/42/rerun"},
+		{"cancel", func(c *Client) error { return c.CancelRun(context.Background(), "daan/forge", 42) }, "/repos/daan/forge/actions/runs/42/cancel"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req *http.Request
+			var body string
+			c := diffServer(&req, &body, http.StatusCreated, "{}")
+			if err := tt.do(c); err != nil {
+				t.Fatal(err)
+			}
+			if req.Method != http.MethodPost || req.URL.Path != tt.wantPath {
+				t.Errorf("request = %s %s, want POST %s", req.Method, req.URL.Path, tt.wantPath)
+			}
+		})
+	}
+	var req *http.Request
+	var body string
+	c := diffServer(&req, &body, http.StatusForbidden, `{"message":"This workflow run is not completed"}`)
+	err := c.RerunRun(context.Background(), "daan/forge", 42)
+	if err == nil || Reason(err) != "no permission: This workflow run is not completed" {
+		t.Errorf("err = %v (reason %q)", err, Reason(err))
+	}
+	if err := c.CancelRun(context.Background(), "nope", 1); err == nil {
+		t.Error("bad repo accepted")
 	}
 }

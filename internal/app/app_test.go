@@ -608,6 +608,14 @@ func (f *fakeRuns) RunJobs(context.Context, string, int64) ([]github.Job, error)
 
 func (f *fakeRuns) Viewer(context.Context) (string, error) { return "daan", nil }
 
+func (f *fakeRuns) JobLogs(context.Context, string, int64) ([]byte, error) { return nil, nil }
+
+func (f *fakeRuns) RerunFailedJobs(context.Context, string, int64) error { return nil }
+
+func (f *fakeRuns) RerunRun(context.Context, string, int64) error { return nil }
+
+func (f *fakeRuns) CancelRun(context.Context, string, int64) error { return nil }
+
 // TestPipelineLiveProgress is P2.6's done-when: from a PR, p shows its
 // branch's running pipeline with live jobs and steps, which turn green as
 // the run finishes.
