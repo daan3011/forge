@@ -180,3 +180,33 @@ func TestHTMLToText(t *testing.T) {
 		})
 	}
 }
+
+func TestHTMLToMarkdown(t *testing.T) {
+	tests := []struct{ name, in, want string }{
+		{"empty", "", ""},
+		{"paragraphs", "<p>one</p><p>two<br>three</p>", "one\n\ntwo\nthree"},
+		{"heading", "<h2>Steps</h2><p>do it</p>", "## Steps\n\ndo it"},
+		{"inline", "<p><strong>bold</strong> <em>it</em> <s>gone</s> <code>x&lt;y</code></p>", "**bold** *it* ~~gone~~ `x<y`"},
+		{"link", `<p>see <a href="https://x.dev/a?b=1&amp;c=2" target="_blank">docs</a></p>`, "see [docs](https://x.dev/a?b=1&c=2)"},
+		{"image", `<img src="https://x.dev/i.png" alt="shot">`, "![shot](https://x.dev/i.png)"},
+		{"bullets", "<ul><li><p>a</p></li><li><p>b</p></li></ul>", "- a\n- b"},
+		{"ordered", "<ol><li>a</li><li>b</li></ol>", "1. a\n2. b"},
+		{"nested", "<ul><li><p>a</p><ul><li><p>a1</p></li></ul></li><li><p>b</p></li></ul>", "- a\n  - a1\n- b"},
+		{"tasks", `<ul data-type="taskList"><li data-checked="true" data-type="taskItem"><label><input type="checkbox" checked="checked"><span></span></label><div><p>done</p></div></li><li data-checked="false" data-type="taskItem"><label><input type="checkbox"></label><div><p>todo</p></div></li></ul>`, "- [x] done\n- [ ] todo"},
+		{"code block", `<pre><code class="language-go">func main() {
+	fmt.Println("&lt;hi&gt;")
+}</code></pre><p>after</p>`, "```go\nfunc main() {\n\tfmt.Println(\"<hi>\")\n}\n```\n\nafter"},
+		{"quote", "<blockquote><p>wise</p><p>words</p></blockquote>", "> wise\n>\n> words"},
+		{"rule", "<p>a</p><hr><p>b</p>", "a\n\n---\n\nb"},
+		{"whitespace", "<p>  lots \n of\tspace&nbsp;</p>", "lots of space"},
+		{"unknown tags", `<p>hi <mention-component entity_name="user_mention"></mention-component><span>there</span></p>`, "hi there"},
+		{"comment", "<p>a<!-- x --></p>", "a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HTMLToMarkdown(tt.in); got != tt.want {
+				t.Errorf("got\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}

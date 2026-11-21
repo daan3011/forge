@@ -19,6 +19,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/github"
+	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/refresh"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/alert"
@@ -29,7 +30,7 @@ import (
 	"github.com/daan3011/forge/internal/tabs/docs"
 	"github.com/daan3011/forge/internal/tabs/home"
 	"github.com/daan3011/forge/internal/tabs/pipelines"
-	"github.com/daan3011/forge/internal/tabs/plane"
+	planetab "github.com/daan3011/forge/internal/tabs/plane"
 	"github.com/daan3011/forge/internal/tabs/prs"
 	"github.com/daan3011/forge/internal/tabs/sessions"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
@@ -97,6 +98,8 @@ type Model struct {
 	delta        delta.Renderer      // from WithDelta
 	runs         github.RunsClient   // from WithRuns
 	pulls        github.PullFinder   // from WithPulls
+	plane        plane.API           // from WithPlane
+	planeErr     error               // why plane is nil
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -131,13 +134,13 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Config: cfg, Sessions: m.sessions, Live: m.live,
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
-		Runs: m.runs, Pulls: m.pulls,
+		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
 		prs.New(d),
 		pipelines.New(d),
-		plane.New(d),
+		planetab.New(d),
 		sessions.New(d),
 		docs.New(d),
 		artifacts.New(d),

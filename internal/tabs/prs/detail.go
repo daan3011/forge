@@ -6,17 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/glamour/v2"
-	glamouransi "charm.land/glamour/v2/ansi"
 
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
+	"github.com/daan3011/forge/internal/ui"
 )
 
 // The detail pane (P2.2) shows the selected PR. Its header comes from the
@@ -345,7 +343,7 @@ func (t *Tab) ensureRendered() tea.Cmd {
 		events[i] = ev.Body
 	}
 	return func() tea.Msg {
-		out := renderMarkdown(style, w, append([]string{body}, events...))
+		out := ui.RenderMarkdown(style, w, append([]string{body}, events...))
 		return detailRenderedMsg{key: key, width: w, body: out[0], events: out[1:]}
 	}
 }
@@ -370,28 +368,6 @@ func (t *Tab) detailRendered(msg detailRenderedMsg) {
 		return
 	}
 	e.mdWidth, e.body, e.events = msg.width, msg.body, msg.events
-}
-
-// renderMarkdown renders each text with Glamour at width. Texts Glamour
-// fails on (or blank ones) come back empty; the view then wraps the plain
-// text instead.
-func renderMarkdown(style glamouransi.StyleConfig, width int, texts []string) []string {
-	out := make([]string, len(texts))
-	r, err := glamour.NewTermRenderer(glamour.WithStyles(style), glamour.WithWordWrap(width))
-	if err != nil {
-		return out
-	}
-	for i, s := range texts {
-		if strings.TrimSpace(s) == "" {
-			continue
-		}
-		md, err := r.Render(s)
-		if err != nil {
-			continue
-		}
-		out[i] = strings.Trim(md, "\n")
-	}
-	return out
 }
 
 // --- tabs & scrolling ----------------------------------------------------------------

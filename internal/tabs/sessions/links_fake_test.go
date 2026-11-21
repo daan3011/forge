@@ -24,6 +24,12 @@ func (f *fakeSvc) LinkedSessions(_ context.Context, kind store.LinkKind, id stri
 	return out, nil
 }
 
+func (f *fakeSvc) IssueLinks(context.Context, string) ([]store.Session, []store.Link, error) {
+	return nil, nil, nil
+}
+
+func (f *fakeSvc) SetIssueStates(context.Context, map[string]string) error { return nil }
+
 // SyncPRs links each row to the PR in f.pulls for its branch.
 func (f *fakeSvc) SyncPRs(context.Context, string) (bool, error) {
 	f.mu.Lock()
