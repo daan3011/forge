@@ -88,6 +88,7 @@ type detailState struct {
 	rendering string // "key@width" being rendered
 
 	links    map[string][]store.Session // linked sessions by PR id
+	issues   map[string][]store.Link    // linked Plane work items by PR id (P3.7)
 	linksErr map[string]error
 }
 
@@ -95,7 +96,7 @@ func newDetailState() detailState {
 	return detailState{
 		mem: map[string]*detailEntry{}, latest: map[string]*detailEntry{},
 		inflight: map[string]bool{}, failed: map[string]error{},
-		links: map[string][]store.Session{}, linksErr: map[string]error{},
+		links: map[string][]store.Session{}, issues: map[string][]store.Link{}, linksErr: map[string]error{},
 	}
 }
 
@@ -146,6 +147,7 @@ type detailRenderedMsg struct {
 type linksLoadedMsg struct {
 	id       string
 	sessions []store.Session
+	issues   []store.Link
 	err      error
 }
 
@@ -180,6 +182,7 @@ func (t *Tab) updateDetail(msg tea.Msg) (cmd tea.Cmd, ok bool) {
 		return nil, true
 	case linksLoadedMsg:
 		t.det.links[msg.id], t.det.linksErr[msg.id] = msg.sessions, msg.err
+		t.det.issues[msg.id] = msg.issues
 		return nil, true
 	}
 	return nil, false
@@ -296,7 +299,8 @@ func (t *Tab) detailLoaded(msg detailLoadedMsg) tea.Cmd {
 	return nil
 }
 
-// loadLinks reads the forge sessions linked to the PR (P1.9).
+// loadLinks reads the forge sessions (P1.9) and Plane work items (P3.7)
+// linked to the PR.
 func (t *Tab) loadLinks(id string) tea.Cmd {
 	api := t.sessions
 	if api == nil {
@@ -306,7 +310,8 @@ func (t *Tab) loadLinks(id string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), detailCacheTimeout)
 		defer cancel()
 		ss, err := api.LinkedSessions(ctx, store.KindGitHubPR, id)
-		return linksLoadedMsg{id: id, sessions: ss, err: err}
+		is, ierr := api.PRIssues(ctx, id)
+		return linksLoadedMsg{id: id, sessions: ss, issues: is, err: errors.Join(err, ierr)}
 	}
 }
 

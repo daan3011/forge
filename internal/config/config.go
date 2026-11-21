@@ -105,6 +105,9 @@ type Plane struct {
 	// the cycle summary, by label or state name (case-insensitive).
 	BlockedLabels []string `yaml:"blocked_labels"`
 	BlockedStates []string `yaml:"blocked_states"`
+	// CommentOnPRLink posts a comment with the PR link on a work item when
+	// forge first links an open PR to it (P3.7).
+	CommentOnPRLink bool `yaml:"comment_on_pr_link"`
 }
 
 // IsBlocked reports whether an item with these label names, in this state,

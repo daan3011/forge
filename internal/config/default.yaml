@@ -60,6 +60,10 @@ plane:
   # these labels or are in one of these states (names, case-insensitive).
   blocked_labels: [blocked]
   blocked_states: [Blocked]
+  # When a PR's branch or title names a work item key (PROJ-123), forge links
+  # them. Set this to also post a comment with the PR link on the item, once,
+  # when an open PR is first linked.
+  comment_on_pr_link: false
 
 sessions:
   # Where agent worktrees are created

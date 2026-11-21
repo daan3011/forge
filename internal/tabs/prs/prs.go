@@ -20,6 +20,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/github"
+	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/tabs"
@@ -106,6 +107,11 @@ type Tab struct {
 
 	// runs downloads job logs for "fix this" (P2.8); nil leaves them out.
 	runs github.RunsClient
+
+	// plane finds work item keys and posts back-link comments (P3.7); nil
+	// links nothing.
+	plane plane.API
+	bl    backlinkState
 }
 
 var (
@@ -135,7 +141,7 @@ func newTab(d tabkit.Deps) *Tab {
 		sessions: d.Sessions,
 		tick:     tea.Tick,
 		browser:  d.Browser, clip: d.Clipboard, checkout: d.Checkout, delta: d.Delta,
-		runs: d.Runs,
+		runs: d.Runs, plane: d.Plane,
 		busy: map[string]string{}, patched: map[string]github.PR{},
 		split:  ui.NewSplitPane(d.Theme),
 		filter: ui.NewFilter(d.Theme, d.Keys),
@@ -263,6 +269,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return nil
 	case tabkit.FetchedMsg:
 		return t.fetched(msg)
+	case backlinkedMsg:
+		return t.backlinked(msg)
 	}
 	if t.dialog != nil {
 		return t.updateDialog(msg)
@@ -374,10 +382,11 @@ func (t *Tab) fetched(msg tabkit.FetchedMsg) tea.Cmd {
 	t.applyPatches(&res)
 	s.res, s.loaded, s.fresh, s.updated = res, true, true, msg.At
 	t.rowsChanged(s)
+	bl := t.backlink(res.PRs)
 	if msg.CacheErr != nil {
-		return errCmd(msg.CacheErr)
+		return tea.Batch(bl, errCmd(msg.CacheErr))
 	}
-	return nil
+	return bl
 }
 
 func errCmd(err error) tea.Cmd {

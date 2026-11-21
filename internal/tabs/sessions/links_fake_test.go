@@ -136,3 +136,9 @@ func (f *fakeSvc) SendPrompt(_ context.Context, x store.Session, text string) er
 	f.sent[x.Name] = append(f.sent[x.Name], text)
 	return nil
 }
+
+func (f *fakeSvc) LinkIssuePRs(context.Context, []agent.IssuePR) ([]agent.IssuePR, error) {
+	return nil, nil
+}
+
+func (f *fakeSvc) PRIssues(context.Context, string) ([]store.Link, error) { return nil, nil }
