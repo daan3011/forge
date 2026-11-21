@@ -32,6 +32,7 @@ func TestValidation(t *testing.T) {
 		{"section query", "github:\n  pr_sections:\n    - title: All\n", "github.pr_sections[0].query", 3, "is required"},
 		{"plane url", "plane:\n  base_url: plane.local\n", "plane.base_url", 2, "http(s) URL"},
 		{"relative worktree root", "sessions:\n  worktree_root: wt\n", "sessions.worktree_root", 2, "must be absolute"},
+		{"negative stale", "github:\n  stale_after_days: -1\n", "github.stale_after_days", 2, "0 or more"},
 		{"negative notify", "sessions:\n  notify_after_minutes: -1\n", "sessions.notify_after_minutes", 2, "0 or more"},
 		{"archive cleanup enum", "sessions:\n  archive_cleanup: sometimes\n", "sessions.archive_cleanup", 2, `must be one of ask, always, never; got "sometimes"`},
 		{"bad glob", "artifacts:\n  watch:\n    - /a/[b\n", "artifacts.watch[0]", 3, "invalid glob"},

@@ -30,6 +30,9 @@ github:
       query: "is:open review-requested:@me"
     - title: Involved
       query: "is:open involves:@me"
+  # PRs not updated in this many days get a clock marker and an amber age;
+  # twice as long turns it red. S shows stale PRs only. 0 turns it off.
+  stale_after_days: 5
 
 plane:
   # Plane API base URL; change it for self-hosted Plane.
@@ -113,6 +116,7 @@ keybinds:
   # pr_next_section: ["l", "right"]
   # pr_prev_section: ["h", "left"]
   # pr_repo_filter: ["f"]          # narrow every section to one repo
+  # pr_stale_only: ["S"]           # show only PRs past github.stale_after_days
   # pr_detail_next: ["]"]          # detail pane: next tab (Overview / Checks / Activity)
   # pr_detail_prev: ["["]          # detail pane: previous tab
   # pr_detail_down: ["J"]          # scroll the detail pane down

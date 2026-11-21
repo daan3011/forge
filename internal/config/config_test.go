@@ -45,6 +45,9 @@ func TestDefault(t *testing.T) {
 	if d.Plane.RefreshInterval.Duration != 2*time.Minute || d.Sessions.RefreshInterval.Duration != 10*time.Second {
 		t.Errorf("refresh intervals: plane %s, sessions %s", d.Plane.RefreshInterval, d.Sessions.RefreshInterval)
 	}
+	if d.GitHub.StaleAfterDays != 5 {
+		t.Errorf("stale_after_days = %d, want 5", d.GitHub.StaleAfterDays)
+	}
 	if d.Sessions.NotifyAfterMinutes != 5 || !d.Sessions.NotifyOnError || !d.Sessions.NotifyOnFinish {
 		t.Errorf("notify: after %d, on error %v, on finish %v",
 			d.Sessions.NotifyAfterMinutes, d.Sessions.NotifyOnError, d.Sessions.NotifyOnFinish)

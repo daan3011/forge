@@ -42,7 +42,7 @@ func (t *Tab) columns() []ui.Column {
 		{Title: "✎", Width: 2, Render: icon(t.theme.ReviewIcon)},
 		{Title: "⚙", Width: 2, Render: icon(t.theme.CIIcon)},
 		{Title: "±", Width: 12, Render: t.renderDiff},
-		{Title: "◷", Width: 4, Render: t.renderTime},
+		{Title: "◷", Width: 4, Render: t.renderUpdated},
 		{Title: "✚", Width: 4, Render: t.renderTime},
 		{Title: "id", Hidden: true},
 		{Title: "search", Hidden: true},
@@ -69,15 +69,87 @@ func (t *Tab) renderTime(cell string, width int, row lipgloss.Style) string {
 	return t.theme.PRTime.Inherit(row).Render(ansi.Truncate(cell, width, ""))
 }
 
-// prRow is the table row of a PR, with ages relative to now.
-func prRow(p github.PR, now time.Time) []string {
+// renderUpdated draws the updated age, amber when the PR is stale and red
+// when very stale, with a dim clock on the row's second line.
+func (t *Tab) renderUpdated(cell string, width int, row lipgloss.Style) string {
+	ageText, level := splitUpdatedCell(cell)
+	st := t.theme.PRTime
+	switch level {
+	case stale:
+		st = t.theme.PRStale
+	case veryStale:
+		st = t.theme.PRVeryStale
+	}
+	out := st.Inherit(row).Render(ansi.Truncate(ageText, width, ""))
+	if level != fresh {
+		out += "\n" + t.theme.PRStaleIcon.Inherit(row).Render("◷") + row.Render(strings.Repeat(" ", max(width-1, 0)))
+	}
+	return out
+}
+
+// staleness is how long a PR has gone without an update, measured against
+// github.stale_after_days.
+type staleness int
+
+const (
+	fresh     staleness = iota
+	stale               // not updated for at least the threshold
+	veryStale           // not updated for at least twice the threshold
+)
+
+// staleLevel grades a PR last updated at updated; days <= 0 turns the
+// markers off.
+func staleLevel(updated, now time.Time, days int) staleness {
+	if days <= 0 || updated.IsZero() {
+		return fresh
+	}
+	threshold := time.Duration(days) * 24 * time.Hour
+	switch idle := now.Sub(updated); {
+	case idle >= 2*threshold:
+		return veryStale
+	case idle >= threshold:
+		return stale
+	default:
+		return fresh
+	}
+}
+
+// staleSep joins the updated age and its staleness in the cell, since a
+// column's Render only sees its own cell. It can't be typed, so `/` never
+// matches it.
+const staleSep = "\x1f"
+
+func updatedCell(ageText string, level staleness) string {
+	if level == fresh {
+		return ageText
+	}
+	return ageText + staleSep + fmt.Sprint(int(level))
+}
+
+func splitUpdatedCell(cell string) (string, staleness) {
+	ageText, lvl, ok := strings.Cut(cell, staleSep)
+	if !ok {
+		return cell, fresh
+	}
+	switch lvl {
+	case "1":
+		return ageText, stale
+	case "2":
+		return ageText, veryStale
+	}
+	return ageText, fresh
+}
+
+// prRow is the table row of a PR, with ages relative to now; staleDays is
+// github.stale_after_days.
+func prRow(p github.PR, now time.Time, staleDays int) []string {
 	row := make([]string, colSearch+1)
 	row[colState] = p.State
 	row[colTitle] = fmt.Sprintf("%s · #%d\n%s", p.Repo, p.Number, p.Title)
 	row[colReview] = p.ReviewDecision
 	row[colCI] = p.CI
 	row[colDiff] = "+" + compact(p.Additions) + " -" + compact(p.Deletions)
-	row[colUpdated] = age(now, p.UpdatedAt)
+	row[colUpdated] = updatedCell(age(now, p.UpdatedAt), staleLevel(p.UpdatedAt, now, staleDays))
 	row[colCreated] = age(now, p.CreatedAt)
 	row[colID] = p.ID()
 	row[colSearch] = strings.TrimSpace("@" + p.Author + " " + p.HeadRef + " " + p.BaseRef)

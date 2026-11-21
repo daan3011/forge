@@ -395,9 +395,10 @@ type fakeGitHub struct {
 
 func (fakeGitHub) SearchPRs(context.Context, string, int) (github.SearchResult, error) {
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	// #101 is always fresh and #98 long stale, whatever the clock says.
 	return github.SearchResult{Viewer: "daan", Total: 2, PRs: []github.PR{
-		{Repo: "daan/forge", Number: 101, Title: "Add retry to webhook sender", Author: "alice", State: github.StateOpen, CreatedAt: at, UpdatedAt: at},
-		{Repo: "daan/forge", Number: 98, Title: "Bump dependencies", Author: "bot", State: github.StateOpen, CreatedAt: at, UpdatedAt: at},
+		{Repo: "daan/forge", Number: 101, Title: "Add retry to webhook sender", Author: "alice", State: github.StateOpen, CreatedAt: at, UpdatedAt: time.Now().Add(-time.Hour)},
+		{Repo: "daan/forge", Number: 98, Title: "Bump dependencies", Author: "bot", State: github.StateOpen, CreatedAt: at, UpdatedAt: at.AddDate(-1, 0, 0)},
 	}}, nil
 }
 
@@ -542,5 +543,27 @@ func TestPRReviewFlow(t *testing.T) {
 	defer rev.mu.Unlock()
 	if want := []string{`daan/forge#101 APPROVE ""`}; !slices.Equal(rev.reviews, want) {
 		t.Errorf("reviews = %v, want %v", rev.reviews, want)
+	}
+}
+
+// TestPRStaleFilter is P2.5's done-when: S narrows the PRs tab to stale PRs.
+func TestPRStaleFilter(t *testing.T) {
+	tm := teatest.NewTestModel(t, mustNew(t, config.Default(), WithGitHub(fakeGitHub{})),
+		teatest.WithInitialTermSize(120, 30))
+	wait := func(s string) {
+		t.Helper()
+		teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return bytes.Contains(b, []byte(s)) },
+			teatest.WithDuration(3*time.Second))
+	}
+	wait("forge")
+	tm.Send(press("2"))
+	wait("#101")
+	tm.Send(press("S"))
+	wait("stale only")
+	tm.Send(press("q"))
+	fm := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second))
+	view := ansi.Strip(fm.(Model).render())
+	if !strings.Contains(view, "Bump dependencies") || strings.Contains(view, "Add retry") {
+		t.Errorf("stale-only view should show #98 alone:\n%s", view)
 	}
 }

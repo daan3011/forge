@@ -518,3 +518,86 @@ func TestCompact(t *testing.T) {
 		}
 	}
 }
+
+// staleGH has one fresh, one stale and one very stale PR (threshold 5d).
+func staleGH() *fakeGH {
+	gh := sampleGH()
+	gh.results["author:@me"] = github.SearchResult{Viewer: "daan", Total: 3, PRs: []github.PR{
+		pr("acme/bubbletea", 1, "fresh one", nil),
+		pr("acme/bubbles", 2, "stale one", func(p *github.PR) { p.UpdatedAt = now.Add(-6 * 24 * time.Hour) }),
+		pr("acme/lipgloss", 3, "ancient one", func(p *github.PR) { p.UpdatedAt = now.Add(-12 * 24 * time.Hour) }),
+	}}
+	return gh
+}
+
+// TestStaleOnly is P2.5's done-when: old PRs are marked and S filters to
+// them across sections.
+func TestStaleOnly(t *testing.T) {
+	tb := newTestTab(staleGH(), newKV())
+	drain(tb, tb.Init())
+	v := view(tb)
+	mustContain(t, v, "fresh one", "stale one", "ancient one", "6d", "1w")
+	if got := strings.Count(v, "◷"); got != 3 { // the column header and two markers
+		t.Errorf("view has %d clocks, want header + 2:\n%s", got, v)
+	}
+
+	send(tb, "S")
+	v = view(tb)
+	mustContain(t, v, "stale one", "ancient one", "◷ stale only", "My PRs (2)", "Involved (0)")
+	mustLack(t, v, "fresh one")
+	if got := tb.StatusDetail(); got != "@daan · PR 1/2 (fetched 3)" {
+		t.Errorf("status detail = %q", got)
+	}
+	send(tb, "l", "l")
+	mustContain(t, view(tb), "no stale PRs here · S shows all")
+
+	send(tb, "S")
+	v = view(tb)
+	mustContain(t, v, "Involved (2)", "fix: viewport")
+	mustLack(t, v, "stale only")
+}
+
+func TestStaleOnlyCommandAndSelect(t *testing.T) {
+	tb := newTestTab(staleGH(), newKV())
+	drain(tb, tb.Init())
+	cmd := func() tabs.Command {
+		for _, c := range tb.Commands() {
+			if c.ID == "pr_stale_only" {
+				return c
+			}
+		}
+		t.Fatal("no pr_stale_only command")
+		return tabs.Command{}
+	}
+	if c := cmd(); c.Title != "PRs: show stale only" || c.Key.Help().Key != "S" {
+		t.Fatalf("command = %q key %q", c.Title, c.Key.Help().Key)
+	}
+	drain(tb, cmd().Run())
+	if !tb.staleOnly || cmd().Title != "PRs: show all (not just stale)" {
+		t.Fatalf("command should turn stale-only on (title %q)", cmd().Title)
+	}
+	tb.Select("acme/bubbles#2") // stale: the filter stays
+	if !tb.staleOnly || tb.selectedID() != "acme/bubbles#2" {
+		t.Fatalf("select stale: staleOnly %v id %q", tb.staleOnly, tb.selectedID())
+	}
+	tb.Select("acme/bubbletea#1") // fresh: the filter goes
+	if tb.staleOnly || tb.selectedID() != "acme/bubbletea#1" {
+		t.Fatalf("select fresh: staleOnly %v id %q", tb.staleOnly, tb.selectedID())
+	}
+}
+
+func TestStaleOff(t *testing.T) {
+	d := testDeps(staleGH(), newKV())
+	d.Config.GitHub.StaleAfterDays = 0
+	tb := newTab(d)
+	tb.now = func() time.Time { return now }
+	tb.SetSize(120, 30)
+	drain(tb, tb.Init())
+	if got := strings.Count(view(tb), "◷"); got != 1 {
+		t.Errorf("markers off: %d clocks, want just the header", got)
+	}
+	errs := send(tb, "S")
+	if tb.staleOnly || len(errs) != 1 || !strings.Contains(errs[0], "stale_after_days") {
+		t.Fatalf("S with markers off: staleOnly %v errs %v", tb.staleOnly, errs)
+	}
+}
