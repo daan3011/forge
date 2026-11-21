@@ -485,7 +485,25 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Tests**: table tests for `Parse`, `Resolve` (every token kind, defaults, aliases, unknowns with and without suggestions, empty / long titles, not loaded), `Complete`, `Candidates`, `ResolveLoading` (loads only what's needed), `DefaultProject` and `Merge`. Widget tests cover editing, the action keys, tab cycling, fix, busy and width. App tests cover the teatest flow (`ctrl+n` on PRs → tokens → "created FORGE-1"; then `shift+enter` → prefilled form), an unknown label (hint, tab fix, create), completion, the key rules and the notice shown once. CLI tests run against an httptest Plane (only linked project, every token, `#anv`, `-p`, unknown label / project, no title). There are also a tmux config v2 test and a labels paging test.
   - **Verified live** (read-only, nothing created): `forge capture` in a 100×12 tmux pane against the real workspace. Project, person and label completion work, as do the unknown-project hint, tab to fix and esc. The ctrl+n overlay renders over the PRs tab. Creating an item, and the 3-second Alt+c round trip, weren't run, to avoid making real issues.
   - **Limits**: one `#project` (the last wins). Labels can't be created from the line. The overlay's catalog is refreshed after 5 minutes, on the next `ctrl+n`.
-- [ ] P3.6 Cycle summary
+- [x] P3.6 Cycle summary: a line under the Plane tab's filter box (list and board) with the current cycle's name, days left, a heat bar with % done and counts: done / in progress / blocked / todo.
+  - **Current cycle**: the first cycle in the project's cached metadata where `IsCurrent(now)` holds. The line only shows when exactly one project is listed. With no current cycle there is no line, and the table keeps its row.
+  - **Counts**: a separate fetch of every item in the cycle (`cycle_id` only, no order, so it gets its own cache entry), whatever the tab's filters are. The default "mine, open" list doesn't skew it. It loads the cache first, then fetches, on each `Refresh` and when the metadata lands.
+    - The list is kept in `Tab.cyc` (a `projectItems`). `editItem`, `insertItem` and `reapplyMoves` cover it (`allLists`), so board moves, edits and creates update the counts without a refetch.
+    - Buckets (`countCycle`): completed → done, cancelled → left out of the total (a muted "N cancelled"). Otherwise blocked if blocked, else started → in progress, else todo (triage / backlog / unstarted / unknown). Progress = done / (total − cancelled).
+    - "Ends today" / "1 day left" / "N days left": a date-only end date is its own day, a date-time end date counts by its day in local time.
+  - **Blocked**: new `plane.blocked_labels` (default `[blocked]`) and `plane.blocked_states` (default `[Blocked]`), matched by name, case-insensitive (`config.Plane.IsBlocked`). A completed item with a blocked label still counts as done.
+  - **Width**: the line drops the key hint, then the cancelled count and half the bar, then switches to short labels (`✓1 ▸1 ⊘1 ○1`).
+  - **Key**: `plane_cycle` (`C`) switches between the current cycle only (the existing cycle filter, shown as "cycle: Sprint 12" in the filter box) and every cycle. It works in the list and on the board. Palette: "Plane: current cycle only" / "Plane: every cycle". Without a current cycle it shows "no current cycle" (for several projects, also how to pick one).
+  - New theme styles `CycleName`, `CycleBlocked`.
+  - **Tests**:
+    - Table tests: `countCycle` (each bucket, blocked by label / state / case, done over blocked, cancelled excluded, empty without NaN, unknown state), `daysLeft`, and `IsBlocked` + YAML override.
+    - Tab tests: header counts with the default filter, full / short variants by width, no line without a current cycle or with several projects (and the table height), `C` on, then off on the board, palette titles, and a board move updating the counts without a refetch.
+  - **Verified live** (read-only): the real FORGE project has no running cycle, so no line shows and `C` toasts "no current cycle". The header against a real cycle wasn't checked live, because creating a cycle would be a write.
+  - **Limits**:
+    - No clicking: forge has no mouse mode, so it's `C` / palette only.
+    - One project at a time.
+    - Counts cover the first 1000 items of the cycle.
+    - An item edited out of the cycle keeps counting until the refresh that follows the edit.
 - [ ] P3.7 Branch naming
   - Note (from P1.9): pass `BranchFor(item)` as `tabs.Source.Branch`; the worktree side (create / reuse / ownership) is done.
 

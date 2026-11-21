@@ -371,6 +371,8 @@ func (t *Tab) updateBoard(kp tea.KeyPressMsg) tea.Cmd {
 	switch {
 	case key.Matches(kp, pk.Board):
 		return t.toggleBoard()
+	case key.Matches(kp, pk.Cycle):
+		return t.toggleCycle()
 	case key.Matches(kp, pk.ColLeft):
 		return t.moveColumn(-1)
 	case key.Matches(kp, pk.ColRight):
@@ -547,7 +549,7 @@ func (t *Tab) applyState(id string, st plane.State) {
 // editItem changes item id in every pooled list. Lists are copied first:
 // their arrays may be shared with the cache.
 func (t *Tab) editItem(id string, f func(*plane.WorkItem)) {
-	for _, l := range t.pool {
+	for _, l := range t.allLists() {
 		cloned := false
 		for i := range l.items {
 			if l.items[i].ID != id {
@@ -559,6 +561,18 @@ func (t *Tab) editItem(id string, f func(*plane.WorkItem)) {
 			f(&l.items[i])
 		}
 	}
+}
+
+// allLists are the pooled lists and the cycle summary's.
+func (t *Tab) allLists() []*projectItems {
+	out := make([]*projectItems, 0, len(t.pool)+1)
+	for _, l := range t.pool {
+		out = append(out, l)
+	}
+	if t.cyc != nil {
+		out = append(out, t.cyc)
+	}
+	return out
 }
 
 // reapplyMoves puts pending moves back on fresh data for l, so a refresh
@@ -611,7 +625,10 @@ func (t *Tab) boardScreen() string {
 	if w <= 0 || h <= 0 {
 		return ""
 	}
-	body, bh := t.filterBox(w), h-filterBoxHeight
+	body, bh := t.filterBox(w), h-t.headerHeight()
+	if t.cycleShown() {
+		body += "\n" + t.cycleLine(w)
+	}
 	if t.filter.Visible() {
 		body += "\n" + t.filter.View(w)
 		bh--

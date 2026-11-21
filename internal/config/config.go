@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -100,6 +101,22 @@ type Plane struct {
 	// BoardDoneDays is how many days back the board's completed and
 	// cancelled columns reach (by updated time).
 	BoardDoneDays int `yaml:"board_done_days"`
+	// BlockedLabels and BlockedStates mark open work items as blocked in
+	// the cycle summary, by label or state name (case-insensitive).
+	BlockedLabels []string `yaml:"blocked_labels"`
+	BlockedStates []string `yaml:"blocked_states"`
+}
+
+// IsBlocked reports whether an item with these label names, in this state,
+// counts as blocked: one of BlockedLabels or BlockedStates, ignoring case.
+func (p Plane) IsBlocked(labels []string, state string) bool {
+	fold := func(names []string, v string) bool {
+		return v != "" && slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(strings.TrimSpace(n), v) })
+	}
+	if fold(p.BlockedStates, state) {
+		return true
+	}
+	return slices.ContainsFunc(labels, func(l string) bool { return fold(p.BlockedLabels, l) })
 }
 
 // DefaultBoardDoneDays is plane.board_done_days when unset.
@@ -232,6 +249,8 @@ func Default() *Config {
 			APIKeyEnv:       "PLANE_API_KEY",
 			RefreshInterval: Duration{2 * time.Minute},
 			BoardDoneDays:   DefaultBoardDoneDays,
+			BlockedLabels:   []string{"blocked"},
+			BlockedStates:   []string{"Blocked"},
 		},
 		Sessions: Sessions{
 			WorktreeRoot:       filepath.Join(DataHome(), "forge", "worktrees"),

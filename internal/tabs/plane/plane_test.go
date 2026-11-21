@@ -82,6 +82,7 @@ type fakePlane struct {
 	listErr  error
 	cache    map[string][]plane.WorkItem // filter key -> items
 	calls    []string
+	cycCalls []string          // the cycle summary's list calls (no order), kept apart from calls
 	desc     map[string]string // item id -> description HTML
 	comments map[string][]plane.Comment
 	detail   []string // item ids fetched
@@ -89,6 +90,7 @@ type fakePlane struct {
 	projectLists int // Projects calls
 
 	statesBy   map[string][]plane.State // project -> states (default Todo, In Progress, Done)
+	cyclesBy   map[string][]plane.Cycle // project -> cycles (default Sprint 12, current)
 	updates    []string                 // "project id state_id" per UpdateWorkItem
 	updateErrs []error                  // returned by the next UpdateWorkItem calls, in order
 
@@ -140,11 +142,21 @@ func (f *fakePlane) Me(context.Context) (plane.User, error) {
 	return f.me, f.meErr
 }
 
+func (f *fakePlane) cycleCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.cycCalls)
+}
+
 func (f *fakePlane) WorkItems(_ context.Context, project string, fl plane.WorkItemFilter) ([]plane.WorkItem, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	k := filterKey(project, fl)
-	f.calls = append(f.calls, k)
+	if fl.OrderBy == "" {
+		f.cycCalls = append(f.cycCalls, k)
+	} else {
+		f.calls = append(f.calls, k)
+	}
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -254,7 +266,12 @@ func (f *fakePlane) Labels(context.Context, string) ([]plane.Label, error) {
 	return []plane.Label{lbBug, lbUI}, nil
 }
 
-func (f *fakePlane) Cycles(context.Context, string) ([]plane.Cycle, error) {
+func (f *fakePlane) Cycles(_ context.Context, project string) ([]plane.Cycle, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if cs, ok := f.cyclesBy[project]; ok {
+		return cs, nil
+	}
 	return []plane.Cycle{cyc12}, nil
 }
 
@@ -331,6 +348,8 @@ func testConfig() *config.Config {
 		BaseURL: "https://plane.example", Workspace: "acme",
 		RefreshInterval: config.Duration{Duration: 2 * time.Minute},
 		BoardDoneDays:   config.DefaultBoardDoneDays,
+		BlockedLabels:   []string{"blocked"},
+		BlockedStates:   []string{"Blocked"},
 	}
 	cfg.Projects = []config.Project{
 		{Name: "app", Repo: "acme/app", PlaneProjectID: p1},

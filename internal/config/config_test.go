@@ -88,7 +88,7 @@ func TestPartialFileKeepsDefaults(t *testing.T) {
 		t.Errorf("animations = %q", cfg.UI.Animations)
 	}
 	d := Default()
-	if !reflect.DeepEqual(cfg.GitHub.PRSections, d.GitHub.PRSections) || cfg.Plane != d.Plane {
+	if !reflect.DeepEqual(cfg.GitHub.PRSections, d.GitHub.PRSections) || !reflect.DeepEqual(cfg.Plane, d.Plane) {
 		t.Errorf("omitted keys lost their defaults: %+v", cfg)
 	}
 }
@@ -160,5 +160,43 @@ func TestPlaneIssueURL(t *testing.T) {
 		if got := tt.p.IssueURL(tt.key); got != tt.want {
 			t.Errorf("IssueURL(%+v, %q) = %q, want %q", tt.p, tt.key, got, tt.want)
 		}
+	}
+}
+
+func TestPlaneIsBlocked(t *testing.T) {
+	d := Default().Plane
+	tests := []struct {
+		name   string
+		p      Plane
+		labels []string
+		state  string
+		want   bool
+	}{
+		{"default label", d, []string{"ui", "blocked"}, "Todo", true},
+		{"default label, other case", d, []string{"Blocked"}, "Todo", true},
+		{"default state", d, nil, "blocked", true},
+		{"neither", d, []string{"bug"}, "In Progress", false},
+		{"no config", Plane{}, []string{"blocked"}, "Blocked", false},
+		{"empty state never matches", Plane{BlockedStates: []string{""}}, nil, "", false},
+		{"custom", Plane{BlockedLabels: []string{"waiting on review "}, BlockedStates: []string{"On hold"}}, []string{"Waiting on review"}, "", true},
+		{"custom state", Plane{BlockedStates: []string{"On hold"}}, nil, "on HOLD", true},
+	}
+	for _, tt := range tests {
+		if got := tt.p.IsBlocked(tt.labels, tt.state); got != tt.want {
+			t.Errorf("%s: IsBlocked(%v, %q) = %v, want %v", tt.name, tt.labels, tt.state, got, tt.want)
+		}
+	}
+}
+
+func TestPlaneBlockedFromYAML(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "plane:\n  blocked_labels: [waiting, blocked-by-infra]\n  blocked_states: []\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg.Plane.BlockedLabels, []string{"waiting", "blocked-by-infra"}) || len(cfg.Plane.BlockedStates) != 0 {
+		t.Fatalf("blocked = %v / %v", cfg.Plane.BlockedLabels, cfg.Plane.BlockedStates)
+	}
+	if d := Default().Plane; !reflect.DeepEqual(d.BlockedLabels, []string{"blocked"}) || !reflect.DeepEqual(d.BlockedStates, []string{"Blocked"}) {
+		t.Fatalf("defaults = %v / %v", d.BlockedLabels, d.BlockedStates)
 	}
 }

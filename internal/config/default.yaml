@@ -56,6 +56,10 @@ plane:
   refresh_interval: 2m
   # How many days back the board's Done / Cancelled columns reach (min 1).
   board_done_days: 14
+  # The cycle summary counts open items as blocked when they carry one of
+  # these labels or are in one of these states (names, case-insensitive).
+  blocked_labels: [blocked]
+  blocked_states: [Blocked]
 
 sessions:
   # Where agent worktrees are created
@@ -179,6 +183,7 @@ keybinds:
   # plane_edit: ["e"]              # edit the selected item
   # plane_comment: ["c"]           # comment on the selected item
   # plane_session: ["s"]           # start a forge session for the selected item
+  # plane_cycle: ["C"]             # only the current cycle's items / every cycle
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

@@ -107,6 +107,9 @@ type Tab struct {
 	lists []*projectItems
 	// pool keeps both views' lists, so `b` shows data at once.
 	pool map[string]*projectItems
+	// cyc is every item of the current cycle (P3.6), whatever the filters;
+	// nil without a current cycle.
+	cyc *projectItems
 
 	board   boardState
 	overlay bool                    // the board's card detail is open
@@ -352,6 +355,8 @@ func (t *Tab) Refresh() tea.Cmd {
 		l.fetching = true
 		cmds = append(cmds, fetchItems(t.api, l.key, l.id, f, t.now))
 	}
+	cmds = append(cmds, t.ensureCycle(true))
+	t.resizeTable() // the cycle line may come or go
 	return tea.Batch(cmds...)
 }
 
@@ -463,6 +468,9 @@ func fetchMeta(ctx context.Context, api plane.ProjectReader, id string) (project
 }
 
 func (t *Tab) itemsLoaded(msg itemsMsg) tea.Cmd {
+	if t.cyc != nil && msg.key == t.cyc.key {
+		return t.cycleLoaded(msg)
+	}
 	l := t.byKey(msg.key)
 	if l == nil {
 		return nil // for filters or a project we have since left
@@ -511,7 +519,8 @@ func (t *Tab) metaLoaded(msg metaMsg) tea.Cmd {
 	m := msg.meta
 	t.meta[msg.id] = &m
 	t.setRows() // names the list didn't expand
-	open := t.openPending()
+	t.resizeTable()
+	open := tea.Batch(t.openPending(), t.ensureCycle(false))
 	if msg.err != nil {
 		return tea.Batch(open, t.toastOnce(fmt.Errorf("project details: %w", msg.err)))
 	}
@@ -636,6 +645,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.toggleMine()
 	case key.Matches(kp, pk.ClearFilters):
 		return t.clearFilters()
+	case key.Matches(kp, pk.Cycle):
+		return t.toggleCycle()
 	case key.Matches(kp, pk.DetailDown):
 		t.scrollDetail(1)
 	case key.Matches(kp, pk.DetailUp):
@@ -827,7 +838,7 @@ func (t *Tab) SetSize(width, height int) {
 
 func (t *Tab) resizeTable() {
 	w, h := t.split.LeftSize()
-	h -= filterBoxHeight
+	h -= t.headerHeight()
 	if t.filter.Visible() {
 		h--
 	}
@@ -846,6 +857,7 @@ func (t *Tab) SetProject(p *config.Project) {
 	}
 	t.lists = nil
 	t.pool = map[string]*projectItems{}
+	t.cyc = nil
 	t.overlay = false
 	t.rebuildLists()
 	t.table.SetRows(nil)
@@ -882,14 +894,14 @@ func (t *Tab) FullHelp() [][]key.Binding {
 		return [][]key.Binding{
 			{pk.ColLeft, pk.ColRight, l.Up, l.Down, l.Top, l.Bottom},
 			{pk.MovePrev, pk.MoveNext, pk.CollapseColumn, pk.CollapseEmpty, pk.OpenCard, in.Cancel},
-			{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, pk.Board},
+			{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, pk.Cycle, pk.Board},
 			{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL},
 			{pk.New, pk.Edit, pk.Comment, pk.Session},
 		}
 	}
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
-		{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, l.ShrinkPane, l.GrowPane},
+		{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, pk.Cycle, l.ShrinkPane, l.GrowPane},
 		{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL, pk.Board},
 		{pk.New, pk.Edit, pk.Comment, pk.Session},
 		{in.Accept, in.Cancel, in.DeleteBack, in.ClearInput},
@@ -908,6 +920,10 @@ func (t *Tab) Commands() []tabs.Command {
 	if t.mode == modeBoard {
 		board = "Plane: show list"
 	}
+	cycle := "Plane: current cycle only"
+	if c, _, ok := t.currentCycle(); ok && t.filt.cycle == c.ID {
+		cycle = "Plane: every cycle"
+	}
 	boardOnly := func(f func() tea.Cmd) func() tea.Cmd {
 		return func() tea.Cmd {
 			if t.mode != modeBoard {
@@ -921,6 +937,7 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "plane_filters", Title: "Plane: filters…", Key: pk.Filters, Run: t.openFilters},
 		{ID: "plane_mine", Title: mine, Key: pk.Mine, Run: t.toggleMine},
 		{ID: "plane_clear_filters", Title: "Plane: clear filters", Key: pk.ClearFilters, Run: t.clearFilters},
+		{ID: "plane_cycle", Title: cycle, Key: pk.Cycle, Run: t.toggleCycle},
 		{ID: "plane_detail_down", Title: "Plane: scroll detail down", Key: pk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
 		{ID: "plane_detail_up", Title: "Plane: scroll detail up", Key: pk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
 		{ID: "plane_link_project", Title: "Plane: link project…", Run: t.linkProject},
@@ -1067,6 +1084,9 @@ func (t *Tab) View() string {
 	}
 	lw, _ := t.split.LeftSize()
 	list := t.filterBox(lw)
+	if t.cycleShown() {
+		list += "\n" + t.cycleLine(lw)
+	}
 	if t.filter.Visible() {
 		list += "\n" + t.filter.View(lw)
 	}

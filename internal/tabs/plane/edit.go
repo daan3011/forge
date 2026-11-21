@@ -617,7 +617,7 @@ func (t *Tab) withState(w plane.WorkItem) plane.WorkItem {
 func (t *Tab) insertItem(w plane.WorkItem) bool {
 	_, group := t.stateOf(w)
 	shown := false
-	for _, l := range t.pool {
+	for _, l := range t.allLists() {
 		if l.id != w.ProjectID || !matchesFilter(l.filter, w, group) {
 			continue
 		}

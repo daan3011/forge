@@ -207,6 +207,10 @@ type Theme struct {
 	BoardScrollHint   lipgloss.Style // "‹ 2" / "3 ›" for columns out of view
 	BoardOverlay      lipgloss.Style // the card detail box over the board
 
+	// Plane cycle summary (P3.6).
+	CycleName    lipgloss.Style // the current cycle's name
+	CycleBlocked lipgloss.Style // the blocked count
+
 	PaletteBox            lipgloss.Style
 	PalettePrompt         lipgloss.Style
 	PaletteGroup          lipgloss.Style
@@ -342,6 +346,9 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		BoardCollapsed:    lipgloss.NewStyle().Foreground(p.Muted),
 		BoardScrollHint:   lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
 		BoardOverlay:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
+
+		CycleName:    lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		CycleBlocked: lipgloss.NewStyle().Foreground(p.Error).Bold(true),
 
 		PaletteBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
 		PalettePrompt:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
