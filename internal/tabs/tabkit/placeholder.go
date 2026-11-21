@@ -17,6 +17,7 @@ import (
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
+	"github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/refresh"
@@ -80,6 +81,9 @@ type Deps struct {
 	// ProjectLinks saves the Plane project picked or matched for a repo;
 	// nil keeps links for this run only.
 	ProjectLinks tabs.ProjectLinker
+	// DocsWatcher signals changes in the docs folders (P4.1); nil means
+	// the Docs tab only reloads on refresh.
+	DocsWatcher docs.Watcher
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

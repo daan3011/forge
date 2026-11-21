@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
+	"github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/notify"
@@ -148,6 +149,12 @@ func newRootCmd(d deps) *cobra.Command {
 			}
 			if dir, err := templates.Dir(); err == nil {
 				opts = append(opts, app.WithTemplates(dir, d.providers))
+			}
+			if w, err := docs.NewWatcher(0); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: docs won't reload live:", err)
+			} else {
+				defer func() { _ = w.Close() }()
+				opts = append(opts, app.WithDocsWatcher(w))
 			}
 			if n, ok := tmuxNotice(); ok {
 				opts = append(opts, n)

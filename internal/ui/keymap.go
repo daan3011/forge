@@ -25,6 +25,8 @@ type KeyMap struct {
 	Pipelines PipelineKeys
 	// Plane are the Plane tab's actions (P3.2).
 	Plane PlaneKeys
+	// Docs are the Docs tab's actions (P4.1).
+	Docs DocKeys
 	// Transcript drives the transcript viewer (P1.6), which takes over
 	// the Sessions tab while open.
 	Transcript TranscriptKeys
@@ -175,6 +177,19 @@ type PlaneKeys struct {
 
 	// Cycle summary (P3.6).
 	Cycle key.Binding // filter to the current cycle / back to every cycle
+}
+
+// DocKeys are the Docs tab's actions (P4.1). While the detail pane has
+// focus, the List keys scroll it.
+type DocKeys struct {
+	New        key.Binding // new doc form (name + template)
+	Edit       key.Binding // the doc in $EDITOR
+	Rename     key.Binding // rename / move the doc
+	Delete     key.Binding // move the doc to .trash, after confirming
+	Open       key.Binding // expand a folder; focus the detail pane on a doc
+	Back       key.Binding // collapse a folder (or go to its parent); back to the tree
+	DetailDown key.Binding
+	DetailUp   key.Binding
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -384,6 +399,16 @@ func DefaultKeyMap() *KeyMap {
 
 			Cycle: bind("current cycle", "C"),
 		},
+		Docs: DocKeys{
+			New:        bind("new doc", "n"),
+			Edit:       bind("edit in $EDITOR", "e"),
+			Rename:     bind("rename / move", "m"),
+			Delete:     bind("delete (to .trash)", "D"),
+			Open:       bind("open / expand", "enter", "l", "right"),
+			Back:       bind("back / collapse", "h", "left"),
+			DetailDown: bind("scroll detail down", "J"),
+			DetailUp:   bind("scroll detail up", "K"),
+		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
 			Down:      bind("next entry", "j", "down"),
@@ -478,6 +503,7 @@ const (
 	scopePRs      = "tab:prs"
 	scopePipes    = "tab:pipelines"
 	scopePlane    = "tab:plane"
+	scopeDocs     = "tab:docs"
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
 	scopeTranscript = "transcript"
@@ -496,7 +522,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
-	pp, lg, pl, cp := &k.Pipelines, &k.Log, &k.Plane, &k.Capture
+	pp, lg, pl, cp, dc := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -581,6 +607,14 @@ func (k *KeyMap) actions() []action {
 		{"plane_comment", scopePlane, &pl.Comment},
 		{"plane_session", scopePlane, &pl.Session},
 		{"plane_cycle", scopePlane, &pl.Cycle},
+		{"docs_new", scopeDocs, &dc.New},
+		{"docs_edit", scopeDocs, &dc.Edit},
+		{"docs_rename", scopeDocs, &dc.Rename},
+		{"docs_delete", scopeDocs, &dc.Delete},
+		{"docs_open", scopeDocs, &dc.Open},
+		{"docs_back", scopeDocs, &dc.Back},
+		{"docs_detail_down", scopeDocs, &dc.DetailDown},
+		{"docs_detail_up", scopeDocs, &dc.DetailUp},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

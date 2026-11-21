@@ -188,6 +188,15 @@ keybinds:
   # plane_comment: ["c"]           # comment on the selected item
   # plane_session: ["s"]           # start a forge session for the selected item
   # plane_cycle: ["C"]             # only the current cycle's items / every cycle
+  # Docs tab (P4.1; j / k / ctrl+d / ctrl+u / g / G scroll the doc while it has focus)
+  # docs_new: ["n"]                # new doc (name + template)
+  # docs_edit: ["e"]               # open the doc in $EDITOR
+  # docs_rename: ["m"]             # rename / move the doc
+  # docs_delete: ["D"]             # move the doc to .trash (asks first)
+  # docs_open: ["enter", "l", "right"]  # expand a folder / focus the doc
+  # docs_back: ["h", "left"]           # collapse a folder / back to the tree (esc too)
+  # docs_detail_down: ["J"]
+  # docs_detail_up: ["K"]
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
