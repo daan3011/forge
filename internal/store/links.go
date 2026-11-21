@@ -15,6 +15,7 @@ const (
 	KindSession    LinkKind = "session"
 	KindPlaneIssue LinkKind = "plane_issue"
 	KindGitHubPR   LinkKind = "github_pr"
+	KindGitHubRun  LinkKind = "github_run"
 )
 
 // Ref identifies a linkable entity. IDs: sessions use their numeric id,
@@ -30,6 +31,11 @@ func SessionRef(id int64) Ref { return Ref{Kind: KindSession, ID: strconv.Format
 // PRRef returns the Ref for a GitHub pull request.
 func PRRef(repo string, number int) Ref {
 	return Ref{Kind: KindGitHubPR, ID: repo + "#" + strconv.Itoa(number)}
+}
+
+// RunRef returns the Ref for a GitHub Actions workflow run (P2.8).
+func RunRef(repo string, runID int64) Ref {
+	return Ref{Kind: KindGitHubRun, ID: repo + "#" + strconv.FormatInt(runID, 10)}
 }
 
 // IssueRef returns the Ref for a Plane work item.

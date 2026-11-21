@@ -19,6 +19,8 @@ type Git interface {
 	HasRemote(ctx context.Context, repo, remote string) (bool, error)
 	// FetchBranch updates refs/remotes/<remote>/<branch>.
 	FetchBranch(ctx context.Context, repo, remote, branch string) error
+	// FetchCommit fetches one commit by sha (no refs are updated).
+	FetchCommit(ctx context.Context, repo, remote, sha string) error
 	// RefExists reports whether ref resolves to a commit.
 	RefExists(ctx context.Context, repo, ref string) (bool, error)
 	// WorktreeAdd adds path on a new branch from startPoint, without
@@ -128,6 +130,12 @@ func (e *Exec) HasRemote(ctx context.Context, repo, remote string) (bool, error)
 func (e *Exec) FetchBranch(ctx context.Context, repo, remote, branch string) error {
 	refspec := fmt.Sprintf("+refs/heads/%s:refs/remotes/%s/%s", branch, remote, branch)
 	_, err := e.Run(ctx, repo, "fetch", "--quiet", "--no-tags", remote, refspec)
+	return err
+}
+
+// FetchCommit implements Git.
+func (e *Exec) FetchCommit(ctx context.Context, repo, remote, sha string) error {
+	_, err := e.Run(ctx, repo, "fetch", "--quiet", "--no-tags", "--end-of-options", remote, sha)
 	return err
 }
 

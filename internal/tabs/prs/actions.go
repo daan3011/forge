@@ -52,6 +52,8 @@ func (t *Tab) updateActions(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case actionDoneMsg:
 		return t.actionDone(msg), true
+	case fixGatheredMsg:
+		return t.fixGathered(msg), true
 	case clipboardFallbackMsg:
 		return tea.Batch(tea.SetClipboard(msg.text), info("copied "+msg.text)), true
 	case openedMsg:

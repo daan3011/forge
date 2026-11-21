@@ -253,6 +253,7 @@ type templateResolvedMsg struct {
 }
 
 type startedMsg struct {
+	fix  bool // a "fix this" session (P2.8)
 	opts agent.StartOpts
 	res  agent.Started
 	err  error
@@ -300,6 +301,8 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.templatesLoaded(msg)
 	case templateResolvedMsg:
 		return t, t.templateResolved(msg)
+	case fixReadyMsg:
+		return t, t.fixReady(msg)
 	case startedMsg:
 		return t, t.started(msg)
 	case killedMsg:
@@ -708,13 +711,7 @@ func (t *Tab) openNewWith(req NewRequest) tea.Cmd {
 	}
 	dir := t.tmplDir
 	return func() tea.Msg {
-		if dir == "" {
-			return templatesLoadedMsg{req: req}
-		}
-		if _, err := templates.EnsureDefaults(dir); err != nil {
-			return templatesLoadedMsg{req: req, errs: []error{err}}
-		}
-		ts, errs := templates.Load(dir)
+		ts, errs := loadTemplates(dir)
 		return templatesLoadedMsg{req: req, templates: ts, errs: errs}
 	}
 }
@@ -808,14 +805,17 @@ func (t *Tab) confirmPrompt(req NewRequest, tmpl templates.Template, vals map[st
 	return t.openDialog("", f, func() tea.Cmd { return t.start(o) })
 }
 
-func (t *Tab) start(o agent.StartOpts) tea.Cmd {
+func (t *Tab) start(o agent.StartOpts) tea.Cmd { return t.startAs(o, false) }
+
+// startAs starts o; fix marks a "fix this" session for the toast.
+func (t *Tab) startAs(o agent.StartOpts, fix bool) tea.Cmd {
 	t.busy++
 	svc := t.svc
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		res, err := svc.Start(ctx, o)
-		return startedMsg{opts: o, res: res, err: err}
+		return startedMsg{fix: fix, opts: o, res: res, err: err}
 	}
 }
 
@@ -829,7 +829,11 @@ func (t *Tab) started(msg startedMsg) tea.Cmd {
 	if msg.err != nil {
 		return errCmd(startError(name, msg.err))
 	}
-	cmds := []tea.Cmd{success("session " + name + " started")}
+	label := "session "
+	if msg.fix {
+		label = "fix session "
+	}
+	cmds := []tea.Cmd{success(label + name + " started")}
 	if msg.res.FetchErr != nil {
 		cmds = append(cmds, info("couldn't fetch origin; branched from the local base"))
 	}

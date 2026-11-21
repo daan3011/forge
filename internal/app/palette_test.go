@@ -123,9 +123,9 @@ func TestPushRecent(t *testing.T) {
 // are commands only while it is open (see the sessions tab's tests); so are
 // the PR diff viewer's file jumps and close (the PRs tab's tests), and
 // diff_open is pr_open. The job log viewer's actions are commands only
-// while it is open (the pipelines tab's tests), and its rerun / cancel
-// keys are the pipeline_rerun_failed / pipeline_rerun / pipeline_cancel
-// commands.
+// while it is open (the pipelines tab's tests), and its rerun / cancel /
+// fix keys are the pipeline_rerun_failed / pipeline_rerun /
+// pipeline_cancel / pipeline_fix / pipeline_fix_edit commands.
 var notRegistered = []string{
 	"force_quit", "palette",
 	"up", "down", "top", "bottom", "page_down", "page_up",
@@ -138,7 +138,7 @@ var notRegistered = []string{
 	"log_up", "log_down", "log_top", "log_bottom", "log_page_up", "log_page_down",
 	"log_toggle_full", "log_search", "log_next_match", "log_prev_match",
 	"log_next_job", "log_prev_job", "log_open", "log_close",
-	"log_rerun_failed", "log_rerun", "log_cancel",
+	"log_rerun_failed", "log_rerun", "log_cancel", "log_fix", "log_fix_edit",
 }
 
 // TestEveryActionIsACommand guards the "every user action is a palette

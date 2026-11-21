@@ -534,3 +534,69 @@ func sameDir(a, b string) bool {
 	rb, _ := filepath.EvalSymlinks(b)
 	return ra == rb
 }
+
+func TestCreateFromCommit(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, true)
+	at := func(session, branch, sha string) worktree.CreateOpts {
+		return worktree.CreateOpts{Project: f.project, Session: session, Base: "main", Branch: branch, StartCommit: sha}
+	}
+	first := git(t, f.g, f.project.Path, "rev-parse", "HEAD")
+	commit(t, f.g, f.project.Path, "later.txt", "later")
+
+	t.Run("local commit", func(t *testing.T) {
+		c, err := f.m.Create(ctx, at("fix-1", "fix/ci-1", first))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !c.BranchCreated || c.Reused || c.Tracking != "" || c.StartPoint != first {
+			t.Errorf("created = %+v", c)
+		}
+		if head := git(t, f.g, c.Path, "rev-parse", "HEAD"); head != first {
+			t.Errorf("HEAD = %s, want %s", head, first)
+		}
+	})
+
+	t.Run("commit only on origin", func(t *testing.T) {
+		other := filepath.Join(t.TempDir(), "other")
+		git(t, f.g, filepath.Dir(other), "clone", "-q", f.origin, other)
+		git(t, f.g, other, "switch", "-q", "-c", "ci-only")
+		sha := commit(t, f.g, other, "ci.txt", "ci")
+		git(t, f.g, other, "push", "-q", "origin", "ci-only")
+
+		c, err := f.m.Create(ctx, at("fix-2", "fix/ci-2", sha))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if head := git(t, f.g, c.Path, "rev-parse", "HEAD"); head != sha || !c.BranchCreated {
+			t.Errorf("HEAD = %s, want %s; created = %+v", head, sha, c)
+		}
+	})
+
+	t.Run("unknown commit", func(t *testing.T) {
+		_, err := f.m.Create(ctx, at("fix-3", "fix/ci-3", strings.Repeat("ab", 20)))
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Errorf("err = %v", err)
+		}
+	})
+
+	t.Run("not a sha", func(t *testing.T) {
+		_, err := f.m.Create(ctx, at("fix-4", "fix/ci-4", "main"))
+		if !errors.Is(err, worktree.ErrInvalidName) {
+			t.Errorf("err = %v", err)
+		}
+	})
+
+	t.Run("existing fix branch is reused", func(t *testing.T) {
+		if _, err := f.m.Remove(ctx, worktree.RemoveOpts{Project: f.project, Session: "fix-1", Force: true}); err != nil {
+			t.Skipf("remove: %v", err)
+		}
+		c, err := f.m.Create(ctx, at("fix-1b", "fix/ci-1", first))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !c.Reused || c.BranchCreated {
+			t.Errorf("created = %+v", c)
+		}
+	})
+}

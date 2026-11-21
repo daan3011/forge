@@ -110,6 +110,7 @@ func newRootCmd(d deps) *cobra.Command {
 			opts := []app.Option{
 				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
 				app.WithBrowser(browser.Exec{}), app.WithGitHub(githubPulls), app.WithRuns(githubPulls),
+				app.WithPulls(githubPulls),
 				app.WithClipboard(clipboard.Exec{}), app.WithCheckout(newCheckout(cfg)),
 				app.WithDelta(delta.Exec{Dark: true}),
 				app.WithAlerts(alert.Checker{

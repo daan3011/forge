@@ -103,6 +103,9 @@ type Tab struct {
 	diffs       diffCache
 	delta       delta.Renderer
 	deltaWarned bool // a delta failure was toasted once
+
+	// runs downloads job logs for "fix this" (P2.8); nil leaves them out.
+	runs github.RunsClient
 }
 
 var (
@@ -132,6 +135,7 @@ func newTab(d tabkit.Deps) *Tab {
 		sessions: d.Sessions,
 		tick:     tea.Tick,
 		browser:  d.Browser, clip: d.Clipboard, checkout: d.Checkout, delta: d.Delta,
+		runs: d.Runs,
 		busy: map[string]string{}, patched: map[string]github.PR{},
 		split:  ui.NewSplitPane(d.Theme),
 		filter: ui.NewFilter(d.Theme, d.Keys),
@@ -320,6 +324,10 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.openDiff()
 	case key.Matches(kp, pk.Runs):
 		return t.showRuns()
+	case key.Matches(kp, pk.Fix):
+		return t.fix(false)
+	case key.Matches(kp, pk.FixEdit):
+		return t.fix(true)
 	default:
 		return t.table.Update(kp)
 	}
@@ -778,7 +786,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{pk.NextSection, pk.PrevSection, l.Filter, pk.RepoFilter, pk.StaleOnly, l.ShrinkPane, l.GrowPane},
 		{pk.DetailNext, pk.DetailPrev, pk.DetailDown, pk.DetailUp},
-		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session, pk.Diff, pk.Runs},
+		{pk.Open, pk.CopyURL, pk.Checkout, pk.Session, pk.Diff, pk.Runs, pk.Fix, pk.FixEdit},
 		{df.Down, df.Up, df.PageDown, df.PageUp, df.Top, df.Bottom, df.NextFile, df.PrevFile},
 		{df.Approve, df.RequestChanges, df.Comment, df.Open, df.Close},
 		{pk.UpdateBranch, pk.Merge, pk.AutoMerge, pk.ToggleDraft},
@@ -848,6 +856,8 @@ func (t *Tab) Commands() []tabs.Command {
 		tabs.Command{ID: "pr_toggle_draft", Title: "PR: toggle draft / ready", Key: pk.ToggleDraft, Run: t.toggleDraft},
 		tabs.Command{ID: "pr_session", Title: "PR: start a forge session", Key: pk.Session, Run: t.startSession},
 		tabs.Command{ID: "pr_runs", Title: "PR: show pipeline runs", Key: pk.Runs, Run: t.showRuns},
+		tabs.Command{ID: "pr_fix", Title: "CI: fix this (failing checks)", Key: pk.Fix, Run: func() tea.Cmd { return t.fix(false) }},
+		tabs.Command{ID: "pr_fix_edit", Title: "CI: fix this (edit prompt)…", Key: pk.FixEdit, Run: func() tea.Cmd { return t.fix(true) }},
 	)
 }
 

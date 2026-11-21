@@ -115,3 +115,18 @@ func (f *fakeSvc) Unarchive(_ context.Context, x store.Session) error {
 	}
 	return errors.New("no such session")
 }
+
+// SendPrompt records the prompt; sendErr is returned once.
+func (f *fakeSvc) SendPrompt(_ context.Context, x store.Session, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.sendErr; err != nil {
+		f.sendErr = nil
+		return err
+	}
+	if f.sent == nil {
+		f.sent = map[string][]string{}
+	}
+	f.sent[x.Name] = append(f.sent[x.Name], text)
+	return nil
+}

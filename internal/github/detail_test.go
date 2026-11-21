@@ -80,6 +80,16 @@ func TestParsePRDetail(t *testing.T) {
 		}
 	}
 
+	if r, j, ok := d.Checks[0].CheckIDs(); !ok || r != 77 || j != 88 {
+		t.Errorf("test check ids = %d/%d %v, want 77/88", r, j, ok)
+	}
+	if _, _, ok := d.Checks[3].CheckIDs(); ok {
+		t.Errorf("lint check has no Actions ids: %+v", d.Checks[3])
+	}
+	if d.HeadSHA != "abc1234def" || d.HeadMessage != "Fix the parser\n\nLonger body." {
+		t.Errorf("head = %q %q", d.HeadSHA, d.HeadMessage)
+	}
+
 	wantAct := []struct{ kind, author, state, body string }{
 		{EventReview, "carol", ReviewStateChangesRequested, "nit"},
 		{EventComment, "", "", "ghost here"},
@@ -194,5 +204,31 @@ func TestClientPRDetail(t *testing.T) {
 				t.Errorf("variables = %v", vars)
 			}
 		})
+	}
+}
+
+func TestParseCheckIDs(t *testing.T) {
+	tests := []struct {
+		url      string
+		run, job int64
+		ok       bool
+	}{
+		{"https://github.com/o/r/actions/runs/123/job/456", 123, 456, true},
+		{"https://github.com/o/r/actions/runs/123/job/456?pr=7", 123, 456, true},
+		{"https://github.com/o/r/actions/runs/123", 0, 0, false},
+		{"https://ci.example.com/build/9", 0, 0, false},
+		{"", 0, 0, false},
+		{"https://github.com/o/r/actions/runs/0/job/4", 0, 0, false},
+	}
+	for _, tt := range tests {
+		r, j, ok := ParseCheckIDs(tt.url)
+		if r != tt.run || j != tt.job || ok != tt.ok {
+			t.Errorf("ParseCheckIDs(%q) = %d, %d, %v; want %d, %d, %v", tt.url, r, j, ok, tt.run, tt.job, tt.ok)
+		}
+	}
+	// Stored ids win over the URL.
+	c := Check{URL: "https://github.com/o/r/actions/runs/1/job/2", RunID: 5, JobID: 6}
+	if r, j, ok := c.CheckIDs(); !ok || r != 5 || j != 6 {
+		t.Errorf("CheckIDs = %d %d %v", r, j, ok)
 	}
 }

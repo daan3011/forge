@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 
+	"github.com/daan3011/forge/internal/cifix"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
@@ -60,7 +61,11 @@ func (t *Tab) StartSession(src tabs.Source) tea.Cmd {
 	if t.dialog != nil {
 		return info("finish the open dialog first")
 	}
-	return t.openNewWith(t.sourceRequest(src))
+	req := t.sourceRequest(src)
+	if src.Fix != nil {
+		return t.startFix(src, req)
+	}
+	return t.openNewWith(req)
 }
 
 // sourceRequest turns src into a new-session request.
@@ -70,6 +75,9 @@ func (t *Tab) sourceRequest(src tabs.Source) NewRequest {
 		Base:     src.Base,
 		Branch:   src.Branch,
 		Template: src.Template,
+	}
+	if src.Fix != nil {
+		o.StartCommit = src.Fix.StartCommit
 	}
 	if p, ok := projectForRepo(t.cfg.Projects, src.Repo); ok {
 		o.Project = p.Name
@@ -110,8 +118,18 @@ var titleVars = map[store.LinkKind]string{
 var nameJunk = regexp.MustCompile(`[^a-z0-9_-]+`)
 
 // SourceName is the session name for a source: the lower-cased issue key
-// ("proj-123") or "pr-<number>", cut to a valid session name.
+// ("proj-123"), "pr-<number>", or a run's branch ("fix-ci-42"), cut to a
+// valid session name.
 func SourceName(src tabs.Source) string {
+	if src.Kind == store.KindGitHubRun {
+		id := src.ID
+		if src.Branch != "" {
+			id = src.Branch
+		} else if _, n, ok := strings.Cut(id, "#"); ok {
+			id = "run-" + n
+		}
+		return SourceName(tabs.Source{Kind: store.KindPlaneIssue, ID: id})
+	}
 	if src.Kind == store.KindGitHubPR {
 		n := src.Number
 		if n == 0 {
@@ -208,6 +226,13 @@ func RefURL(cfg *config.Config, kind store.LinkKind, id string) string {
 		return github.PullURL(repo, n)
 	case store.KindPlaneIssue:
 		return cfg.Plane.IssueURL(id)
+	case store.KindGitHubRun:
+		repo, num, ok := strings.Cut(id, "#")
+		n, err := strconv.ParseInt(num, 10, 64)
+		if !ok || err != nil {
+			return ""
+		}
+		return cifix.RunURL(repo, n)
 	}
 	return ""
 }
@@ -367,7 +392,12 @@ func (t *Tab) linkLines(r agent.Row) []string {
 		}
 		return s
 	}
-	return []string{line("issue", store.KindPlaneIssue), line("pr", store.KindGitHubPR)}
+	lines := []string{line("issue", store.KindPlaneIssue), line("pr", store.KindGitHubPR)}
+	if len(agent.LinksOf(r.LinkList, store.KindGitHubRun)) > 0 {
+		// Only fix sessions for a run without a PR have one (P2.8).
+		lines = append(lines, line("run", store.KindGitHubRun))
+	}
+	return lines
 }
 
 // openLinked opens the selected session's link of kind in the browser; for
@@ -384,6 +414,9 @@ func (t *Tab) openLinked(kind store.LinkKind) tea.Cmd {
 		what = "PR or issue"
 		if len(ls) == 0 {
 			ls = agent.LinksOf(r.LinkList, store.KindPlaneIssue)
+		}
+		if len(ls) == 0 {
+			ls = agent.LinksOf(r.LinkList, store.KindGitHubRun) // a P2.8 fix session
 		}
 	}
 	if len(ls) == 0 {

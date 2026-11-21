@@ -2,7 +2,6 @@ package pipelines
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/daan3011/forge/internal/cifix"
 	"github.com/daan3011/forge/internal/cilog"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/tabs"
@@ -247,25 +247,16 @@ func (t *Tab) saveSummary(r github.Run, j github.Job, l *jobLog) tea.Cmd {
 	if t.store == nil {
 		return nil
 	}
-	s := cilog.Summary{
-		Repo: r.Repo, RunID: r.ID, RunNumber: r.RunNumber, Attempt: r.Attempt,
-		Workflow: r.Workflow, Branch: r.Branch, HeadSHA: r.HeadSHA,
-		JobID: j.ID, Job: j.Name, URL: j.URL,
-		Lines: cilog.SummaryLines(l.view), Tail: l.view.Tail, ExtractedAt: t.now(),
-	}
+	s := cifix.NewSummary(cifix.RunOf(r), j.ID, j.Name, j.URL, l.view, t.now())
 	project := ""
 	if t.project != nil {
 		project = t.project.Name
 	}
 	st := t.store
 	return func() tea.Msg {
-		b, err := json.Marshal(s)
-		if err != nil {
-			return summarySavedMsg{err: err}
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return summarySavedMsg{err: st.Put(ctx, cilog.SummaryKey(s.Repo, s.RunID, s.JobID), cilog.Kind, project, b, 0)}
+		return summarySavedMsg{err: cifix.Save(ctx, st, project, s)}
 	}
 }
 
@@ -510,6 +501,10 @@ func (t *Tab) updateLog(kp tea.KeyPressMsg) tea.Cmd {
 		return t.rerunAll()
 	case key.Matches(kp, k.CancelRun):
 		return t.cancelRun()
+	case key.Matches(kp, k.Fix):
+		return t.fix(false)
+	case key.Matches(kp, k.FixEdit):
+		return t.fix(true)
 	case key.Matches(kp, k.Open):
 		return t.openJob()
 	case key.Matches(kp, k.NextJob):

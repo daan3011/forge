@@ -55,7 +55,8 @@ func TestServiceEndToEnd(t *testing.T) {
 	script := "#!/bin/sh\n" +
 		`printf 'PWD=%s\n' "$PWD"; printf 'FORGE_SESSION=%s\n' "$FORGE_SESSION"` + "\n" +
 		`for a in "$@"; do printf 'ARG<%s>\n' "$a"; done` + "\n" +
-		"exec sleep 600\n"
+		// Then echoes each line it is sent (SendPrompt), and keeps running.
+		`while IFS= read -r l; do printf 'GOT<%s>\n' "$l"; done; exec sleep 600` + "\n"
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +108,21 @@ func TestServiceEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(out, "PWD="+x.Worktree) && !strings.Contains(out, "PWD="+wantPath) {
 		t.Errorf("claude not started in the worktree %s:\n%s", x.Worktree, out)
+	}
+
+	// P2.8: a follow-up prompt pasted into the running agent.
+	if err := svc.SendPrompt(ctx, x, "fix this\nsecond line $HOME"); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if out, err = svc.Preview(ctx, x, 50); err == nil && strings.Contains(out, "GOT<second line $HOME>") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(out, "GOT<fix this>") || !strings.Contains(out, "GOT<second line $HOME>") {
+		t.Errorf("pasted prompt not received:\n%s", out)
 	}
 
 	rows, err := svc.List(ctx, "demo", false)

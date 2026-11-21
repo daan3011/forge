@@ -96,6 +96,7 @@ type Model struct {
 	clipboard    clipboard.Copier    // from WithClipboard
 	delta        delta.Renderer      // from WithDelta
 	runs         github.RunsClient   // from WithRuns
+	pulls        github.PullFinder   // from WithPulls
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -130,7 +131,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Config: cfg, Sessions: m.sessions, Live: m.live,
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
-		Runs: m.runs,
+		Runs: m.runs, Pulls: m.pulls,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
