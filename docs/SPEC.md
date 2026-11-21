@@ -124,7 +124,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | P2.4 | Review queue & diff | Diff in a viewport (through `delta` if installed); approve, request changes, comment. |
 | P2.5 | Stale PR markers | Flag PRs with no activity in N days (configurable). |
 | P2.6 | Pipelines list | Workflow runs per repo/branch with status, duration, trigger. |
-| P2.7 | Log tail & rerun | Failed job logs collapsed to error lines; rerun failed jobs or the whole run. |
+| P2.7 | Log tail & rerun | Failed job logs collapsed to error lines; rerun failed jobs (`t`) or the whole run (`ctrl+r`); cancel (`X`). |
 | P2.8 | "Fix this" from CI | Starts a session in the PR's worktree with the failing log in the first prompt. |
 
 ### Phase 3 — Plane
@@ -690,11 +690,13 @@ Done when: I can see live progress of a running pipeline.
 ```text
 Add logs and reruns (spec P2.7).
 
-- `l` on a failed job downloads its logs and opens a viewport collapsed to error context: show
+- `l` on a failed run downloads its failed jobs' logs and opens a viewport collapsed to error context: show
   lines matching error patterns (error, failed, panic, FAIL, exit code, ##[error]) with 5 lines
-  around each; `e` toggles the full log; `/` searches.
+  around each; `e` toggles the full log; `/` searches (`n` / `N` jump between matches);
+  `]` / `[` move between the run's failed jobs.
 - Strip ANSI and GitHub timestamps for readability.
-- `R` reruns failed jobs, `ctrl+r` reruns the whole run, `X` cancels a running run.
+- `t` ("retry") reruns failed jobs, in the run list and the log viewer (`R` is global refresh-all, so
+  only the modal log viewer also takes `R`); `ctrl+r` reruns the whole run, `X` cancels a running run.
 - Save the extracted error summary in kv_cache for P2.8.
 
 Done when: I can find why a job failed in a few seconds and rerun it.

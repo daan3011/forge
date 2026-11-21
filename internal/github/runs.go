@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 // Run is a GitHub Actions workflow run (P2.6).
@@ -119,7 +122,25 @@ type RunsClient interface {
 	RunJobs(ctx context.Context, repo string, runID int64) ([]Job, error)
 	// Viewer is the login gh is authenticated as.
 	Viewer(ctx context.Context) (string, error)
+	// JobLogs downloads a job's plain-text log (P2.7).
+	JobLogs(ctx context.Context, repo string, jobID int64) ([]byte, error)
+	// RerunFailedJobs reruns the run's failed jobs (and what they need).
+	RerunFailedJobs(ctx context.Context, repo string, runID int64) error
+	// RerunRun reruns every job of the run.
+	RerunRun(ctx context.Context, repo string, runID int64) error
+	// CancelRun cancels a queued or running run.
+	CancelRun(ctx context.Context, repo string, runID int64) error
 }
+
+// MaxLogBytes is the largest job log JobLogs downloads.
+const MaxLogBytes = 32 << 20
+
+// ErrLogTooLarge means a job log is over MaxLogBytes.
+var ErrLogTooLarge = errors.New("log is too large to show here; open the job in the browser")
+
+// ErrLogsUnavailable means GitHub has no log for the job: it expired, or
+// the job hasn't finished.
+var ErrLogsUnavailable = errors.New("logs not available (expired, or the job hasn't finished)")
 
 var _ RunsClient = (*Client)(nil)
 
@@ -163,6 +184,65 @@ func (c *Client) RunJobs(ctx context.Context, repo string, runID int64) ([]Job, 
 		return nil, fmt.Errorf("github: jobs of run %d: %w", runID, err)
 	}
 	return jobs, nil
+}
+
+// JobLogs implements RunsClient. GitHub redirects to a signed download URL,
+// which the HTTP client follows.
+func (c *Client) JobLogs(ctx context.Context, repo string, jobID int64) ([]byte, error) {
+	if !strings.Contains(repo, "/") {
+		return nil, fmt.Errorf("github: logs in %q: need owner/repo", repo)
+	}
+	var out []byte
+	err := c.restGet(ctx, fmt.Sprintf("repos/%s/actions/jobs/%d/logs", repo, jobID), func(r io.Reader) error {
+		b, err := io.ReadAll(io.LimitReader(r, MaxLogBytes+1))
+		if err != nil {
+			return err
+		}
+		if len(b) > MaxLogBytes {
+			return ErrLogTooLarge
+		}
+		out = b
+		return nil
+	})
+	var he *api.HTTPError
+	switch {
+	case errors.As(err, &he) && (he.StatusCode == http.StatusNotFound || he.StatusCode == http.StatusGone):
+		return nil, fmt.Errorf("github: job %d: %w", jobID, ErrLogsUnavailable)
+	case err != nil:
+		return nil, fmt.Errorf("github: logs of job %d: %w", jobID, err)
+	}
+	return out, nil
+}
+
+// RerunFailedJobs implements RunsClient.
+func (c *Client) RerunFailedJobs(ctx context.Context, repo string, runID int64) error {
+	return c.runPost(ctx, repo, runID, "rerun-failed-jobs")
+}
+
+// RerunRun implements RunsClient.
+func (c *Client) RerunRun(ctx context.Context, repo string, runID int64) error {
+	return c.runPost(ctx, repo, runID, "rerun")
+}
+
+// CancelRun implements RunsClient.
+func (c *Client) CancelRun(ctx context.Context, repo string, runID int64) error {
+	return c.runPost(ctx, repo, runID, "cancel")
+}
+
+// runPost POSTs to repos/<repo>/actions/runs/<id>/<action> with no body.
+func (c *Client) runPost(ctx context.Context, repo string, runID int64, action string) error {
+	if !strings.Contains(repo, "/") || runID <= 0 {
+		return fmt.Errorf("github: want owner/repo and a run id, got %q %d", repo, runID)
+	}
+	rc, err := c.rest()
+	if err != nil {
+		return fmt.Errorf("github: %w", err)
+	}
+	path := fmt.Sprintf("repos/%s/actions/runs/%d/%s", repo, runID, action)
+	if err := rc.DoWithContext(ctx, http.MethodPost, path, nil, nil); err != nil {
+		return fmt.Errorf("github: %s run %d: %w", action, runID, err)
+	}
+	return nil
 }
 
 // viewerCache remembers the login once it is known.

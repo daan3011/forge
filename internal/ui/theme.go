@@ -181,6 +181,14 @@ type Theme struct {
 	DiffFile       lipgloss.Style // a file in the file list
 	DiffFileActive lipgloss.Style // the file in view
 
+	// Job log viewer (P2.7).
+	LogGutter   lipgloss.Style // line numbers
+	LogError    lipgloss.Style // lines that look like an error
+	LogGroup    lipgloss.Style // "▸ step" group headers
+	LogHidden   lipgloss.Style // "⋯ 12 lines hidden ⋯"
+	LogMatch    lipgloss.Style // a search match
+	LogMatchCur lipgloss.Style // the current search match
+
 	// PR detail pane (P2.2).
 	DetailBand      lipgloss.Style // the title on a raised band
 	DetailTab       lipgloss.Style // Overview / Checks / Activity
@@ -289,6 +297,13 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		DiffFileHeader: lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		DiffFile:       base,
 		DiffFileActive: lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true),
+
+		LogGutter:   lipgloss.NewStyle().Foreground(p.Muted),
+		LogError:    lipgloss.NewStyle().Foreground(p.Error),
+		LogGroup:    lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		LogHidden:   lipgloss.NewStyle().Foreground(p.Muted).Italic(true),
+		LogMatch:    lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Underline(true),
+		LogMatchCur: lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true),
 
 		DetailBand:      lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		DetailTab:       lipgloss.NewStyle().Foreground(p.Muted).Padding(0, 1),
