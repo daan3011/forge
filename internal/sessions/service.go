@@ -37,7 +37,7 @@ var (
 	// ErrUnknownProject means the session's project is not configured.
 	ErrUnknownProject = errors.New("project not configured")
 	// ErrNoProjectPath means the project has no local checkout to branch from.
-	ErrNoProjectPath = errors.New("project has no path configured")
+	ErrNoProjectPath = errors.New("no local checkout; clone it under one of your project roots")
 	// ErrArchived means the action is not possible on an archived session.
 	ErrArchived = errors.New("session is archived")
 	// ErrNotArchived means Delete was called on a session that isn't archived.
@@ -175,6 +175,15 @@ type Config struct {
 	// is watched for claude refusing its session id; zero means
 	// DefaultStartupCheck. The pane is always checked at least once.
 	StartupCheck time.Duration
+	// Recent remembers the repo a session ran in, so it stays in the
+	// project list (zero-config projects); nil remembers nothing.
+	Recent ProjectRecorder
+}
+
+// ProjectRecorder remembers that a repo was used at a checkout.
+// *store.Projects satisfies it.
+type ProjectRecorder interface {
+	Touch(ctx context.Context, repo, path string) error
 }
 
 // DefaultStartupCheck is the default Config.StartupCheck.
@@ -281,7 +290,7 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		return Started{}, fmt.Errorf("%w: %q", ErrUnknownProject, o.Project)
 	}
 	if p.Path == "" {
-		return Started{}, fmt.Errorf("%w: %s", ErrNoProjectPath, p.Name)
+		return Started{}, fmt.Errorf("%s: %w", p.Name, ErrNoProjectPath)
 	}
 	if o.Base == "" {
 		o.Base = DefaultBase
@@ -393,6 +402,11 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		if err := s.c.Store.AddLink(ctx, store.SessionRef(x.ID), l.To, l.Meta); err != nil {
 			return Started{}, err
 		}
+	}
+	if s.c.Recent != nil && p.Repo != "" {
+		// Best effort: the session runs either way; at worst the repo
+		// isn't listed first next time.
+		_ = s.c.Recent.Touch(ctx, p.Repo, p.Path)
 	}
 	return Started{Session: x, FetchErr: wt.FetchErr}, nil
 }

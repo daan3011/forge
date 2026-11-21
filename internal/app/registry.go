@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -201,16 +202,70 @@ func (m Model) projectItems() []item {
 	for i := range m.cfg.Projects {
 		p := &m.cfg.Projects[i]
 		it := item{
-			id: "project:" + p.Name, title: p.Name, detail: p.Repo, group: groupProjects,
+			id: "project:" + p.Name, title: p.Name, detail: projectDetail(p), group: groupProjects,
 			current: m.project != nil && m.project.Name == p.Name,
 			run:     func(m Model) (Model, tea.Cmd) { return m.setProject(p) },
 		}
 		if it.current {
-			it.detail = joinDetail(p.Repo, "current")
+			it.detail = joinDetail(it.detail, "current")
 		}
 		items = append(items, it)
 	}
 	return items
+}
+
+// projectDetail is "owner/name · ~/code/name", or "· no checkout".
+func projectDetail(p *config.Project) string {
+	where := "no checkout"
+	if p.Path != "" {
+		where = tildePath(p.Path)
+	}
+	if p.Repo == "" {
+		return where
+	}
+	return p.Repo + " · " + where
+}
+
+// tildePath shortens a path under the home folder to ~/….
+func tildePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if rest, ok := strings.CutPrefix(path, home+string(os.PathSeparator)); ok {
+		return "~/" + rest
+	}
+	return path
+}
+
+// handlePlaneLinked records Plane links a tab matched or the user picked
+// (already saved). When the active project (or "all") is affected every
+// tab gets it again, and visible ones refresh.
+func (m Model) handlePlaneLinked(msg tabs.PlaneLinkedMsg) (Model, tea.Cmd) {
+	resend := false
+	for _, l := range msg.Links {
+		for i := range m.cfg.Projects {
+			p := &m.cfg.Projects[i]
+			if !strings.EqualFold(p.Repo, l.Repo) {
+				continue
+			}
+			p.PlaneProjectID, p.PlaneDecided = l.PlaneProjectID, true
+			if m.project == nil || m.project == p {
+				resend = true
+			}
+		}
+	}
+	if !resend {
+		return m, nil
+	}
+	var cmds []tea.Cmd
+	for i, t := range m.tabs {
+		t.SetProject(m.project)
+		if m.refreshesNow(i) {
+			cmds = append(cmds, t.Refresh())
+		}
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func joinDetail(a, b string) string {
@@ -228,7 +283,7 @@ func joinDetail(a, b string) string {
 // shown), and the choice is saved for the next start.
 func (m Model) setProject(p *config.Project) (Model, tea.Cmd) {
 	m.project = p
-	cmds := []tea.Cmd{saveProject(m.store, p)}
+	cmds := []tea.Cmd{saveProject(m.store, p), touchProject(m.projStore, p)}
 	for i, t := range m.tabs {
 		t.SetProject(p)
 		if m.refreshesNow(i) {

@@ -90,12 +90,12 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | ID | Feature | Behaviour |
 | --- | --- | --- |
 | P0.1 | Project scaffold | Go module, cobra commands, Makefile, golangci-lint, CI. |
-| P0.2 | Config | YAML config with defaults, validation and a `forge config edit` command. |
+| P0.2 | Config | YAML config with defaults, validation and a `forge config edit` command. Projects need no config: they are detected, and config entries only override them. |
 | P0.3 | Store | SQLite with versioned migrations; repositories per domain. |
 | P0.4 | App shell & theme | Tab bar, split list/detail layout, status bar, forge palette (see Look & feel). |
 | P0.5 | Keymap & help | Central keymap, vim movement, `?` help overlay generated from bindings. |
 | P0.6 | Command palette | `ctrl+k` fuzzy search over actions and entities (PRs, issues, sessions, docs). |
-| P0.7 | Project switcher | `ctrl+p` picks the active project, which filters every tab (repo + Plane project + docs). |
+| P0.7 | Project switcher | `ctrl+p` picks the active project from the detected repos, most recently used first; it filters every tab (repo + Plane project + docs). |
 | P0.8 | Background refresh | Per-source refresh intervals, cache-first loading, "updated 7s ago" and rate-limit display. |
 | P0.9 | Forge animations | Splash, hammer spinner, heat bar, spark bursts, flame status icons, cold-forge empty states; `animations: full / reduced / off`. |
 
@@ -282,7 +282,13 @@ Done when: `make build lint test` passes and `./bin/forge` opens and quits clean
 Implement internal/config (spec P0.2).
 
 - Load ~/.config/forge/config.yaml (respect XDG_CONFIG_HOME); create a commented default on first run.
-- Schema: projects (name, repo owner/name, local path, plane project id, docs dir),
+- Projects are zero-config (internal/projects): every git checkout with a GitHub remote
+  directly under `project_roots` (default: the parent of the repo forge starts in, plus
+  ~/Documents/Projects, ~/code, ~/src, ~/dev that exist), plus every repo forge was started
+  in or ran a session in (remembered in the database). The repo comes from the checkout's
+  remote, the name from the repo, docs from <path>/.forge/docs.
+- Schema: project_roots; projects as optional overrides matched by repo (name, path,
+  plane project id, docs dir, worktree_copy; only repo is required),
   github (refresh interval, pr sections: title + search query), plane (base url, workspace slug,
   api key or env var name), sessions (worktree root, default template, notify after minutes),
   artifacts (watch globs), ui (animations: full | reduced | off, theme overrides),
@@ -362,7 +368,14 @@ Done when: "quit", "switch tab" and "switch project" work from the palette.
 ```text
 Add the project switcher (spec P0.7).
 
-- ctrl+p opens a fuzzy list of configured projects plus "All projects".
+- ctrl+p opens a fuzzy list of detected projects (most recently used first, with their
+  checkout) plus "All projects". Starting forge inside a repo opens its project.
+- GitHub tabs never need a local checkout: "All projects" covers every repo gh can see
+  (PR searches) or every known repo (runs); actions that need one say how to get it.
+- Plane: a repo is linked to the Plane project whose identifier or name matches it
+  (case-insensitive, ignoring dashes); otherwise the Plane tab asks once "Which Plane
+  project goes with <repo>?" (with "none") and saves the answer in the database.
+  The palette command "Plane: link project…" changes it.
 - The active project is sent to every tab via SetProject; tabs filter their data by it
   (repo for GitHub, project id for Plane, docs dir for docs, repo for sessions).
 - Persist the last active project; show it in the status bar.

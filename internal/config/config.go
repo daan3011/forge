@@ -18,6 +18,11 @@ const DefaultDocsDir = ".forge/docs"
 
 // Config is the whole forge config file.
 type Config struct {
+	// ProjectRoots are folders scanned one level deep for git checkouts
+	// with a GitHub remote; empty uses the defaults (internal/projects).
+	ProjectRoots []string `yaml:"project_roots"`
+	// Projects are optional overrides of detected projects, matched by
+	// repo; entries for repos that aren't detected are added as is.
 	Projects       []Project           `yaml:"projects"`
 	GitHub         GitHub              `yaml:"github"`
 	Plane          Plane               `yaml:"plane"`
@@ -39,6 +44,9 @@ type Project struct {
 	// WorktreeCopy lists files (globs relative to Path, e.g. ".env.local")
 	// copied from the checkout into every new agent worktree.
 	WorktreeCopy []string `yaml:"worktree_copy"`
+	// PlaneDecided is set (never from YAML) once the Plane link is known:
+	// PlaneProjectID set, or chosen to be none.
+	PlaneDecided bool `yaml:"-"`
 }
 
 // Owner returns the owner half of Repo ("owner/name").

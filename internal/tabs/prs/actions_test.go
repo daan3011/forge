@@ -394,7 +394,7 @@ func TestCheckout(t *testing.T) {
 
 	// No project for the repo.
 	r.selectPR(t, "acme/lipgloss#3")
-	if got, _ := r.keys("c"); len(got.errs) != 1 || !strings.Contains(got.errs[0], "no project with a path for acme/lipgloss") {
+	if got, _ := r.keys("c"); len(got.errs) != 1 || !strings.Contains(got.errs[0], "no local checkout of acme/lipgloss") {
 		t.Errorf("toasts = %+v", got)
 	}
 

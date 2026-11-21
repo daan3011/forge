@@ -115,7 +115,7 @@ func (s *Service) Resume(ctx context.Context, x store.Session, o ResumeOpts) (re
 			return Resumed{}, &WorktreeMissingError{Path: x.Worktree, Branch: x.Branch}
 		}
 		if p.Path == "" {
-			return Resumed{}, fmt.Errorf("%w: %s", ErrNoProjectPath, p.Name)
+			return Resumed{}, fmt.Errorf("%s: %w", p.Name, ErrNoProjectPath)
 		}
 		base := x.BaseBranch
 		if base == "" {

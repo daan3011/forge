@@ -84,6 +84,8 @@ type fakePlane struct {
 	desc     map[string]string // item id -> description HTML
 	comments map[string][]plane.Comment
 	detail   []string // item ids fetched
+
+	projectLists int // Projects calls
 }
 
 func samplePlane() *fakePlane {
@@ -157,6 +159,16 @@ func (f *fakePlane) CachedWorkItems(_ context.Context, project string, fl plane.
 	defer f.mu.Unlock()
 	items, ok := f.cache[filterKey(project, fl)]
 	return plane.Cached[plane.WorkItem]{Items: items, FetchedAt: now.Add(-time.Hour)}, ok
+}
+
+func (f *fakePlane) Projects(context.Context) ([]plane.Project, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.projectLists++
+	return []plane.Project{
+		{ID: p2, Identifier: "LIB", Name: "Lib"},
+		{ID: p1, Identifier: "FORGE", Name: "Forge"},
+	}, nil
 }
 
 func (f *fakePlane) Project(_ context.Context, id string) (plane.Project, error) {
@@ -256,11 +268,17 @@ func testConfig() *config.Config {
 	return cfg
 }
 
-type harness struct{ *Tab }
+type harness struct {
+	*Tab
+	linkedMsgs []tabs.PlaneLinkedMsg
+}
 
 func newHarness(api plane.API, ss sessions.API, project string) *harness {
-	cfg := testConfig()
-	d := tabkit.Deps{Theme: ui.NewTheme(true, nil), Keys: ui.DefaultKeyMap(), Config: cfg, Sessions: ss}
+	return newHarnessWith(api, ss, testConfig(), nil, project)
+}
+
+func newHarnessWith(api plane.API, ss sessions.API, cfg *config.Config, linker tabs.ProjectLinker, project string) *harness {
+	d := tabkit.Deps{Theme: ui.NewTheme(true, nil), Keys: ui.DefaultKeyMap(), Config: cfg, Sessions: ss, ProjectLinks: linker}
 	if api != nil {
 		d.Plane = api
 	}
@@ -316,11 +334,29 @@ func (h *harness) drain(cmd tea.Cmd) (errs, infos []string) {
 		case ui.InfoMsg:
 			infos = append(infos, m.Text)
 			continue
+		case tabs.PlaneLinkedMsg:
+			queue = append(queue, runCmd(h.applyLinks(m))...)
+			continue
 		}
 		_, next := h.Update(msg)
 		queue = append(queue, runCmd(next)...)
 	}
 	return errs, infos
+}
+
+// applyLinks does what the root model does with a PlaneLinkedMsg: update
+// the shared projects and hand the active one to the tab again.
+func (h *harness) applyLinks(m tabs.PlaneLinkedMsg) tea.Cmd {
+	h.linkedMsgs = append(h.linkedMsgs, m)
+	for _, l := range m.Links {
+		for i := range h.cfg.Projects {
+			if strings.EqualFold(h.cfg.Projects[i].Repo, l.Repo) {
+				h.cfg.Projects[i].PlaneProjectID, h.cfg.Projects[i].PlaneDecided = l.PlaneProjectID, true
+			}
+		}
+	}
+	h.SetProject(h.project)
+	return h.Refresh()
 }
 
 func (h *harness) init() []string {
@@ -336,6 +372,8 @@ func press(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "down":
 		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
 	}
 	return tea.KeyPressMsg{Code: rune(s[0]), Text: s}
 }
@@ -554,7 +592,7 @@ func TestAllProjects(t *testing.T) {
 func TestProjectWithoutPlane(t *testing.T) {
 	h := newHarness(samplePlane(), nil, "notes")
 	h.init()
-	mustContain(t, h.view(), "project notes has no Plane project")
+	mustContain(t, h.view(), "notes has no Plane project · ctrl+k → Plane: link project")
 }
 
 func TestNotConfigured(t *testing.T) {

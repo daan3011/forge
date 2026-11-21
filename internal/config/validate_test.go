@@ -16,11 +16,10 @@ func TestValidation(t *testing.T) {
 		line    int
 		msgPart string
 	}{
-		{"project name required", "projects:\n  - repo: a/b\n    path: /x\n", "projects[0].name", 2, "is required"},
+		{"relative project root", "project_roots: [code]\n", "project_roots[0]", 1, "must be absolute"},
 		{"duplicate project", validProject + "  - name: forge\n    repo: a/b\n    path: /y\n", "projects[1].name", 5, `duplicate project name "forge"`},
 		{"bad repo", "projects:\n  - name: f\n    repo: forge\n    path: /x\n", "projects[0].repo", 3, `must be "owner/name", got "forge"`},
 		{"missing repo points at item", "projects:\n  - name: f\n    path: /x\n", "projects[0].repo", 2, "owner/name"},
-		{"path required", "projects:\n  - name: f\n    repo: a/b\n", "projects[0].path", 2, "is required"},
 		{"relative path", "projects:\n  - name: f\n    repo: a/b\n    path: code/f\n", "projects[0].path", 4, "must be absolute"},
 		{"copy absolute", validProject + "    worktree_copy: [/etc/passwd]\n", "projects[0].worktree_copy[0]", 5, "must be relative"},
 		{"copy escapes", validProject + "    worktree_copy: [a/../../x]\n", "projects[0].worktree_copy[0]", 5, `must not contain ".."`},
@@ -97,5 +96,22 @@ func TestValidateInMemoryHasNoFile(t *testing.T) {
 	err := c.Validate()
 	if err == nil || err.Error() != `ui.animations: must be one of full, reduced, off; got "loud"` {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestProjectOverrides: projects are detected, so a config entry only needs
+// its repo; project_roots expand ~ like other paths.
+func TestProjectOverrides(t *testing.T) {
+	t.Setenv("HOME", "/home/me")
+	body := "project_roots: [~/code, /srv/git]\nprojects:\n  - repo: daan/forge\n    plane_project_id: abc\n  - repo: daan/lib\n"
+	cfg, err := Load(writeConfig(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ProjectRoots; len(got) != 2 || got[0] != "/home/me/code" || got[1] != "/srv/git" {
+		t.Errorf("roots = %v", got)
+	}
+	if len(cfg.Projects) != 2 || cfg.Projects[0].Name != "" || cfg.Projects[0].PlaneProjectID != "abc" {
+		t.Errorf("projects = %+v", cfg.Projects)
 	}
 }

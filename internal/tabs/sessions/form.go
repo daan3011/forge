@@ -41,8 +41,8 @@ func UsableProjects(ps []config.Project) []config.Project {
 	return out
 }
 
-// ErrNoProjects means no configured project has a path.
-var ErrNoProjects = errors.New("no project with a path configured — add one under projects: in your config")
+// ErrNoProjects means no known project has a local checkout.
+var ErrNoProjects = errors.New("no local git checkouts found; clone a repo under ~/Documents/Projects, ~/code, ~/src or ~/dev, or set project_roots in your config")
 
 // NewForm returns the new-session form and the values it fills in. The form
 // is the same in the TUI and in `forge new`.

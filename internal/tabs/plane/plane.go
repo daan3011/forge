@@ -81,6 +81,7 @@ type Tab struct {
 	keys     *ui.KeyMap
 	api      plane.API
 	apiErr   error
+	linker   tabs.ProjectLinker
 	sessions sessions.API
 	browser  browser.Opener
 	clip     clipboard.Copier
@@ -112,7 +113,8 @@ type Tab struct {
 	fetchErr error // the last fetch failed (shown while nothing is loaded)
 	errShown bool  // a fetch error was toasted since the last Refresh
 
-	det detailState
+	det  detailState
+	link linkState
 }
 
 var (
@@ -135,7 +137,7 @@ func newTab(d tabkit.Deps) *Tab {
 		cfg = config.Default()
 	}
 	t := &Tab{
-		theme: d.Theme, keys: d.Keys, api: d.Plane, apiErr: d.PlaneErr,
+		theme: d.Theme, keys: d.Keys, api: d.Plane, apiErr: d.PlaneErr, linker: d.ProjectLinks,
 		sessions: d.Sessions, browser: d.Browser, clip: d.Clipboard, cfg: cfg,
 		now: time.Now, tick: tea.Tick,
 		split:    ui.NewSplitPane(d.Theme),
@@ -145,6 +147,7 @@ func newTab(d tabkit.Deps) *Tab {
 		metaBusy: map[string]bool{},
 		synced:   map[string]string{},
 		det:      newDetailState(),
+		link:     newLinkState(),
 	}
 	t.split.SetRatio(listRatio)
 	t.table = ui.NewTable(t.theme, t.keys, t.columns())
@@ -265,10 +268,10 @@ func (t *Tab) Refresh() tea.Cmd {
 	if t.api == nil {
 		return nil
 	}
+	cmds := []tea.Cmd{t.ensureLinks()}
 	if t.filt.assignee == assigneeMe && t.me.ID == "" {
-		return t.askMe()
+		return tea.Batch(append(cmds, t.askMe())...)
 	}
-	var cmds []tea.Cmd
 	single := t.single()
 	for _, l := range t.lists {
 		cmds = append(cmds, t.loadMeta(l.id))
@@ -515,6 +518,10 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.meLoaded(msg)
 	case metaMsg:
 		return t.metaLoaded(msg)
+	case planeProjectsMsg:
+		return t.planeProjectsLoaded(msg)
+	case linkFailedMsg:
+		return t.linkFailed(msg)
 	case clipboardFallbackMsg:
 		return tea.Batch(tea.SetClipboard(msg.text), func() tea.Msg { return ui.InfoMsg{Text: "copied " + msg.text} })
 	}
@@ -773,6 +780,7 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "plane_clear_filters", Title: "Plane: clear filters", Key: pk.ClearFilters, Run: t.clearFilters},
 		{ID: "plane_detail_down", Title: "Plane: scroll detail down", Key: pk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
 		{ID: "plane_detail_up", Title: "Plane: scroll detail up", Key: pk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
+		{ID: "plane_link_project", Title: "Plane: link project…", Run: t.linkProject},
 		{ID: "plane_open", Title: "Issue: open in browser", Key: pk.Open, Run: t.openInBrowser},
 		{ID: "plane_copy_url", Title: "Issue: copy URL", Key: pk.CopyURL, Run: t.copyURL},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(func() { t.split.Grow(); t.resizeTable() })},
@@ -904,10 +912,8 @@ func (t *Tab) emptyView(w, h int) string {
 		if t.apiErr != nil {
 			msg += ": " + t.apiErr.Error()
 		}
-	case len(t.lists) == 0 && t.project != nil:
-		msg = "project " + t.project.Name + " has no Plane project (projects[].plane_project_id)"
 	case len(t.lists) == 0:
-		msg = "no projects with a Plane project configured (projects[].plane_project_id)"
+		msg = t.linkHint()
 	case !t.loaded() && t.fetchErr != nil:
 		msg = "couldn't load issues: " + reason(t.fetchErr)
 	case !t.loaded() || t.asking:

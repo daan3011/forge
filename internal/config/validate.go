@@ -77,22 +77,23 @@ func (c *Config) Validate() error {
 		es = append(es, ValidationError{Key: key, Msg: fmt.Sprintf(format, args...)})
 	}
 
+	for i, r := range c.ProjectRoots {
+		if !filepath.IsAbs(r) {
+			add(fmt.Sprintf("project_roots[%d]", i), "must be absolute or start with ~/, got %q", r)
+		}
+	}
+
 	names := map[string]bool{}
 	for i, p := range c.Projects {
 		k := fmt.Sprintf("projects[%d]", i)
-		switch {
-		case p.Name == "":
-			add(k+".name", "is required")
-		case names[p.Name]:
+		if p.Name != "" && names[p.Name] {
 			add(k+".name", "duplicate project name %q", p.Name)
 		}
 		names[p.Name] = true
 		if !repoRe.MatchString(p.Repo) {
 			add(k+".repo", "must be \"owner/name\", got %q", p.Repo)
 		}
-		if p.Path == "" {
-			add(k+".path", "is required")
-		} else if !filepath.IsAbs(p.Path) {
+		if p.Path != "" && !filepath.IsAbs(p.Path) {
 			add(k+".path", "must be absolute or start with ~/, got %q", p.Path)
 		}
 		for j, g := range p.WorktreeCopy {

@@ -232,7 +232,7 @@ func (t *Tab) copyURL() tea.Cmd {
 	}
 }
 
-// projectFor is the configured project with a checkout for repo, the
+// projectFor is the known project with a checkout for repo, the
 // active one first.
 func (t *Tab) projectFor(repo string) (config.Project, bool) {
 	if t.project != nil && strings.EqualFold(t.project.Repo, repo) && t.project.Path != "" {
@@ -256,7 +256,7 @@ func (t *Tab) checkoutPR() tea.Cmd {
 	}
 	proj, ok := t.projectFor(p.Repo)
 	if !ok {
-		return errCmd(fmt.Errorf("check out #%d: no project with a path for %s in the config", p.Number, p.Repo))
+		return errCmd(fmt.Errorf("check out #%d: no local checkout of %s; clone it under one of your project roots", p.Number, p.Repo))
 	}
 	if p.HeadRef == "" && !p.CrossRepo {
 		return errCmd(fmt.Errorf("check out #%d: its branch is unknown; refresh first", p.Number))

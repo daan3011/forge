@@ -100,7 +100,7 @@ func TestProjectPicker(t *testing.T) {
 	view := m.render()
 	assertScreen(t, view, 100, 30)
 	plain := ansi.Strip(view)
-	for _, want := range []string{"◆ Projects", "All projects", "daan3011/alpha · current"} {
+	for _, want := range []string{"◆ Projects", "All projects", "daan3011/alpha · no checkout · current"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("picker missing %q:\n%s", want, plain)
 		}

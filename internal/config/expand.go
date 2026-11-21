@@ -9,6 +9,9 @@ import (
 // expand resolves $VAR / ${VAR} and a leading ~/ in path-like fields. It runs
 // per field (never on the raw YAML) so env values cannot inject YAML.
 func (c *Config) expand() {
+	for i, r := range c.ProjectRoots {
+		c.ProjectRoots[i] = expandPath(r)
+	}
 	for i := range c.Projects {
 		p := &c.Projects[i]
 		p.Path = expandPath(p.Path)
