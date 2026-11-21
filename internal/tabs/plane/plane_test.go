@@ -86,6 +86,10 @@ type fakePlane struct {
 	detail   []string // item ids fetched
 
 	projectLists int // Projects calls
+
+	statesBy   map[string][]plane.State // project -> states (default Todo, In Progress, Done)
+	updates    []string                 // "project id state_id" per UpdateWorkItem
+	updateErrs []error                  // returned by the next UpdateWorkItem calls, in order
 }
 
 func samplePlane() *fakePlane {
@@ -116,8 +120,12 @@ func samplePlane() *fakePlane {
 }
 
 func filterKey(project string, f plane.WorkItemFilter) string {
-	return fmt.Sprintf("%s assignee=%s groups=%v label=%s cycle=%s",
+	k := fmt.Sprintf("%s assignee=%s groups=%v label=%s cycle=%s",
 		project, strings.Join(f.AssigneeIDs, ","), f.StateGroups, strings.Join(f.LabelIDs, ","), f.CycleID)
+	if !f.UpdatedAfter.IsZero() {
+		k += " after=" + f.UpdatedAfter.UTC().Format(time.RFC3339)
+	}
+	return k
 }
 
 func (f *fakePlane) Me(context.Context) (plane.User, error) {
@@ -146,6 +154,9 @@ func (f *fakePlane) WorkItems(_ context.Context, project string, fl plane.WorkIt
 			continue
 		}
 		if fl.CycleID != "" && w.CycleID != fl.CycleID {
+			continue
+		}
+		if !fl.UpdatedAfter.IsZero() && w.UpdatedAt.Before(fl.UpdatedAfter) {
 			continue
 		}
 		out = append(out, w)
@@ -178,8 +189,58 @@ func (f *fakePlane) Project(_ context.Context, id string) (plane.Project, error)
 	return plane.Project{ID: p1, Identifier: "FORGE", Name: "Forge"}, nil
 }
 
-func (f *fakePlane) States(context.Context, string) ([]plane.State, error) {
-	return []plane.State{stTodo, stDoing, stDone}, nil
+func (f *fakePlane) States(_ context.Context, project string) ([]plane.State, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.statesFor(project), nil
+}
+
+func (f *fakePlane) statesFor(project string) []plane.State {
+	if ss, ok := f.statesBy[project]; ok {
+		return ss
+	}
+	return []plane.State{stTodo, stDoing, stDone}
+}
+
+// UpdateWorkItem records the call; it fails with the next queued error,
+// else moves the item to the new state.
+func (f *fakePlane) UpdateWorkItem(_ context.Context, project, id string, in plane.WorkItemUpdate) (plane.WorkItem, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sid := ""
+	if in.StateID != nil {
+		sid = *in.StateID
+	}
+	f.updates = append(f.updates, project+" "+id+" "+sid)
+	if len(f.updateErrs) > 0 {
+		err := f.updateErrs[0]
+		f.updateErrs = f.updateErrs[1:]
+		if err != nil {
+			return plane.WorkItem{}, err
+		}
+	}
+	for i, w := range f.items[project] {
+		if w.ID != id {
+			continue
+		}
+		for _, st := range f.statesFor(project) {
+			if st.ID == sid {
+				s := st
+				f.items[project][i].StateID, f.items[project][i].State = sid, &s
+			}
+		}
+		f.items[project][i].UpdatedAt = plane.Date{Time: now}
+		out := f.items[project][i]
+		out.State, out.Assignees, out.Labels = nil, nil, nil // not expanded
+		return out, nil
+	}
+	return plane.WorkItem{}, &plane.APIError{Status: http.StatusNotFound}
+}
+
+func (f *fakePlane) updateCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.updates)
 }
 
 func (f *fakePlane) Labels(context.Context, string) ([]plane.Label, error) {

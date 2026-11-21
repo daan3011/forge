@@ -197,6 +197,14 @@ type Theme struct {
 	StatusCard      lipgloss.Style // bordered box around the status lines
 	CardTitle       lipgloss.Style // first line of a status entry
 
+	// Plane kanban board (P3.3).
+	BoardHeader       lipgloss.Style // column header: count and rule
+	BoardCard         lipgloss.Style // bordered card
+	BoardCardSelected lipgloss.Style // the card under the cursor
+	BoardCollapsed    lipgloss.Style // a collapsed column's strip
+	BoardScrollHint   lipgloss.Style // "‹ 2" / "3 ›" for columns out of view
+	BoardOverlay      lipgloss.Style // the card detail box over the board
+
 	PaletteBox            lipgloss.Style
 	PalettePrompt         lipgloss.Style
 	PaletteGroup          lipgloss.Style
@@ -311,6 +319,13 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		DetailRule:      lipgloss.NewStyle().Foreground(p.Border),
 		StatusCard:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
 		CardTitle:       lipgloss.NewStyle().Foreground(p.Text).Bold(true),
+
+		BoardHeader:       lipgloss.NewStyle().Foreground(p.Muted),
+		BoardCard:         lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
+		BoardCardSelected: lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(p.Accent).Padding(0, 1),
+		BoardCollapsed:    lipgloss.NewStyle().Foreground(p.Muted),
+		BoardScrollHint:   lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		BoardOverlay:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
 
 		PaletteBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
 		PalettePrompt:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),

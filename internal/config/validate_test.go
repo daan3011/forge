@@ -29,6 +29,7 @@ func TestValidation(t *testing.T) {
 		{"sessions refresh too fast", "sessions:\n  refresh_interval: 3s\n", "sessions.refresh_interval", 2, "at least 5s"},
 		{"section title", "github:\n  pr_sections:\n    - query: is:open\n", "github.pr_sections[0].title", 3, "is required"},
 		{"section query", "github:\n  pr_sections:\n    - title: All\n", "github.pr_sections[0].query", 3, "is required"},
+		{"plane board days", "plane:\n  board_done_days: 0\n", "plane.board_done_days", 2, "1 or more"},
 		{"plane url", "plane:\n  base_url: plane.local\n", "plane.base_url", 2, "http(s) URL"},
 		{"relative worktree root", "sessions:\n  worktree_root: wt\n", "sessions.worktree_root", 2, "must be absolute"},
 		{"negative stale", "github:\n  stale_after_days: -1\n", "github.stale_after_days", 2, "0 or more"},

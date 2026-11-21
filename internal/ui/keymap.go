@@ -151,6 +151,15 @@ type PlaneKeys struct {
 	DetailUp     key.Binding
 	Open         key.Binding // the work item in the browser
 	CopyURL      key.Binding
+
+	// Kanban board (P3.3).
+	Board         key.Binding // list <-> board
+	ColLeft       key.Binding
+	ColRight      key.Binding
+	MovePrev      key.Binding // the card to the previous state
+	MoveNext      key.Binding // the card to the next state
+	CollapseEmpty key.Binding
+	OpenCard      key.Binding // the card's detail as an overlay (Input.Cancel closes it)
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -327,6 +336,14 @@ func DefaultKeyMap() *KeyMap {
 			DetailUp:     bind("scroll detail up", "K"),
 			Open:         bind("open in browser", "o"),
 			CopyURL:      bind("copy URL", "y"),
+
+			Board:         bind("board / list", "b"),
+			ColLeft:       bind("prev column", "h", "left"),
+			ColRight:      bind("next column", "l", "right"),
+			MovePrev:      bind("move to prev state", "H"),
+			MoveNext:      bind("move to next state", "L"),
+			CollapseEmpty: bind("collapse empty columns", "z"),
+			OpenCard:      bind("open card", "enter"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -496,6 +513,13 @@ func (k *KeyMap) actions() []action {
 		{"plane_detail_up", scopePlane, &pl.DetailUp},
 		{"plane_open", scopePlane, &pl.Open},
 		{"plane_copy_url", scopePlane, &pl.CopyURL},
+		{"plane_board", scopePlane, &pl.Board},
+		{"plane_col_left", scopePlane, &pl.ColLeft},
+		{"plane_col_right", scopePlane, &pl.ColRight},
+		{"plane_move_prev", scopePlane, &pl.MovePrev},
+		{"plane_move_next", scopePlane, &pl.MoveNext},
+		{"plane_collapse_empty", scopePlane, &pl.CollapseEmpty},
+		{"plane_open_card", scopePlane, &pl.OpenCard},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

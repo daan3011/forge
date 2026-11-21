@@ -97,6 +97,20 @@ type Plane struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 	// RefreshInterval is how often Plane lists refresh in the background.
 	RefreshInterval Duration `yaml:"refresh_interval"`
+	// BoardDoneDays is how many days back the board's completed and
+	// cancelled columns reach (by updated time).
+	BoardDoneDays int `yaml:"board_done_days"`
+}
+
+// DefaultBoardDoneDays is plane.board_done_days when unset.
+const DefaultBoardDoneDays = 14
+
+// DoneDays is BoardDoneDays, or DefaultBoardDoneDays when unset.
+func (p Plane) DoneDays() int {
+	if p.BoardDoneDays <= 0 {
+		return DefaultBoardDoneDays
+	}
+	return p.BoardDoneDays
 }
 
 // IssueURL is the web URL of the work item with the given key (e.g.
@@ -217,6 +231,7 @@ func Default() *Config {
 			BaseURL:         "https://api.plane.so",
 			APIKeyEnv:       "PLANE_API_KEY",
 			RefreshInterval: Duration{2 * time.Minute},
+			BoardDoneDays:   DefaultBoardDoneDays,
 		},
 		Sessions: Sessions{
 			WorktreeRoot:       filepath.Join(DataHome(), "forge", "worktrees"),

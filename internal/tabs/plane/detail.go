@@ -163,6 +163,9 @@ func (t *Tab) updateDetail(msg tea.Msg) (tea.Cmd, bool) {
 func (t *Tab) syncDetail() tea.Cmd {
 	d := &t.det
 	w, ok := t.selected()
+	if dw, _ := t.detailSize(); dw <= 0 {
+		ok = false // nothing shows it (the board without its overlay)
+	}
 	if !ok {
 		d.want, d.wantID = "", ""
 		return nil
@@ -272,7 +275,7 @@ func (t *Tab) loadLinks(key string) tea.Cmd {
 func (t *Tab) ensureRendered() tea.Cmd {
 	d := &t.det
 	w, ok := t.selected()
-	width, _ := t.split.RightSize()
+	width, _ := t.detailSize()
 	if !ok || width <= 0 {
 		return nil
 	}
@@ -307,17 +310,28 @@ func (t *Tab) detailRendered(msg detailRenderedMsg) {
 
 // scrollDetail moves the pane by half its height; the view clamps it.
 func (t *Tab) scrollDetail(dir int) {
-	_, h := t.split.RightSize()
+	_, h := t.detailSize()
 	t.det.offset = max(t.det.offset+dir*max(h/2, 1), 0)
 }
 
 // --- view --------------------------------------------------------------------------------
 
-// detail is the right pane: the header, then the description, linked
-// sessions and PRs, and comments, scrolling under the header.
-func (t *Tab) detail() string {
+// detailSize is the inner size of wherever the detail shows: the right
+// pane, the board's overlay, or nowhere (0, 0) on the board without it.
+func (t *Tab) detailSize() (w, h int) {
+	if t.mode == modeBoard {
+		if !t.overlay {
+			return 0, 0
+		}
+		return t.overlaySize()
+	}
+	return t.split.RightSize()
+}
+
+// detailView is the detail at w x h: the header, then the description,
+// linked sessions and PRs, and comments, scrolling under the header.
+func (t *Tab) detailView(w, h int) string {
 	th := t.theme
-	w, h := t.split.RightSize()
 	if w <= 0 || h <= 0 {
 		return ""
 	}
