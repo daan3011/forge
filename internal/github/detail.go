@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -73,6 +75,9 @@ type PRDetail struct {
 	// MergeMethods are the merge methods the repo allows (MergeMethod*),
 	// in GitHub's order; empty when unknown (an older cache entry).
 	MergeMethods []string `json:"merge_methods"`
+	// HeadSHA and HeadMessage are the head commit's oid and full message.
+	HeadSHA     string `json:"head_sha,omitempty"`
+	HeadMessage string `json:"head_message,omitempty"`
 }
 
 // Label is a PR label; Color is GitHub's hex without "#".
@@ -95,6 +100,38 @@ type Check struct {
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at"`
 	URL         string    `json:"url"`
+	// RunID and JobID are the GitHub Actions run and job behind a check
+	// run; 0 for other checks (and older cache entries, see CheckIDs).
+	RunID int64 `json:"run_id,omitempty"`
+	JobID int64 `json:"job_id,omitempty"`
+}
+
+// actionsJobURL matches a GitHub Actions job page:
+// …/actions/runs/<run>/job/<job>.
+var actionsJobURL = regexp.MustCompile(`/actions/runs/(\d+)/job/(\d+)`)
+
+// CheckIDs returns the Actions run and job ids behind c, falling back to
+// its URL for checks cached before the ids were fetched. ok is false for
+// checks that aren't GitHub Actions jobs.
+func (c Check) CheckIDs() (runID, jobID int64, ok bool) {
+	if c.RunID > 0 && c.JobID > 0 {
+		return c.RunID, c.JobID, true
+	}
+	return ParseCheckIDs(c.URL)
+}
+
+// ParseCheckIDs reads the run and job ids out of an Actions job URL.
+func ParseCheckIDs(url string) (runID, jobID int64, ok bool) {
+	m := actionsJobURL.FindStringSubmatch(url)
+	if m == nil {
+		return 0, 0, false
+	}
+	r, err1 := strconv.ParseInt(m[1], 10, 64)
+	j, err2 := strconv.ParseInt(m[2], 10, 64)
+	if err1 != nil || err2 != nil || r <= 0 || j <= 0 {
+		return 0, 0, false
+	}
+	return r, j, true
 }
 
 // Event is a comment or a review.
@@ -135,11 +172,11 @@ var prDetailQuery = fmt.Sprintf(`query ForgePRDetail($owner: String!, $name: Str
         ... on Team { slug organization { login } }
       } } }
       latestReviews(first: %[2]d) { nodes { state author { login } } }
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: %[3]d) { nodes {
+      commits(last: 1) { nodes { commit { oid message statusCheckRollup { contexts(first: %[3]d) { nodes {
         __typename
         ... on CheckRun {
-          name status conclusion startedAt completedAt detailsUrl
-          checkSuite { workflowRun { workflow { name } } }
+          name status conclusion startedAt completedAt detailsUrl databaseId
+          checkSuite { workflowRun { databaseId workflow { name } } }
         }
         ... on StatusContext { context state createdAt targetUrl }
       } } } } } }
@@ -214,6 +251,8 @@ type gqlDetail struct {
 			Commits struct {
 				Nodes []struct {
 					Commit struct {
+						OID               string `json:"oid"`
+						Message           string `json:"message"`
 						StatusCheckRollup *struct {
 							Contexts struct {
 								Nodes []gqlContext `json:"nodes"`
@@ -250,9 +289,11 @@ type gqlContext struct {
 	StartedAt   *time.Time `json:"startedAt"`
 	CompletedAt *time.Time `json:"completedAt"`
 	DetailsURL  string     `json:"detailsUrl"`
+	DatabaseID  int64      `json:"databaseId"`
 	CheckSuite  *struct {
 		WorkflowRun *struct {
-			Workflow *struct {
+			DatabaseID int64 `json:"databaseId"`
+			Workflow   *struct {
 				Name string `json:"name"`
 			} `json:"workflow"`
 		} `json:"workflowRun"`
@@ -337,6 +378,8 @@ func ParsePRDetail(r io.Reader) (PRDetail, error) {
 	}
 
 	if len(pr.Commits.Nodes) > 0 {
+		d.HeadSHA = pr.Commits.Nodes[0].Commit.OID
+		d.HeadMessage = strings.TrimSpace(pr.Commits.Nodes[0].Commit.Message)
 		if roll := pr.Commits.Nodes[0].Commit.StatusCheckRollup; roll != nil {
 			for _, c := range roll.Contexts.Nodes {
 				if ch, ok := parseContext(c); ok {
@@ -369,8 +412,13 @@ func parseContext(c gqlContext) (Check, bool) {
 			Name: c.Name, State: checkRunState(c.Status, c.Conclusion), URL: c.DetailsURL,
 			StartedAt: deref(c.StartedAt), CompletedAt: deref(c.CompletedAt),
 		}
-		if s := c.CheckSuite; s != nil && s.WorkflowRun != nil && s.WorkflowRun.Workflow != nil {
-			ch.Workflow = s.WorkflowRun.Workflow.Name
+		if s := c.CheckSuite; s != nil && s.WorkflowRun != nil {
+			if s.WorkflowRun.Workflow != nil {
+				ch.Workflow = s.WorkflowRun.Workflow.Name
+			}
+			if s.WorkflowRun.DatabaseID > 0 && c.DatabaseID > 0 {
+				ch.RunID, ch.JobID = s.WorkflowRun.DatabaseID, c.DatabaseID
+			}
 		}
 		return ch, true
 	case "StatusContext":

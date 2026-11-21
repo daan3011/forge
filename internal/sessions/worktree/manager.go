@@ -40,6 +40,11 @@ func (w *Worktrees) Create(ctx context.Context, opts CreateOpts) (Created, error
 	if err := checkBase(opts.Base); err != nil {
 		return Created{}, err
 	}
+	if opts.StartCommit != "" {
+		if err := checkCommit(opts.StartCommit); err != nil {
+			return Created{}, err
+		}
+	}
 	branch, custom := Branch(opts.Session), opts.Branch != ""
 	if custom {
 		if err := CheckBranch(opts.Branch); err != nil {
@@ -83,7 +88,7 @@ func (w *Worktrees) Create(ctx context.Context, opts CreateOpts) (Created, error
 		return Created{}, &BranchExistsError{Branch: branch}
 	}
 	upstream := ""
-	if !exists && custom {
+	if !exists && custom && opts.StartCommit == "" {
 		if upstream, res.FetchErr, err = w.remoteBranch(ctx, p.Path, branch); err != nil {
 			return Created{}, err
 		}
@@ -104,7 +109,13 @@ func (w *Worktrees) Create(ctx context.Context, opts CreateOpts) (Created, error
 			return Created{}, err
 		}
 	default:
-		start, fetchErr, err := w.startPoint(ctx, p.Path, opts.Base)
+		var start string
+		var fetchErr error
+		if opts.StartCommit != "" {
+			start, err = w.commitStartPoint(ctx, p.Path, opts.StartCommit)
+		} else {
+			start, fetchErr, err = w.startPoint(ctx, p.Path, opts.Base)
+		}
 		if err != nil {
 			return Created{}, err
 		}
@@ -141,6 +152,33 @@ func (w *Worktrees) remoteBranch(ctx context.Context, repo, branch string) (upst
 		return "", nil, err
 	}
 	return ref, fetchErr, nil
+}
+
+// commitStartPoint returns sha as a start point, fetching it from origin
+// when it isn't local yet (GitHub serves any reachable commit by sha).
+func (w *Worktrees) commitStartPoint(ctx context.Context, repo, sha string) (string, error) {
+	ok, err := w.git.RefExists(ctx, repo, sha)
+	if err != nil || ok {
+		return sha, err
+	}
+	hasRemote, err := w.git.HasRemote(ctx, repo, Remote)
+	if err != nil {
+		return "", err
+	}
+	var fetchErr error
+	if hasRemote {
+		fetchErr = w.git.FetchCommit(ctx, repo, Remote, sha)
+		if ok, err = w.git.RefExists(ctx, repo, sha); err != nil {
+			return "", err
+		}
+	}
+	switch {
+	case ok:
+		return sha, nil
+	case fetchErr != nil:
+		return "", fmt.Errorf("worktree: commit %s not found locally and fetch failed: %w", sha, fetchErr)
+	}
+	return "", fmt.Errorf("worktree: commit %s not found", sha)
 }
 
 // startPoint fetches base from origin (when there is one) and returns the

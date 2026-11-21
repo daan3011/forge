@@ -69,6 +69,9 @@ type Deps struct {
 	// Runs lists workflow runs and their jobs for the Pipelines tab
 	// (P2.6); nil shows that GitHub isn't available.
 	Runs github.RunsClient
+	// Pulls finds the PR opened from a failed run's branch for "fix this"
+	// (P2.8); nil treats every run as having no PR.
+	Pulls github.PullFinder
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

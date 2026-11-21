@@ -31,6 +31,24 @@ type Source struct {
 	Template string
 	// Vars pre-fill template variables (e.g. P2.8's failing_log).
 	Vars map[string]string
+	// Fix makes this a "fix this" request from CI (P2.8); nil opens the
+	// pre-filled new-session form as usual.
+	Fix *FixRequest
+}
+
+// FixRequest says how a "fix this" source is handled (P2.8).
+type FixRequest struct {
+	// Reuse sends the rendered prompt into the newest live session linked
+	// to the source, when there is one, instead of starting another.
+	Reuse bool
+	// Immediate starts the new session without the form, unless a
+	// template variable is missing or the template is gone.
+	Immediate bool
+	// StartCommit starts the new branch at this commit (a fix branch for a
+	// run without a PR).
+	StartCommit string
+	// Confirm, when set, is asked (default yes) before anything happens.
+	Confirm string
 }
 
 // StartSessionMsg asks the tab that owns sessions to open the new-session

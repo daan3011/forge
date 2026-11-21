@@ -356,6 +356,43 @@ func TestPreview(t *testing.T) {
 	}
 }
 
+func TestSendPrompt(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	x := e.start(t, "fix")
+	tg := tmux.Target{Session: "forge", Window: "fix"}
+	text := "CI is failing\n```text\n--- FAIL: TestX\n```"
+	if err := e.svc.SendPrompt(ctx, x, text); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.tmux.Pasted(tg); len(got) != 1 || got[0] != text {
+		t.Errorf("pasted = %q", got)
+	}
+
+	e.tmux.Exit(tg, 0)
+	if err := e.svc.SendPrompt(ctx, x, "again"); !errors.Is(err, ErrNoWindow) {
+		t.Errorf("exited agent: err = %v", err)
+	}
+	x.TmuxWindow = ""
+	if err := e.svc.SendPrompt(ctx, x, "again"); !errors.Is(err, ErrNoWindow) {
+		t.Errorf("no window: err = %v", err)
+	}
+	if got := e.tmux.Pasted(tg); len(got) != 1 {
+		t.Errorf("pasted after failures = %q", got)
+	}
+}
+
+func TestStartFromCommitPassesThrough(t *testing.T) {
+	e := newEnv(t)
+	_, err := e.svc.Start(context.Background(), StartOpts{Name: "fix-ci-9", Project: "forge", Branch: "fix/ci-9", StartCommit: "abc1234"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(e.wt.created); n != 1 || e.wt.created[0].StartCommit != "abc1234" || e.wt.created[0].Branch != "fix/ci-9" {
+		t.Errorf("created = %+v", e.wt.created)
+	}
+}
+
 func TestKillKeepsRowAsDead(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

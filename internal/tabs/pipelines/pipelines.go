@@ -110,6 +110,10 @@ type Tab struct {
 	logID  int
 	logs   logCache
 	acting map[string]bool // run keys with a rerun / cancel in flight
+
+	// "Fix this" (P2.8).
+	pulls  github.PullFinder
+	fixing map[string]bool // run keys whose failure is being gathered
 }
 
 var (
@@ -123,6 +127,7 @@ var (
 	_ tabs.StatusDetailer  = (*Tab)(nil)
 	_ tabs.VisibilityAware = (*Tab)(nil)
 	_ tabs.RunsShower      = (*Tab)(nil)
+	_ tabs.Busier          = (*Tab)(nil)
 )
 
 // New returns the Pipelines tab.
@@ -140,6 +145,8 @@ func newTab(d tabkit.Deps) *Tab {
 		filter: ui.NewFilter(d.Theme, d.Keys),
 		det:    newDetailState(),
 		acting: map[string]bool{},
+		pulls:  d.Pulls,
+		fixing: map[string]bool{},
 	}
 	t.split.SetRatio(listRatio)
 	t.buildTable(false)
@@ -312,6 +319,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.fastTick(msg)
 	case runActionMsg:
 		return t.actionDone(msg)
+	case fixGatheredMsg:
+		return t.fixGathered(msg)
 	case refreshSoonMsg:
 		return t.Refresh()
 	}
@@ -355,6 +364,10 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.rerunAll()
 	case key.Matches(kp, pk.CancelRun):
 		return t.cancelRun()
+	case key.Matches(kp, pk.Fix):
+		return t.fix(false)
+	case key.Matches(kp, pk.FixEdit):
+		return t.fix(true)
 	case key.Matches(kp, l.GrowPane):
 		t.split.Grow()
 		t.resizeTable()
@@ -848,15 +861,19 @@ func (t *Tab) Commands() []tabs.Command {
 	var cmds []tabs.Command
 	// In the viewer the action keys are its own (t also takes R there).
 	logs, rerunF, rerunA, cancel := pk.Logs, pk.RerunFailed, pk.RerunAll, pk.CancelRun
+	fix, fixEdit := pk.Fix, pk.FixEdit
 	if t.log != nil {
 		cmds = t.logCommands()
 		logs, rerunF, rerunA, cancel = key.Binding{}, t.keys.Log.RerunFailed, t.keys.Log.RerunAll, t.keys.Log.CancelRun
+		fix, fixEdit = t.keys.Log.Fix, t.keys.Log.FixEdit
 	}
 	cmds = append(cmds,
 		tabs.Command{ID: "pipeline_logs", Title: "Run: view failed job logs", Key: logs, Run: t.openLogs},
 		tabs.Command{ID: "pipeline_rerun_failed", Title: "Run: rerun failed jobs", Key: rerunF, Run: t.rerunFailed},
 		tabs.Command{ID: "pipeline_rerun", Title: "Run: rerun whole run…", Key: rerunA, Run: t.rerunAll},
 		tabs.Command{ID: "pipeline_cancel", Title: "Run: cancel…", Key: cancel, Run: t.cancelRun},
+		tabs.Command{ID: "pipeline_fix", Title: "CI: fix this", Key: fix, Run: func() tea.Cmd { return t.fix(false) }},
+		tabs.Command{ID: "pipeline_fix_edit", Title: "CI: fix this (edit prompt)…", Key: fixEdit, Run: func() tea.Cmd { return t.fix(true) }},
 	)
 	cmds = append(cmds, []tabs.Command{
 		{ID: "filter", Title: "Filter runs", Key: l.Filter, Run: do(t.startFilter)},

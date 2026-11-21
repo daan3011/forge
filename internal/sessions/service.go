@@ -243,6 +243,9 @@ type StartOpts struct {
 	Worktree string
 	// Links are the issue / PR the session is for, saved with it (P1.9).
 	Links []LinkSpec
+	// StartCommit starts a new branch at this commit instead of Base (P2.8
+	// fix branches); see worktree.CreateOpts.StartCommit.
+	StartCommit string
 }
 
 // LinkSpec is a link a new session gets: To and what forge knows of it.
@@ -400,7 +403,7 @@ func (s *Service) worktree(ctx context.Context, p config.Project, o StartOpts) (
 		}
 		return worktree.Created{Path: o.Worktree, Branch: o.Branch, Reused: true}, nil
 	}
-	wt, err := s.c.Worktrees.Create(ctx, worktree.CreateOpts{Project: p, Session: o.Name, Base: o.Base, Branch: o.Branch})
+	wt, err := s.c.Worktrees.Create(ctx, worktree.CreateOpts{Project: p, Session: o.Name, Base: o.Base, Branch: o.Branch, StartCommit: o.StartCommit})
 	var co *worktree.BranchCheckedOutError
 	if !errors.As(err, &co) {
 		return wt, err
@@ -532,9 +535,14 @@ func linkLabel(links []store.Link) string {
 
 // ShortRef is a link's short label: "#12" for a PR, the key for an issue.
 func ShortRef(r store.Ref) string {
-	if r.Kind == store.KindGitHubPR {
+	switch r.Kind {
+	case store.KindGitHubPR:
 		if _, num, ok := strings.Cut(r.ID, "#"); ok {
 			return "#" + num
+		}
+	case store.KindGitHubRun:
+		if _, id, ok := strings.Cut(r.ID, "#"); ok {
+			return "run " + id
 		}
 	}
 	return r.ID
@@ -703,6 +711,30 @@ func (s *Service) Preview(ctx context.Context, x store.Session, lines int) (stri
 	return s.c.Tmux.CapturePane(ctx, t, lines)
 }
 
+// SendPrompt pastes text into x's running agent as a new prompt and
+// submits it (P2.8 "fix this" on a session that already exists). A window
+// that is gone or whose agent exited gives ErrNoWindow.
+func (s *Service) SendPrompt(ctx context.Context, x store.Session, text string) error {
+	t, err := Target(x)
+	if err != nil {
+		return err
+	}
+	alive, err := s.c.Tmux.WindowAlive(ctx, t)
+	if err != nil {
+		return err
+	}
+	if !alive {
+		return fmt.Errorf("%w: %s", ErrNoWindow, x.Name)
+	}
+	if err := s.c.Tmux.PasteText(ctx, t, text); err != nil {
+		if errors.Is(err, tmux.ErrNotFound) {
+			return fmt.Errorf("%w: %s", ErrNoWindow, x.Name)
+		}
+		return err
+	}
+	return nil
+}
+
 // KillOpts are the inputs to Kill.
 type KillOpts struct {
 	// RemoveWorktree also removes the worktree and archives the session.
@@ -847,6 +879,7 @@ type API interface {
 	Start(ctx context.Context, o StartOpts) (Started, error)
 	List(ctx context.Context, project string, archived bool) ([]Row, error)
 	Preview(ctx context.Context, x store.Session, lines int) (string, error)
+	SendPrompt(ctx context.Context, x store.Session, text string) error
 	Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error)
 	Delete(ctx context.Context, x store.Session) error
 	ClearWaiting(ctx context.Context, x store.Session) (bool, error)

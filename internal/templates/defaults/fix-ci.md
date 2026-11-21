@@ -3,13 +3,29 @@
 # prompt. {name} placeholders are filled from the session (repo, branch, docs),
 # from the linked issue / PR, or asked for in the new-session form. Write \{ for
 # a literal brace. Variables you declare here get a description and a default.
+# "Fix this" (F on a red run or check) fills every variable below.
 name: fix-ci
 description: Find and fix why CI fails on this branch
 variables:
+  - name: ci_workflow
+    description: the failing workflow(s)
+  - name: ci_job
+    description: the failing job(s)
+  - name: ci_run
+    description: link(s) to the failing run
+  - name: commit_message
+    description: the message of the commit CI ran on
   - name: failing_log
     description: the failing CI log (or the relevant part of it)
 ---
-CI is failing for {repo} on branch {branch}. Here is the failing log:
+CI is failing for {repo} on branch {branch}.
+
+- Workflow: {ci_workflow}
+- Job: {ci_job}
+- Run: {ci_run}
+- Last commit: {commit_message}
+
+The error context from the failing log:
 
 ```text
 {failing_log}

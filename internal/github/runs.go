@@ -27,8 +27,10 @@ type Run struct {
 	// Title is the run's display title (usually the head commit's first
 	// line, or the PR title).
 	Title string `json:"title"`
-	Event string `json:"event"` // push, pull_request, schedule, …
-	Actor string `json:"actor"`
+	// CommitMessage is the head commit's full message.
+	CommitMessage string `json:"commit_message,omitempty"`
+	Event         string `json:"event"` // push, pull_request, schedule, …
+	Actor         string `json:"actor"`
 	// State is a Check* constant, so runs share the checks' icons.
 	State      string    `json:"state"`
 	Status     string    `json:"status"`     // REST status: queued, in_progress, completed, …
@@ -322,9 +324,13 @@ func ParseRuns(r io.Reader, repo string) ([]Run, error) {
 	}
 	out := make([]Run, 0, len(raw.Runs))
 	for _, w := range raw.Runs {
+		msg := ""
+		if w.HeadCommit != nil {
+			msg = strings.TrimSpace(w.HeadCommit.Message)
+		}
 		title := w.DisplayTitle
-		if title == "" && w.HeadCommit != nil {
-			title = w.HeadCommit.Message
+		if title == "" {
+			title = msg
 		}
 		title, _, _ = strings.Cut(strings.TrimSpace(title), "\n")
 		actor := ""
@@ -337,7 +343,7 @@ func ParseRuns(r io.Reader, repo string) ([]Run, error) {
 		out = append(out, Run{
 			Repo: repo, ID: w.ID, RunNumber: w.RunNumber, Attempt: w.RunAttempt,
 			Workflow: w.Name, Branch: w.HeadBranch, HeadSHA: w.HeadSHA,
-			Title: strings.TrimSpace(title), Event: w.Event, Actor: actor,
+			Title: strings.TrimSpace(title), CommitMessage: msg, Event: w.Event, Actor: actor,
 			State:  restState(w.Status, w.Conclusion),
 			Status: w.Status, Conclusion: w.Conclusion, URL: w.HTMLURL,
 			CreatedAt: w.CreatedAt, StartedAt: w.RunStartedAt, UpdatedAt: w.UpdatedAt,

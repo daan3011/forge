@@ -101,6 +101,10 @@ type CreateOpts struct {
 	// ReuseBranch checks out an existing agent/<session> branch instead of
 	// failing with ErrBranchExists. Custom branches are always reused.
 	ReuseBranch bool
+	// StartCommit, when set, is the commit (full or abbreviated sha) a new
+	// branch starts from instead of Base (P2.8: a fix branch at the commit
+	// CI failed on). A commit missing locally is fetched from origin.
+	StartCommit string
 }
 
 // Created describes a new worktree.
@@ -177,6 +181,16 @@ func CheckBranch(branch string) error {
 
 // checkBase rejects base branch names that could be read as flags or that
 // git would refuse.
+var hexSHA = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
+
+// checkCommit validates a StartCommit.
+func checkCommit(sha string) error {
+	if !hexSHA.MatchString(sha) {
+		return fmt.Errorf("%w: commit %q", ErrInvalidName, sha)
+	}
+	return nil
+}
+
 func checkBase(base string) error {
 	if base == "" || strings.HasPrefix(base, "-") || strings.HasPrefix(base, "/") ||
 		strings.HasSuffix(base, "/") || strings.HasSuffix(base, ".lock") ||

@@ -53,6 +53,10 @@ type fakeSvc struct {
 	pulls    map[string]store.Link // branch -> PR SyncPRs links
 	syncs    int
 
+	// fix this (P2.8)
+	sent    map[string][]string // SendPrompt texts by session name
+	sendErr error               // returned once by SendPrompt
+
 	// transcripts by session name; a missing name means no transcript.
 	transcripts     map[string]transcript.Transcript
 	transcriptLoads int

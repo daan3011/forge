@@ -51,6 +51,9 @@ func TestParseRuns(t *testing.T) {
 	if r.ID != 1000 || r.RunNumber != 7 || r.Attempt != 2 || r.Event != "workflow_dispatch" || r.Key() != "acme/app#1000" {
 		t.Errorf("run 1 fields = %+v", r)
 	}
+	if r.CommitMessage != "Bump version\n\nLong body here" || runs[0].CommitMessage != "" {
+		t.Errorf("commit messages = %q / %q", r.CommitMessage, runs[0].CommitMessage)
+	}
 }
 
 func TestRunDuration(t *testing.T) {

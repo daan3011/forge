@@ -39,6 +39,12 @@ func WithRuns(r github.RunsClient) Option {
 	return func(m *Model) { m.runs = r }
 }
 
+// WithPulls lets "fix this" (P2.8) find the PR opened from a failed run's
+// branch.
+func WithPulls(p github.PullFinder) Option {
+	return func(m *Model) { m.pulls = p }
+}
+
 // WithCheckout lets the PRs tab check PRs out locally (P2.3).
 func WithCheckout(c checkout.Checker) Option {
 	return func(m *Model) { m.checkout = c }

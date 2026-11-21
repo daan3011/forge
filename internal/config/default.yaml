@@ -131,6 +131,8 @@ keybinds:
   # pr_session: ["s"]              # start a forge session for the PR
   # pr_diff: ["v"]                 # full-screen diff viewer to review the PR
   # pr_runs: ["p"]                 # the PR branch's workflow runs (Pipelines tab)
+  # pr_fix: ["F"]                  # "fix this": failing checks to an agent (reuses a live linked session)
+  # pr_fix_edit: ["alt+f"]         # the same, editing the prompt first
   # Pipelines tab
   # pipeline_filters: ["f"]        # branch / workflow / status / mine form
   # pipeline_mine: ["m"]           # only runs started by me
@@ -142,6 +144,8 @@ keybinds:
   # pipeline_rerun_failed: ["t"]   # rerun failed jobs ("retry")
   # pipeline_rerun: ["ctrl+r"]     # rerun the whole run
   # pipeline_cancel: ["X"]         # cancel a queued / running run
+  # pipeline_fix: ["F"]            # "fix this": the failed run to an agent
+  # pipeline_fix_edit: ["alt+f"]   # the same, editing the prompt first
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
@@ -183,6 +187,8 @@ keybinds:
   # log_rerun_failed: ["t", "R"]
   # log_rerun: ["ctrl+r"]
   # log_cancel: ["X"]
+  # log_fix: ["F"]                 # "fix this": the job on screen to an agent
+  # log_fix_edit: ["alt+f"]
   # log_open: ["o"]                # the job in the browser
   # log_close: ["esc", "q"]
   # Text inputs (filter, palette)

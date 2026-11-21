@@ -116,6 +116,10 @@ type PRKeys struct {
 	// Runs jumps to the PR branch's workflow runs on the Pipelines tab
 	// (P2.6).
 	Runs key.Binding
+	// Fix hands the PR's failing checks to an agent (P2.8); FixEdit opens
+	// the prompt for editing first.
+	Fix     key.Binding
+	FixEdit key.Binding
 }
 
 // PipelineKeys are the Pipelines tab's actions (P2.6).
@@ -131,6 +135,9 @@ type PipelineKeys struct {
 	RerunFailed key.Binding
 	RerunAll    key.Binding
 	CancelRun   key.Binding
+	// "Fix this" (P2.8): the failed run to an agent; FixEdit edits first.
+	Fix     key.Binding
+	FixEdit key.Binding
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -151,6 +158,8 @@ type LogKeys struct {
 	RerunFailed key.Binding
 	RerunAll    key.Binding
 	CancelRun   key.Binding
+	Fix         key.Binding // the job on screen to an agent (P2.8)
+	FixEdit     key.Binding
 	Open        key.Binding // the job in the browser
 	Close       key.Binding
 }
@@ -280,6 +289,8 @@ func DefaultKeyMap() *KeyMap {
 			Session:      bind("start session", "s"),
 			Diff:         bind("review diff", "v"),
 			Runs:         bind("pipeline runs", "p"),
+			Fix:          bind("fix failing checks", "F"),
+			FixEdit:      bind("fix (edit prompt)", "alt+f"),
 		},
 		Pipelines: PipelineKeys{
 			Filters:      bind("filters", "f"),
@@ -292,6 +303,8 @@ func DefaultKeyMap() *KeyMap {
 			RerunFailed:  bind("rerun failed jobs", "t"),
 			RerunAll:     bind("rerun whole run", "ctrl+r"),
 			CancelRun:    bind("cancel run", "X"),
+			Fix:          bind("fix this", "F"),
+			FixEdit:      bind("fix (edit prompt)", "alt+f"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -336,6 +349,8 @@ func DefaultKeyMap() *KeyMap {
 			RerunFailed: bind("rerun failed jobs", "t", "R"),
 			RerunAll:    bind("rerun whole run", "ctrl+r"),
 			CancelRun:   bind("cancel run", "X"),
+			Fix:         bind("fix this", "F"),
+			FixEdit:     bind("fix (edit prompt)", "alt+f"),
 			Open:        bind("open job in browser", "o"),
 			Close:       bind("close", "esc", "q"),
 		},
@@ -437,6 +452,8 @@ func (k *KeyMap) actions() []action {
 		{"pr_session", scopePRs, &pr.Session},
 		{"pr_diff", scopePRs, &pr.Diff},
 		{"pr_runs", scopePRs, &pr.Runs},
+		{"pr_fix", scopePRs, &pr.Fix},
+		{"pr_fix_edit", scopePRs, &pr.FixEdit},
 		{"pipeline_filters", scopePipes, &pp.Filters},
 		{"pipeline_mine", scopePipes, &pp.Mine},
 		{"pipeline_clear_filters", scopePipes, &pp.ClearFilters},
@@ -447,6 +464,8 @@ func (k *KeyMap) actions() []action {
 		{"pipeline_rerun_failed", scopePipes, &pp.RerunFailed},
 		{"pipeline_rerun", scopePipes, &pp.RerunAll},
 		{"pipeline_cancel", scopePipes, &pp.CancelRun},
+		{"pipeline_fix", scopePipes, &pp.Fix},
+		{"pipeline_fix_edit", scopePipes, &pp.FixEdit},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},
@@ -485,6 +504,8 @@ func (k *KeyMap) actions() []action {
 		{"log_rerun_failed", scopeLog, &lg.RerunFailed},
 		{"log_rerun", scopeLog, &lg.RerunAll},
 		{"log_cancel", scopeLog, &lg.CancelRun},
+		{"log_fix", scopeLog, &lg.Fix},
+		{"log_fix_edit", scopeLog, &lg.FixEdit},
 		{"log_open", scopeLog, &lg.Open},
 		{"log_close", scopeLog, &lg.Close},
 		{"cancel", scopeInput, &in.Cancel},
