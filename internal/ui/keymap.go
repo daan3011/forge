@@ -172,6 +172,9 @@ type PlaneKeys struct {
 	Edit    key.Binding // edit the selected item
 	Comment key.Binding // comment on the selected item
 	Session key.Binding // start a forge session for the selected item
+
+	// Cycle summary (P3.6).
+	Cycle key.Binding // filter to the current cycle / back to every cycle
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -378,6 +381,8 @@ func DefaultKeyMap() *KeyMap {
 			Edit:    bind("edit", "e"),
 			Comment: bind("comment", "c"),
 			Session: bind("start session", "s"),
+
+			Cycle: bind("current cycle", "C"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -575,6 +580,7 @@ func (k *KeyMap) actions() []action {
 		{"plane_edit", scopePlane, &pl.Edit},
 		{"plane_comment", scopePlane, &pl.Comment},
 		{"plane_session", scopePlane, &pl.Session},
+		{"plane_cycle", scopePlane, &pl.Cycle},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},
