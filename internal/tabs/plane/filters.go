@@ -82,6 +82,7 @@ func (t *Tab) updateFilter(msg tea.KeyPressMsg) {
 	default:
 		if t.filter.Update(msg) {
 			t.table.SetFilter(t.filter.Value())
+			t.rebuildBoard()
 		}
 	}
 }
@@ -90,6 +91,7 @@ func (t *Tab) clearFilter() {
 	t.filter.Clear()
 	t.table.SetFilter("")
 	t.resizeTable()
+	t.rebuildBoard()
 }
 
 // --- filter form -------------------------------------------------------------------

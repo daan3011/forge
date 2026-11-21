@@ -320,7 +320,11 @@ func (f *fakeSessions) SetIssueStates(_ context.Context, states map[string]strin
 
 func testConfig() *config.Config {
 	cfg := config.Default()
-	cfg.Plane = config.Plane{BaseURL: "https://plane.example", Workspace: "acme"}
+	cfg.Plane = config.Plane{
+		BaseURL: "https://plane.example", Workspace: "acme",
+		RefreshInterval: config.Duration{Duration: 2 * time.Minute},
+		BoardDoneDays:   config.DefaultBoardDoneDays,
+	}
 	cfg.Projects = []config.Project{
 		{Name: "app", Repo: "acme/app", PlaneProjectID: p1},
 		{Name: "lib", Repo: "acme/lib", PlaneProjectID: p2},

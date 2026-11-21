@@ -171,7 +171,8 @@ keybinds:
   # plane_col_right: ["l", "right"]
   # plane_move_prev: ["H"]         # board: card to the previous state
   # plane_move_next: ["L"]         # board: card to the next state
-  # plane_collapse_empty: ["z"]    # board: collapse empty columns
+  # plane_collapse_column: ["z"]   # board: collapse / expand the selected column
+  # plane_collapse_empty: ["Z"]    # board: collapse / expand every empty column
   # plane_open_card: ["enter"]     # board: the card's detail (esc closes it)
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]

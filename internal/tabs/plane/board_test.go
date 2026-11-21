@@ -144,11 +144,12 @@ func TestBoardScrollsHorizontally(t *testing.T) {
 func TestBoardCollapse(t *testing.T) {
 	api := samplePlane()
 	backlog := plane.State{ID: "s-backlog", Name: "Backlog", Group: plane.GroupBacklog}
+	review := plane.State{ID: "s-review", Name: "Review", Group: plane.GroupStarted, Sequence: 1}
 	cancelled := plane.State{ID: "s-cancel", Name: "Cancelled", Group: plane.GroupCancelled}
-	api.statesBy = map[string][]plane.State{p1: {stDone, cancelled, stDoing, backlog, stTodo}}
+	api.statesBy = map[string][]plane.State{p1: {stDone, cancelled, review, stDoing, backlog, stTodo}}
 	h := boardHarness(t, api, nil, "app")
 
-	want := []string{"Backlog: ", "Todo: FORGE-2", "In Progress: FORGE-1", "Done: FORGE-3", "Cancelled: "}
+	want := []string{"Backlog: ", "Todo: FORGE-2", "In Progress: FORGE-1", "Review: ", "Done: FORGE-3", "Cancelled: "}
 	if got := h.columns(); !slices.Equal(got, want) {
 		t.Fatalf("columns = %v, want %v", got, want)
 	}
@@ -159,24 +160,92 @@ func TestBoardCollapse(t *testing.T) {
 		}
 		return out
 	}
-	if got := collapsed(); !slices.Equal(got, []bool{false, false, false, false, true}) {
+	if got := collapsed(); !slices.Equal(got, []bool{false, false, false, false, false, true}) {
 		t.Fatalf("collapsed = %v", got)
 	}
+
+	// z folds the cursor's column; it stays a strip under the cursor and
+	// nothing is selected in it.
 	h.send("z")
-	if got := collapsed(); !slices.Equal(got, []bool{true, false, false, false, true}) {
+	if got := collapsed(); !slices.Equal(got, []bool{false, false, true, false, false, true}) {
 		t.Fatalf("after z = %v", got)
 	}
-	if w := h.columnWidths(158); w[0] != boardStrip || w[4] != boardStrip || w[1] == boardStrip {
-		t.Fatalf("widths = %v", w)
+	if h.selectedID() != "" || h.cursorCol() != "In Progress" {
+		t.Fatalf("selected %q in %s", h.selectedID(), h.cursorCol())
 	}
-	// The cursor opens a collapsed column.
-	h.send("l", "l")
-	if h.cursorCol() != "Cancelled" || h.board.collapsed(4) {
-		t.Fatalf("cursor on %s, collapsed %v", h.cursorCol(), h.board.collapsed(4))
+	h.send("L", "j", "enter") // no card: nothing to move or open
+	if len(api.updateCalls()) != 0 || h.overlay {
+		t.Fatalf("acted on a collapsed column: %v overlay %v", api.updateCalls(), h.overlay)
 	}
 	h.send("z")
-	if h.board.collapsed(0) {
-		t.Fatal("second z should expand empty columns")
+	if h.board.collapsed(2) || h.selectedID() != "w-FORGE-1" {
+		t.Fatalf("second z: collapsed %v, selected %q", h.board.collapsed(2), h.selectedID())
+	}
+
+	// Z folds every empty column, then opens them again.
+	h.send("Z")
+	if got := collapsed(); !slices.Equal(got, []bool{true, false, false, true, false, true}) {
+		t.Fatalf("after Z = %v", got)
+	}
+	if w := h.columnWidths(158); w[0] != boardStrip || w[3] != boardStrip || w[1] == boardStrip {
+		t.Fatalf("widths = %v", w)
+	}
+	h.send("Z")
+	if got := collapsed(); !slices.Equal(got, []bool{false, false, false, false, false, false}) {
+		t.Fatalf("second Z = %v", got)
+	}
+	mustContain(t, h.view(), "Cancelled 0")
+
+	// Moving a card into a collapsed column opens it.
+	h.send("l", "z", "h", "L")
+	if h.board.collapsed(3) || h.columnOf("w-FORGE-1") != "Review" || h.selectedID() != "w-FORGE-1" {
+		t.Fatalf("move into folded Review: %v, %s", collapsed(), h.columnOf("w-FORGE-1"))
+	}
+}
+
+func TestBoardTextFilter(t *testing.T) {
+	h := boardHarness(t, samplePlane(), nil, "")
+	h.send("/", "b", "u", "g", "enter") // LIB-7 "Lib bug" and FORGE-2's "bug" label
+	want := []string{"Todo: FORGE-2 LIB-7", "In Progress: ", "Done: "}
+	if got := h.columns(); !slices.Equal(got, want) {
+		t.Fatalf("columns = %v, want %v", got, want)
+	}
+	// Same matching as the list.
+	if got := h.keys(); !slices.Equal(got, []string{"FORGE-2", "LIB-7"}) {
+		t.Fatalf("list rows = %v", got)
+	}
+	if h.selectedID() != "w-FORGE-2" {
+		t.Fatalf("cursor on %q", h.selectedID())
+	}
+	mustContain(t, h.view(), "/ bug", "Todo 2", "In Progress 0")
+
+	// Picking a hidden issue drops the filter.
+	h.Select("w-FORGE-3")
+	if h.filter.Visible() || h.columnOf("w-FORGE-3") != "Done" || h.selectedID() != "w-FORGE-3" {
+		t.Fatalf("select hidden: filter %q, selected %q", h.filter.Value(), h.selectedID())
+	}
+	// esc clears it on the board.
+	h.send("/", "s", "w", "i", "t", "c", "h", "enter")
+	if got := h.columns(); !slices.Equal(got, []string{"Todo: ", "In Progress: FORGE-1", "Done: "}) {
+		t.Fatalf("switch filter: %v", got)
+	}
+	h.send("esc")
+	if h.filter.Visible() || len(h.columns()[0]) == len("Todo: ") {
+		t.Fatalf("esc: filter %q, columns %v", h.filter.Value(), h.columns())
+	}
+}
+
+// A filter that hides the cursor's card moves to the nearest column with
+// cards; clearing it goes back to the card.
+func TestBoardFilterKeepsWantedCard(t *testing.T) {
+	h := boardHarness(t, samplePlane(), nil, "app") // on FORGE-1, In Progress
+	h.send("/", "m", "i", "g", "r")                 // only FORGE-3 "Store migrations" (Done)
+	if h.selectedID() != "w-FORGE-3" || h.cursorCol() != "Done" {
+		t.Fatalf("filtered: %q in %s", h.selectedID(), h.cursorCol())
+	}
+	h.send("esc")
+	if h.selectedID() != "w-FORGE-1" {
+		t.Fatalf("after esc: %q", h.selectedID())
 	}
 }
 
@@ -327,7 +396,7 @@ func TestBoardPaletteCommands(t *testing.T) {
 	for _, c := range h.Commands() {
 		byID[c.ID] = c
 	}
-	for _, id := range []string{"plane_board", "plane_col_left", "plane_col_right", "plane_move_prev", "plane_move_next", "plane_collapse_empty", "plane_open_card"} {
+	for _, id := range []string{"plane_board", "plane_col_left", "plane_col_right", "plane_move_prev", "plane_move_next", "plane_collapse_column", "plane_collapse_empty", "plane_open_card"} {
 		if _, ok := byID[id]; !ok {
 			t.Fatalf("no palette command %s", id)
 		}

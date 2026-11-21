@@ -153,13 +153,14 @@ type PlaneKeys struct {
 	CopyURL      key.Binding
 
 	// Kanban board (P3.3).
-	Board         key.Binding // list <-> board
-	ColLeft       key.Binding
-	ColRight      key.Binding
-	MovePrev      key.Binding // the card to the previous state
-	MoveNext      key.Binding // the card to the next state
-	CollapseEmpty key.Binding
-	OpenCard      key.Binding // the card's detail as an overlay (Input.Cancel closes it)
+	Board          key.Binding // list <-> board
+	ColLeft        key.Binding
+	ColRight       key.Binding
+	MovePrev       key.Binding // the card to the previous state
+	MoveNext       key.Binding // the card to the next state
+	CollapseColumn key.Binding // fold / unfold the selected column
+	CollapseEmpty  key.Binding // fold / unfold every empty column
+	OpenCard       key.Binding // the card's detail as an overlay (Input.Cancel closes it)
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -337,13 +338,14 @@ func DefaultKeyMap() *KeyMap {
 			Open:         bind("open in browser", "o"),
 			CopyURL:      bind("copy URL", "y"),
 
-			Board:         bind("board / list", "b"),
-			ColLeft:       bind("prev column", "h", "left"),
-			ColRight:      bind("next column", "l", "right"),
-			MovePrev:      bind("move to prev state", "H"),
-			MoveNext:      bind("move to next state", "L"),
-			CollapseEmpty: bind("collapse empty columns", "z"),
-			OpenCard:      bind("open card", "enter"),
+			Board:          bind("board / list", "b"),
+			ColLeft:        bind("prev column", "h", "left"),
+			ColRight:       bind("next column", "l", "right"),
+			MovePrev:       bind("move to prev state", "H"),
+			MoveNext:       bind("move to next state", "L"),
+			CollapseColumn: bind("collapse column", "z"),
+			CollapseEmpty:  bind("collapse empty columns", "Z"),
+			OpenCard:       bind("open card", "enter"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -518,6 +520,7 @@ func (k *KeyMap) actions() []action {
 		{"plane_col_right", scopePlane, &pl.ColRight},
 		{"plane_move_prev", scopePlane, &pl.MovePrev},
 		{"plane_move_next", scopePlane, &pl.MoveNext},
+		{"plane_collapse_column", scopePlane, &pl.CollapseColumn},
 		{"plane_collapse_empty", scopePlane, &pl.CollapseEmpty},
 		{"plane_open_card", scopePlane, &pl.OpenCard},
 		{"transcript_up", scopeTranscript, &tr.Up},

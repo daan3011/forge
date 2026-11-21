@@ -4,6 +4,7 @@
 package refresh
 
 import (
+	"fmt"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -35,14 +36,21 @@ type TickMsg struct {
 // only touched from Update, so it needs no locking. Its maps are shared
 // between copies, which is what the value-typed root model wants.
 type Scheduler struct {
-	base  map[Source]time.Duration
-	delay map[Source]time.Duration // backoff overrides
-	gen   map[Source]int
+	base     map[Source]time.Duration
+	delay    map[Source]time.Duration // backoff overrides
+	gen      map[Source]int
+	warnings []string
 }
 
-// New reads the per-source intervals from cfg.
+// MinInterval is the shortest delay between ticks. Config validation
+// rejects shorter intervals, but a config built in code skips it, and a
+// zero interval would refresh in a tight loop, so the scheduler clamps too.
+const MinInterval = config.MinRefreshInterval
+
+// New reads the per-source intervals from cfg, clamping any below
+// MinInterval (see Warnings).
 func New(cfg *config.Config) Scheduler {
-	return Scheduler{
+	s := Scheduler{
 		base: map[Source]time.Duration{
 			GitHub:   cfg.GitHub.RefreshInterval.Duration,
 			Plane:    cfg.Plane.RefreshInterval.Duration,
@@ -51,7 +59,17 @@ func New(cfg *config.Config) Scheduler {
 		delay: map[Source]time.Duration{},
 		gen:   map[Source]int{},
 	}
+	for _, src := range All {
+		if d := s.base[src]; d < MinInterval {
+			s.warnings = append(s.warnings, fmt.Sprintf("%s.refresh_interval is %s, below %s; using %s", src, d, MinInterval, MinInterval))
+			s.base[src] = MinInterval
+		}
+	}
+	return s
 }
+
+// Warnings name the intervals New clamped.
+func (s Scheduler) Warnings() []string { return s.warnings }
 
 // Start arms the first tick of every source.
 func (s Scheduler) Start() tea.Cmd {
@@ -63,12 +81,14 @@ func (s Scheduler) Start() tea.Cmd {
 }
 
 // Interval is the current delay between ticks of src: the backoff override
-// if one is set, otherwise the configured interval.
+// if one is set, otherwise the configured interval; never below
+// MinInterval.
 func (s Scheduler) Interval(src Source) time.Duration {
-	if d, ok := s.delay[src]; ok {
-		return d
+	d, ok := s.delay[src]
+	if !ok {
+		d = s.base[src]
 	}
-	return s.base[src]
+	return max(d, MinInterval)
 }
 
 // Handle checks a tick. ok is false for a stale tick, which must be ignored.

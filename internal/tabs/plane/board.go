@@ -61,12 +61,14 @@ type boardState struct {
 	rows   map[string]int // selected card per column key
 	offs   map[string]int // first card shown per column key
 	first  int            // first column shown
-	// collapseEmpty hides empty columns down to a strip (z).
-	collapseEmpty bool
+	// fold is a column's collapsed state set with z / Z (or opened to show
+	// the wanted card); unset columns follow the default: cancelled
+	// collapsed, the rest open.
+	fold map[string]bool
 }
 
 func newBoardState() boardState {
-	return boardState{rows: map[string]int{}, offs: map[string]int{}}
+	return boardState{rows: map[string]int{}, offs: map[string]int{}, fold: map[string]bool{}}
 }
 
 // pendingMove is a state change of one item on its way to Plane. Moves
@@ -179,7 +181,11 @@ func (t *Tab) rebuildBoard() {
 			}
 		}
 	}
+	q := t.filter.Value()
 	for _, w := range t.items() {
+		if !ui.RowMatches(t.itemRow(w), q) {
+			continue // the / filter, matched like the list's rows
+		}
 		if st, ok := t.stateFull(w); ok {
 			c := add(st)
 			c.cards = append(c.cards, w)
@@ -209,18 +215,42 @@ func (t *Tab) rebuildBoard() {
 			if ri := slices.IndexFunc(c.cards, func(w plane.WorkItem) bool { return w.ID == b.want }); ri >= 0 {
 				b.col, b.colKey, b.selID = ci, c.key, b.want
 				b.rows[c.key] = ri
+				if b.collapsed(ci) {
+					b.fold[c.key] = false // open it to show the card
+				}
 				return
 			}
-		}
-		if !t.Fetching() {
-			b.want = "" // gone for good
 		}
 	}
 	col := b.col
 	if i := slices.IndexFunc(b.cols, func(c boardColumn) bool { return c.key == b.colKey }); i >= 0 {
 		col = i
 	}
+	if b.want != "" {
+		// The wanted card is hidden (filtered, or moved away by someone
+		// else): go to the nearest column with cards, like the list
+		// clamping to a visible row. Keep wanting it while it may come
+		// back (a fetch on its way, or the / filter cleared).
+		col = b.nearestWithCards(col)
+		if !t.Fetching() && t.filter.Value() == "" {
+			b.want = ""
+		}
+	}
 	b.show(col)
+}
+
+// nearestWithCards is the open column with cards closest to col (col
+// itself first, then left before right), or col if there is none.
+func (b *boardState) nearestWithCards(col int) int {
+	col = min(max(col, 0), len(b.cols)-1)
+	for d := 0; d < len(b.cols); d++ {
+		for _, i := range []int{col - d, col + d} {
+			if i >= 0 && i < len(b.cols) && len(b.cols[i].cards) > 0 && !b.collapsed(i) {
+				return i
+			}
+		}
+	}
+	return col
 }
 
 // pick makes id the wanted card (call rebuildBoard to move there).
@@ -233,7 +263,8 @@ func (b *boardState) setCol(i int) {
 }
 
 // show puts the cursor on column i (clamped) and its remembered card,
-// without changing the wanted card.
+// without changing the wanted card. On a collapsed column no card is
+// selected.
 func (b *boardState) show(i int) {
 	if len(b.cols) == 0 {
 		return
@@ -242,7 +273,7 @@ func (b *boardState) show(i int) {
 	c := b.cols[b.col]
 	b.colKey = c.key
 	b.selID = ""
-	if len(c.cards) > 0 {
+	if len(c.cards) > 0 && !b.collapsed(b.col) {
 		r := min(max(b.rows[c.key], 0), len(c.cards)-1)
 		b.rows[c.key] = r
 		b.selID = c.cards[r].ID
@@ -255,7 +286,7 @@ func (b *boardState) setRow(r int) {
 		return
 	}
 	c := b.cols[b.col]
-	if len(c.cards) == 0 {
+	if len(c.cards) == 0 || b.collapsed(b.col) {
 		return
 	}
 	r = min(max(r, 0), len(c.cards)-1)
@@ -270,14 +301,42 @@ func (b *boardState) row() int {
 	return b.rows[b.cols[b.col].key]
 }
 
-// collapsed reports whether column i shows as a strip: cancelled ones, and
-// empty ones after z, unless the cursor is on it.
+// collapsed reports whether column i shows as a strip: as set with z / Z,
+// else cancelled ones.
 func (b *boardState) collapsed(i int) bool {
-	if i == b.col {
-		return false
-	}
 	c := b.cols[i]
-	return c.group == plane.GroupCancelled || b.collapseEmpty && len(c.cards) == 0
+	if f, ok := b.fold[c.key]; ok {
+		return f
+	}
+	return c.group == plane.GroupCancelled
+}
+
+// toggleColumn collapses or opens the cursor's column (z).
+func (b *boardState) toggleColumn() {
+	if len(b.cols) == 0 {
+		return
+	}
+	b.fold[b.cols[b.col].key] = !b.collapsed(b.col)
+	b.setCol(b.col)
+}
+
+// toggleEmpty collapses every empty column, or opens them all when they
+// are all collapsed already (Z).
+func (b *boardState) toggleEmpty() {
+	var empty []int
+	open := false
+	for i, c := range b.cols {
+		if len(c.cards) == 0 {
+			empty = append(empty, i)
+			open = open || !b.collapsed(i)
+		}
+	}
+	for _, i := range empty {
+		b.fold[b.cols[i].key] = open
+	}
+	if len(b.cols) > 0 {
+		b.show(b.col)
+	}
 }
 
 // --- actions -----------------------------------------------------------------------
@@ -325,8 +384,14 @@ func (t *Tab) updateBoard(kp tea.KeyPressMsg) tea.Cmd {
 		return t.moveCard(-1)
 	case key.Matches(kp, pk.MoveNext):
 		return t.moveCard(1)
+	case key.Matches(kp, pk.CollapseColumn):
+		return t.toggleColumn()
 	case key.Matches(kp, pk.CollapseEmpty):
 		return t.toggleCollapseEmpty()
+	case key.Matches(kp, l.Filter):
+		t.startFilter()
+	case key.Matches(kp, t.keys.Input.Cancel) && t.filter.Value() != "":
+		t.clearFilter()
 	case key.Matches(kp, pk.OpenCard):
 		return t.openCard()
 	case key.Matches(kp, pk.Filters):
@@ -369,8 +434,13 @@ func (t *Tab) moveColumn(dir int) tea.Cmd {
 	return nil
 }
 
+func (t *Tab) toggleColumn() tea.Cmd {
+	t.board.toggleColumn()
+	return nil
+}
+
 func (t *Tab) toggleCollapseEmpty() tea.Cmd {
-	t.board.collapseEmpty = !t.board.collapseEmpty
+	t.board.toggleEmpty()
 	return nil
 }
 
@@ -538,7 +608,12 @@ func (t *Tab) boardScreen() string {
 	if w <= 0 || h <= 0 {
 		return ""
 	}
-	body := t.filterBox(w) + "\n" + t.boardView(w, max(h-filterBoxHeight, 0))
+	body, bh := t.filterBox(w), h-filterBoxHeight
+	if t.filter.Visible() {
+		body += "\n" + t.filter.View(w)
+		bh--
+	}
+	body += "\n" + t.boardView(w, max(bh, 0))
 	screen := t.theme.PaneFocused.Render(ui.Box(body, w, h))
 	if !t.overlay {
 		return screen
@@ -650,7 +725,7 @@ func (t *Tab) columnView(i, cw, ch int) string {
 	th, b := t.theme, &t.board
 	c := b.cols[i]
 	if b.collapsed(i) {
-		return t.stripView(c, ch)
+		return t.stripView(c, ch, i == b.col)
 	}
 	per := max((ch-2)/cardHeight, 1)
 	r := min(b.rows[c.key], max(len(c.cards)-1, 0))
@@ -687,11 +762,15 @@ func (t *Tab) columnView(i, cw, ch int) string {
 	return ui.Box(strings.Join(lines, "\n"), cw, ch)
 }
 
-// stripView is a collapsed column: its count, then its name downwards.
-func (t *Tab) stripView(c boardColumn, ch int) string {
+// stripView is a collapsed column: its count, then its name downwards,
+// in the accent when the cursor is on it.
+func (t *Tab) stripView(c boardColumn, ch int, cursor bool) string {
 	th := t.theme
-	lines := []string{th.BoardCollapsed.Render(centre(strconv.Itoa(len(c.cards)), boardStrip))}
-	st := th.StateGroupStyle(string(c.group))
+	count, st := th.BoardCollapsed, th.StateGroupStyle(string(c.group))
+	if cursor {
+		count, st = th.BoardScrollHint, th.BoardScrollHint
+	}
+	lines := []string{count.Render(centre(strconv.Itoa(len(c.cards)), boardStrip))}
 	for _, r := range c.name {
 		if len(lines) >= ch {
 			break

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ type fakePlane struct {
 	items   []plane.WorkItem
 	states  []plane.State
 	updates []string // "id state_id" per UpdateWorkItem
+	lists   int      // WorkItems calls
 }
 
 func (f *fakePlane) Me(context.Context) (plane.User, error) {
@@ -32,6 +34,7 @@ func (f *fakePlane) Me(context.Context) (plane.User, error) {
 func (f *fakePlane) WorkItems(_ context.Context, _ string, fl plane.WorkItemFilter) ([]plane.WorkItem, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lists++
 	var out []plane.WorkItem
 	for _, w := range f.items {
 		if len(fl.AssigneeIDs) > 0 && !slices.Contains(w.AssigneeIDs, fl.AssigneeIDs[0]) {
@@ -116,12 +119,25 @@ func planeItem(seq int, name string, group plane.StateGroup, assignee string) pl
 	}
 }
 
+// planeConfig is the default config with one forge project linked to
+// Plane project p1. Intervals are set explicitly: a zero interval would be
+// clamped (see TestZeroRefreshIntervalDoesNotSpin), and these tests must
+// not depend on that.
+func planeConfig() *config.Config {
+	cfg := config.Default()
+	cfg.Plane = config.Plane{
+		BaseURL: "https://plane.example", Workspace: "acme",
+		RefreshInterval: config.Duration{Duration: 2 * time.Minute},
+		BoardDoneDays:   config.DefaultBoardDoneDays,
+	}
+	cfg.Projects = []config.Project{{Name: "forge", Repo: "daan/forge", PlaneProjectID: "p1"}}
+	return cfg
+}
+
 // TestBrowsePlaneIssues is the P3.2 "done when": browse and filter my
 // Plane issues per project.
 func TestBrowsePlaneIssues(t *testing.T) {
-	cfg := config.Default()
-	cfg.Plane = config.Plane{BaseURL: "https://plane.example", Workspace: "acme"}
-	cfg.Projects = []config.Project{{Name: "forge", Repo: "daan/forge", PlaneProjectID: "p1"}}
+	cfg := planeConfig()
 	api := &fakePlane{items: []plane.WorkItem{
 		planeItem(1, "Project switcher", plane.GroupStarted, "u-me"),
 		planeItem(2, "Someone elses ticket", plane.GroupUnstarted, "u-bob"),
@@ -169,9 +185,7 @@ func TestBrowsePlaneIssues(t *testing.T) {
 // TestPlaneBoardMove is the P3.3 "done when": move work across the board
 // with the keyboard and Plane gets the change.
 func TestPlaneBoardMove(t *testing.T) {
-	cfg := config.Default()
-	cfg.Plane = config.Plane{BaseURL: "https://plane.example", Workspace: "acme"}
-	cfg.Projects = []config.Project{{Name: "forge", Repo: "daan/forge", PlaneProjectID: "p1"}}
+	cfg := planeConfig()
 	todo := plane.State{ID: "s-todo", Name: "Todo", Group: plane.GroupUnstarted, Sequence: 1}
 	doing := plane.State{ID: "s-doing", Name: "Doing", Group: plane.GroupStarted, Sequence: 2}
 	shipped := plane.State{ID: "s-shipped", Name: "Shipped", Group: plane.GroupCompleted, Sequence: 3}
@@ -229,6 +243,38 @@ func TestPlaneBoardMove(t *testing.T) {
 	tm.Send(press("b"))
 	wait("state: open")
 
+	tm.Send(press("q"))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
+// TestZeroRefreshIntervalDoesNotSpin: a config that skipped validation
+// with plane.refresh_interval 0 used to refetch in a tight loop (hundreds
+// of list calls a second). The scheduler clamps it to 5s and warns.
+func TestZeroRefreshIntervalDoesNotSpin(t *testing.T) {
+	cfg := planeConfig()
+	cfg.Plane.RefreshInterval = config.Duration{}
+	api := &fakePlane{items: []plane.WorkItem{planeItem(1, "Project switcher", plane.GroupStarted, "u-me")}}
+	m, err := New(cfg, withFetchDelay(0), WithGitHub(fakeGitHub{}), WithPlane(api, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := m.Warnings(); len(w) != 1 || !strings.Contains(w[0], "plane.refresh_interval is 0s") {
+		t.Fatalf("warnings = %q", w)
+	}
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(170, 30))
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return bytes.Contains(b, []byte("warning: plane.refresh")) },
+		teatest.WithDuration(5*time.Second))
+	tm.Send(press("4")) // Plane
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return bytes.Contains(b, []byte("Project switcher")) },
+		teatest.WithDuration(5*time.Second))
+	time.Sleep(time.Second)
+
+	api.mu.Lock()
+	n := api.lists
+	api.mu.Unlock()
+	if n > 3 {
+		t.Fatalf("%d list fetches in about a second; the refresh loop spins", n)
+	}
 	tm.Send(press("q"))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }

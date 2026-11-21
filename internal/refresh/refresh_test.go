@@ -86,3 +86,38 @@ func TestBackoff(t *testing.T) {
 		t.Fatal("ClearDelay without override re-armed")
 	}
 }
+
+func TestShortIntervalsAreClamped(t *testing.T) {
+	cfg := config.Default()
+	cfg.Plane.RefreshInterval.Duration = 0
+	cfg.Sessions.RefreshInterval.Duration = time.Second
+	s := New(cfg)
+	tests := []struct {
+		src  Source
+		want time.Duration
+	}{
+		{GitHub, time.Minute},
+		{Plane, MinInterval},
+		{Sessions, MinInterval},
+	}
+	for _, tt := range tests {
+		if got := s.Interval(tt.src); got != tt.want {
+			t.Errorf("Interval(%s) = %s, want %s", tt.src, got, tt.want)
+		}
+	}
+	want := []string{
+		"plane.refresh_interval is 0s, below 5s; using 5s",
+		"sessions.refresh_interval is 1s, below 5s; using 5s",
+	}
+	if got := s.Warnings(); len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("warnings = %q", got)
+	}
+	if w := New(config.Default()).Warnings(); len(w) != 0 {
+		t.Fatalf("default config warns: %q", w)
+	}
+	// A backoff override below the minimum is clamped too.
+	s.SetDelay(GitHub, time.Millisecond)
+	if got := s.Interval(GitHub); got != MinInterval {
+		t.Fatalf("backoff Interval = %s", got)
+	}
+}

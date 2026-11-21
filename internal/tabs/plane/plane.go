@@ -854,7 +854,7 @@ func (t *Tab) ShortHelp() []key.Binding {
 	case t.mode == modeBoard && t.overlay:
 		return []key.Binding{t.keys.Input.Cancel, pk.MovePrev, pk.MoveNext, pk.DetailDown, pk.Open}
 	case t.mode == modeBoard:
-		return []key.Binding{pk.ColLeft, pk.ColRight, pk.MovePrev, pk.MoveNext, pk.OpenCard, pk.Board}
+		return []key.Binding{pk.ColLeft, pk.ColRight, pk.MovePrev, pk.MoveNext, pk.OpenCard, t.keys.List.Filter, pk.Board}
 	}
 	return []key.Binding{pk.Filters, pk.Mine, t.keys.List.Filter, pk.Board, pk.Open}
 }
@@ -865,8 +865,8 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	if t.mode == modeBoard {
 		return [][]key.Binding{
 			{pk.ColLeft, pk.ColRight, l.Up, l.Down, l.Top, l.Bottom},
-			{pk.MovePrev, pk.MoveNext, pk.CollapseEmpty, pk.OpenCard, in.Cancel, pk.Board},
-			{pk.Filters, pk.Mine, pk.ClearFilters},
+			{pk.MovePrev, pk.MoveNext, pk.CollapseColumn, pk.CollapseEmpty, pk.OpenCard, in.Cancel},
+			{l.Filter, pk.Filters, pk.Mine, pk.ClearFilters, pk.Board},
 			{pk.DetailDown, pk.DetailUp, pk.Open, pk.CopyURL},
 		}
 	}
@@ -913,7 +913,8 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "plane_col_right", Title: "Board: next column", Key: pk.ColRight, Run: boardOnly(func() tea.Cmd { return t.moveColumn(1) })},
 		{ID: "plane_move_prev", Title: "Issue: move to previous state", Key: pk.MovePrev, Run: func() tea.Cmd { return t.moveCard(-1) }},
 		{ID: "plane_move_next", Title: "Issue: move to next state", Key: pk.MoveNext, Run: func() tea.Cmd { return t.moveCard(1) }},
-		{ID: "plane_collapse_empty", Title: "Board: collapse empty columns", Key: pk.CollapseEmpty, Run: boardOnly(t.toggleCollapseEmpty)},
+		{ID: "plane_collapse_column", Title: "Board: collapse / expand column", Key: pk.CollapseColumn, Run: boardOnly(t.toggleColumn)},
+		{ID: "plane_collapse_empty", Title: "Board: collapse / expand empty columns", Key: pk.CollapseEmpty, Run: boardOnly(t.toggleCollapseEmpty)},
 		{ID: "plane_open_card", Title: "Board: open card", Key: pk.OpenCard, Run: boardOnly(t.openCard)},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(func() { t.split.Grow(); t.resizeTable() })},
 		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(func() { t.split.Shrink(); t.resizeTable() })},
@@ -960,6 +961,9 @@ func (t *Tab) Select(id string) tea.Cmd {
 	if t.mode == modeBoard {
 		t.board.pick(id)
 		t.rebuildBoard()
+		if t.board.selID != id && t.filter.Visible() {
+			t.clearFilter() // the / filter hides it
+		}
 		return t.syncDetail()
 	}
 	if t.selectID(id) {
