@@ -136,3 +136,40 @@ func saveRecents(s KVStore, ids []string) tea.Cmd {
 		return nil
 	}
 }
+
+// ProjectStore remembers repos (zero-config projects): when one is used,
+// and its Plane project. *store.Projects satisfies it.
+type ProjectStore interface {
+	Touch(ctx context.Context, repo, path string) error
+	SetPlane(ctx context.Context, repo, id string) error
+}
+
+// WithProjectStore remembers the projects switched to (most recently used
+// first in the switcher) and the Plane projects linked to them.
+func WithProjectStore(s ProjectStore) Option {
+	return func(m *Model) { m.projStore = s }
+}
+
+// linker is s as the tabs' ProjectLinker, nil without a store.
+func linker(s ProjectStore) tabs.ProjectLinker {
+	if s == nil {
+		return nil
+	}
+	return s
+}
+
+// touchProject records that p was switched to.
+func touchProject(s ProjectStore, p *config.Project) tea.Cmd {
+	if s == nil || p == nil || p.Repo == "" {
+		return nil
+	}
+	repo, path := p.Repo, p.Path
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), recentTimeout)
+		defer cancel()
+		if err := s.Touch(ctx, repo, path); err != nil {
+			return ui.ErrMsg{Err: fmt.Errorf("remember project: %w", err)}
+		}
+		return nil
+	}
+}

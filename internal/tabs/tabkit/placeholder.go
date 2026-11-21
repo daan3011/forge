@@ -77,6 +77,9 @@ type Deps struct {
 	// PlaneErr, why it isn't available.
 	Plane    plane.API
 	PlaneErr error
+	// ProjectLinks saves the Plane project picked or matched for a repo;
+	// nil keeps links for this run only.
+	ProjectLinks tabs.ProjectLinker
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

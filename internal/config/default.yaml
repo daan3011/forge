@@ -7,14 +7,24 @@
 #
 # Run `forge config edit` to open this file, `forge config path` to print where it is.
 
-# Projects tie a GitHub repo, a local checkout, a Plane project and a docs
-# folder together. ctrl+p switches the active project.
+# Projects are found automatically: every git checkout with a GitHub remote
+# directly inside one of these folders, plus every repo you start forge or a
+# session in. Without project_roots forge scans the parent of the repo you
+# start it in and ~/Documents/Projects, ~/code, ~/src and ~/dev.
+# project_roots:
+#   - ~/code
+
+# Optional overrides for detected projects, matched by repo. Only repo is
+# required; set what you want to change. ctrl+p switches the active project.
+# A repo's Plane project is matched by name or asked once on the Plane tab;
+# set plane_project_id here only to pin it.
 projects:
-  # - name: forge                      # short name shown in the UI (unique)
-  #   repo: daan/forge                 # GitHub "owner/name"
-  #   path: ~/code/forge               # local checkout (absolute or ~/)
-  #   plane_project_id: ""             # Plane project UUID (optional)
+  # - repo: daan/forge                 # GitHub "owner/name"
+  #   name: forge                      # name shown in the UI (default: repo name)
+  #   path: ~/code/forge               # local checkout (default: the detected one)
+  #   plane_project_id: ""             # Plane project UUID (default: matched or picked)
   #   docs_dir: .forge/docs            # relative to path (default .forge/docs)
+  #   worktree_copy: [".env.local"]    # files copied into every agent worktree
   #   worktree_copy: [.env.local]      # globs copied from path into new agent worktrees
 
 github:

@@ -98,6 +98,7 @@ type Model struct {
 	delta        delta.Renderer      // from WithDelta
 	runs         github.RunsClient   // from WithRuns
 	pulls        github.PullFinder   // from WithPulls
+	projStore    ProjectStore        // from WithProjectStore
 	plane        plane.API           // from WithPlane
 	planeErr     error               // why plane is nil
 
@@ -135,6 +136,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
+		ProjectLinks: linker(m.projStore),
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
@@ -343,6 +345,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tabs.StartSessionMsg:
 		return m.handleStartSession(msg)
 
+	case tabs.PlaneLinkedMsg:
+		return m.handlePlaneLinked(msg)
+
 	case tabs.ShowRunsMsg:
 		return m.handleShowRuns(msg)
 
@@ -442,7 +447,7 @@ func (m *Model) startSlideIn() {
 // selected, or a hint when no projects are configured.
 func (m Model) openProjects() (Model, tea.Cmd) {
 	if len(m.cfg.Projects) == 0 {
-		return m, m.toast.Show("no projects configured — add some under projects: in your config", ui.ToastInfo)
+		return m, m.toast.Show("no git repos found — set project_roots in your config", ui.ToastInfo)
 	}
 	m.helpOpen = false
 	m.items = m.projectItems()

@@ -57,6 +57,10 @@ type deps struct {
 	loadConfig func() (*config.Config, error)
 	// newPlane builds the Plane client; nil means the real one.
 	newPlane func(config.Plane, plane.Cache) (plane.API, error)
+	// getwd and homeDir replace os.Getwd and os.UserHomeDir for project
+	// detection.
+	getwd   func() string
+	homeDir func() string
 }
 
 func (d deps) sessions(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -106,13 +110,14 @@ func newRootCmd(d deps) *cobra.Command {
 				return err
 			}
 			defer func() { _ = st.Close() }()
+			here := d.resolveProjects(cmd.Context(), cfg, st, cmd.ErrOrStderr())
 			svc, err := d.sessions(cfg, st)
 			if err != nil {
 				return err
 			}
 			planeAPI, planeErr := d.planeClient(cfg.Plane, st.Cache())
 			opts := []app.Option{
-				app.WithPlane(planeAPI, planeErr),
+				app.WithPlane(planeAPI, planeErr), app.WithProjectStore(st.Projects()),
 				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
 				app.WithBrowser(browser.Exec{}), app.WithGitHub(githubPulls), app.WithRuns(githubPulls),
 				app.WithPulls(githubPulls),
@@ -132,7 +137,10 @@ func newRootCmd(d deps) *cobra.Command {
 				defer func() { _ = src.Close() }()
 				opts = append(opts, app.WithLive(src.Pings()))
 			}
+			// Starting inside a repo opens its project; else the last one.
 			switch name, found, err := app.LoadActiveProject(cmd.Context(), st.Cache()); {
+			case here != "":
+				opts = append(opts, app.WithActiveProject(here))
 			case err != nil:
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
 			case found:

@@ -379,3 +379,22 @@ func TestSetIssueStates(t *testing.T) {
 		t.Errorf("links = %+v, %v", got, err)
 	}
 }
+
+type recordedProjects struct{ touched []string }
+
+func (r *recordedProjects) Touch(_ context.Context, repo, path string) error {
+	r.touched = append(r.touched, repo+"@"+path)
+	return nil
+}
+
+func TestStartRemembersProject(t *testing.T) {
+	e := newEnv(t)
+	rec := &recordedProjects{}
+	e.svc.c.Recent = rec
+	if _, err := e.svc.Start(context.Background(), StartOpts{Name: "s", Project: "forge"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := e.proj.Repo + "@" + e.proj.Path; len(rec.touched) != 1 || rec.touched[0] != want {
+		t.Errorf("touched = %v, want %s", rec.touched, want)
+	}
+}

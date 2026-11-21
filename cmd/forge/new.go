@@ -62,6 +62,7 @@ func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
 		Worktrees:  worktree.New(cfg.Sessions.WorktreeRoot, worktree.NewExec()),
 		Store:      agent.StoreFrom(st),
 		Projects:   cfg.Projects,
+		Recent:     st.Projects(),
 		DataDir:    filepath.Join(config.DataHome(), "forge"),
 		ForgeBin:   forgeBin(),
 		Pulls:      githubPulls,
@@ -106,6 +107,12 @@ head) or names the new one.`,
 			if err != nil {
 				return err
 			}
+			st, err := store.Open(cmd.Context(), d.dbPath())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = st.Close() }()
+			here := d.resolveProjects(cmd.Context(), cfg, st, cmd.ErrOrStderr())
 			if o.Prompt == "-" {
 				b, err := io.ReadAll(cmd.InOrStdin())
 				if err != nil {
@@ -122,7 +129,11 @@ head) or names the new one.`,
 				return err
 			}
 			usable := sessionstab.UsableProjects(cfg.Projects)
-			if o.Project == "" && len(usable) == 1 {
+			switch {
+			case o.Project != "":
+			case here != "":
+				o.Project = here // started inside the repo
+			case len(usable) == 1:
 				o.Project = usable[0].Name
 			}
 			var theme *ui.Theme
@@ -167,11 +178,6 @@ head) or names the new one.`,
 				}
 			}
 
-			st, err := store.Open(cmd.Context(), d.dbPath())
-			if err != nil {
-				return err
-			}
-			defer func() { _ = st.Close() }()
 			svc, err := d.sessions(cfg, st)
 			if err != nil {
 				return err
@@ -194,7 +200,7 @@ head) or names the new one.`,
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.Name, "name", "", "session name (letters, digits, - and _)")
-	f.StringVar(&o.Project, "project", "", "project name from the config")
+	f.StringVar(&o.Project, "project", "", "project name (default: the repo you're in)")
 	f.StringVar(&o.Base, "base", "", "base branch (default main)")
 	f.StringVar(&o.Branch, "branch", "", "branch to work on (default agent/<name>); an existing local or origin branch is checked out")
 	f.StringVar(&o.Template, "template", "", "session template (fills the first prompt)")

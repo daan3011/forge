@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -67,7 +68,7 @@ func newPlaneCmd(d deps) *cobra.Command {
 		Short: "List a project's Plane work items",
 		Long: `List work items of a Plane project. project is a forge project name (its
 plane_project_id), a Plane project identifier (e.g. FORGE) or UUID; it can be
-left out when exactly one forge project has a plane_project_id.`,
+left out inside a repo linked to Plane, or when exactly one project is.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _, _, err := config.LoadOrCreate()
@@ -79,6 +80,7 @@ left out when exactly one forge project has a plane_project_id.`,
 				return err
 			}
 			defer st.Close()
+			here := d.resolveProjects(cmd.Context(), cfg, st, cmd.ErrOrStderr())
 			c, err := d.planeClient(cfg.Plane, st.Cache())
 			if err != nil {
 				return err
@@ -86,6 +88,11 @@ left out when exactly one forge project has a plane_project_id.`,
 			arg := ""
 			if len(args) == 1 {
 				arg = args[0]
+			}
+			if arg == "" && here != "" && slices.ContainsFunc(cfg.Projects, func(p config.Project) bool {
+				return p.Name == here && p.PlaneProjectID != ""
+			}) {
+				arg = here // the repo you're in, when it's linked to Plane
 			}
 			return planeLs(cmd.Context(), cmd.OutOrStdout(), c, cfg.Projects, arg, o)
 		},

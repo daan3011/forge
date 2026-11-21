@@ -73,7 +73,7 @@ func TestLoadErrors(t *testing.T) {
 		{
 			name: "unknown top-level key",
 			body: "ui:\n  animations: full\nthemes: {}\n",
-			want: []string{"config.yaml:3: themes: unknown key (valid keys: projects, github,"},
+			want: []string{"config.yaml:3: themes: unknown key (valid keys: project_roots, projects, github,"},
 		},
 		{
 			name: "unknown nested key",

@@ -1,6 +1,8 @@
 package tabs
 
 import (
+	"context"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/refresh"
@@ -89,4 +91,21 @@ type RunsShower interface {
 // model calls RefreshSource instead of Refresh on background ticks.
 type SourceRefresher interface {
 	RefreshSource(src refresh.Source) tea.Cmd
+}
+
+// PlaneLink is a repo's Plane project; PlaneProjectID "" means it has none.
+type PlaneLink struct {
+	Repo           string // owner/name
+	PlaneProjectID string
+}
+
+// PlaneLinkedMsg says repos' Plane projects are now known (matched or
+// picked, and already saved). The root model updates its projects and tells
+// the tabs again.
+type PlaneLinkedMsg struct{ Links []PlaneLink }
+
+// ProjectLinker saves a repo's Plane project (id "" = none).
+// *store.Projects satisfies it.
+type ProjectLinker interface {
+	SetPlane(ctx context.Context, repo, id string) error
 }
