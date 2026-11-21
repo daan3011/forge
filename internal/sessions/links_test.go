@@ -316,3 +316,66 @@ func TestLinksOfOrder(t *testing.T) {
 		t.Errorf("label = %q", linkLabel(links))
 	}
 }
+
+func TestIssueLinks(t *testing.T) {
+	e := newEnv(t)
+	uniqueIDs(e)
+	ctx := context.Background()
+	issue := store.IssueRef("PROJ-12")
+	pr := store.PRRef("daan/forge", 7)
+	pr2 := store.PRRef("daan/forge", 9)
+	var ids []int64
+	for _, name := range []string{"proj-12", "proj-12-b", "gone"} {
+		res, err := e.svc.Start(ctx, StartOpts{Name: name, Project: "forge", Links: []LinkSpec{{To: issue}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, res.Session.ID)
+	}
+	links := e.st.Links()
+	meta := store.LinkMeta{Title: "Fix login", State: "open"}
+	for _, id := range ids[:2] { // both sessions opened the same PR
+		if err := links.Add(ctx, store.SessionRef(id), pr, meta); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := links.Add(ctx, issue, pr2, store.LinkMeta{Title: "Direct"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.Sessions().Delete(ctx, ids[2]); err != nil {
+		t.Fatal(err)
+	}
+
+	ss, prs, err := e.svc.IssueLinks(ctx, "PROJ-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ss) != 2 || ss[0].Name != "proj-12" || ss[1].Name != "proj-12-b" {
+		t.Errorf("sessions = %+v", ss)
+	}
+	if len(prs) != 2 || prs[0].Other != pr2 || prs[1].Other != pr || prs[1].Title != "Fix login" {
+		t.Errorf("prs = %+v", prs)
+	}
+	if ss, prs, err := e.svc.IssueLinks(ctx, "PROJ-99"); err != nil || len(ss)+len(prs) != 0 {
+		t.Errorf("unrelated issue: %+v %+v %v", ss, prs, err)
+	}
+}
+
+func TestSetIssueStates(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	res, err := e.svc.Start(ctx, StartOpts{
+		Name: "proj-12", Project: "forge",
+		Links: []LinkSpec{{To: store.IssueRef("PROJ-12"), Meta: store.LinkMeta{State: "Todo"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.SetIssueStates(ctx, map[string]string{"PROJ-12": "In Progress", "PROJ-99": "Done"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := e.st.Links().For(ctx, store.SessionRef(res.Session.ID))
+	if err != nil || len(got) != 1 || got[0].State != "In Progress" {
+		t.Errorf("links = %+v, %v", got, err)
+	}
+}

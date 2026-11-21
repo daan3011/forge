@@ -146,6 +146,14 @@ keybinds:
   # pipeline_cancel: ["X"]         # cancel a queued / running run
   # pipeline_fix: ["F"]            # "fix this": the failed run to an agent
   # pipeline_fix_edit: ["alt+f"]   # the same, editing the prompt first
+  # Plane tab
+  # plane_filters: ["f"]           # project / assignee / state / label / cycle form
+  # plane_mine: ["m"]              # only items assigned to me
+  # plane_clear_filters: ["x"]
+  # plane_detail_down: ["J"]
+  # plane_detail_up: ["K"]
+  # plane_open: ["o"]              # the work item in the browser
+  # plane_copy_url: ["y"]
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

@@ -18,6 +18,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/github"
+	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/live"
@@ -72,6 +73,10 @@ type Deps struct {
 	// Pulls finds the PR opened from a failed run's branch for "fix this"
 	// (P2.8); nil treats every run as having no PR.
 	Pulls github.PullFinder
+	// Plane lists and reads work items for the Plane tab (P3.2); nil shows
+	// PlaneErr, why it isn't available.
+	Plane    plane.API
+	PlaneErr error
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

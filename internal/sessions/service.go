@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,6 +109,7 @@ type Store interface {
 	LinksFor(ctx context.Context, ref store.Ref) ([]store.Link, error)
 	AddLink(ctx context.Context, from, to store.Ref, meta store.LinkMeta) error
 	LinkedSessions(ctx context.Context, ref store.Ref) ([]int64, error)
+	SetLinkState(ctx context.Context, ref store.Ref, state string) error
 }
 
 type storeAdapter struct {
@@ -130,6 +132,10 @@ func (a storeAdapter) AddLink(ctx context.Context, from, to store.Ref, meta stor
 
 func (a storeAdapter) LinkedSessions(ctx context.Context, ref store.Ref) ([]int64, error) {
 	return a.links.LinkedSessions(ctx, ref)
+}
+
+func (a storeAdapter) SetLinkState(ctx context.Context, ref store.Ref, state string) error {
+	return a.links.SetState(ctx, ref, state)
 }
 
 // StoreFrom returns the Store backed by the forge database.
@@ -601,6 +607,67 @@ func (s *Service) LinkedSessions(ctx context.Context, kind store.LinkKind, id st
 	return out, nil
 }
 
+// IssueLinks returns what forge links to a Plane work item key (P3.2):
+// the sessions started from it and the PRs linked to those sessions or to
+// the item itself, oldest first, each once.
+func (s *Service) IssueLinks(ctx context.Context, key string) ([]store.Session, []store.Link, error) {
+	ref := store.IssueRef(key)
+	direct, err := s.c.Store.LinksFor(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	var (
+		sessions []store.Session
+		prs      []store.Link
+		seen     = map[store.Ref]bool{}
+	)
+	addPR := func(l store.Link) {
+		if l.Other.Kind == store.KindGitHubPR && !seen[l.Other] {
+			seen[l.Other] = true
+			prs = append(prs, l)
+		}
+	}
+	for _, l := range direct {
+		if l.Other.Kind != store.KindSession {
+			addPR(l)
+			continue
+		}
+		id, err := strconv.ParseInt(l.Other.ID, 10, 64)
+		if err != nil {
+			continue
+		}
+		x, err := s.c.Store.Get(ctx, id)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			continue // a link left behind by a deleted session
+		case err != nil:
+			return nil, nil, err
+		}
+		sessions = append(sessions, x)
+		links, err := s.c.Store.LinksFor(ctx, store.SessionRef(id))
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, sl := range links {
+			addPR(sl)
+		}
+	}
+	return sessions, prs, nil
+}
+
+// SetIssueStates records the current state of Plane work items (key →
+// state name) on every link to them, so session detail panes show it
+// without asking Plane. Failures are joined; the other items still update.
+func (s *Service) SetIssueStates(ctx context.Context, states map[string]string) error {
+	var errs []error
+	for key, state := range states {
+		if err := s.c.Store.SetLinkState(ctx, store.IssueRef(key), state); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", key, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // maxSyncedPulls is how many PRs per branch SyncPRs links.
 const maxSyncedPulls = 5
 
@@ -888,6 +955,8 @@ type API interface {
 	Attach(ctx context.Context, x store.Session) (tmux.Attachment, error)
 	Transcript(ctx context.Context, x store.Session) (transcript.Transcript, error)
 	LinkedSessions(ctx context.Context, kind store.LinkKind, id string) ([]store.Session, error)
+	IssueLinks(ctx context.Context, key string) ([]store.Session, []store.Link, error)
+	SetIssueStates(ctx context.Context, states map[string]string) error
 	SyncPRs(ctx context.Context, project string) (bool, error)
 	Archive(ctx context.Context, x store.Session) (store.Session, error)
 	AutoArchive(ctx context.Context, project string) ([]Row, error)

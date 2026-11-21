@@ -110,7 +110,9 @@ func newRootCmd(d deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			planeAPI, planeErr := d.planeClient(cfg.Plane, st.Cache())
 			opts := []app.Option{
+				app.WithPlane(planeAPI, planeErr),
 				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
 				app.WithBrowser(browser.Exec{}), app.WithGitHub(githubPulls), app.WithRuns(githubPulls),
 				app.WithPulls(githubPulls),

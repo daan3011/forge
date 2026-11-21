@@ -12,6 +12,7 @@ import (
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/editor"
+	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 )
@@ -43,6 +44,17 @@ func WithRuns(r github.RunsClient) Option {
 // branch.
 func WithPulls(p github.PullFinder) Option {
 	return func(m *Model) { m.pulls = p }
+}
+
+// WithPlane gives the Plane tab its client (P3.2). err says why there is
+// none (Plane not configured); the tab shows it instead of issues.
+func WithPlane(api plane.API, err error) Option {
+	return func(m *Model) {
+		if err != nil {
+			api = nil // never a typed nil client
+		}
+		m.plane, m.planeErr = api, err
+	}
 }
 
 // WithCheckout lets the PRs tab check PRs out locally (P2.3).

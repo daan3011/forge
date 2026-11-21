@@ -459,6 +459,42 @@ func (t *Theme) LabelChip(hex string) lipgloss.Style {
 	return s.Foreground(fg).Background(lipgloss.Color("#" + hex))
 }
 
+// StateGroupStyle colours a Plane state by its group (backlog, unstarted,
+// started, completed, cancelled, triage).
+func (t *Theme) StateGroupStyle(group string) lipgloss.Style {
+	s := lipgloss.NewStyle()
+	switch group {
+	case "started":
+		return s.Foreground(t.Highlight).Bold(true)
+	case "completed":
+		return s.Foreground(t.Success)
+	case "cancelled":
+		return s.Foreground(t.Muted).Strikethrough(true)
+	case "triage":
+		return s.Foreground(t.Link)
+	case "unstarted":
+		return s.Foreground(t.Text)
+	}
+	return s.Foreground(t.Muted)
+}
+
+// PriorityIcon is the icon and style of a Plane priority (urgent, high,
+// medium, low, none).
+func (t *Theme) PriorityIcon(priority string) (string, lipgloss.Style) {
+	s := lipgloss.NewStyle()
+	switch priority {
+	case "urgent":
+		return "‼", s.Foreground(t.Error).Bold(true)
+	case "high":
+		return "▲", s.Foreground(t.Accent)
+	case "medium":
+		return "■", s.Foreground(t.Highlight)
+	case "low":
+		return "▽", s.Foreground(t.Muted)
+	}
+	return "·", s.Foreground(t.Muted)
+}
+
 // CheckIcon is the icon and style of one check's normalised state (the
 // github.Check* values: fail, running, pending, pass, skipped).
 func (t *Theme) CheckIcon(state string) (string, lipgloss.Style) {

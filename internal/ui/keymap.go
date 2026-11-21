@@ -23,6 +23,8 @@ type KeyMap struct {
 	PRs      PRKeys
 	// Pipelines are the Pipelines tab's actions (P2.6).
 	Pipelines PipelineKeys
+	// Plane are the Plane tab's actions (P3.2).
+	Plane PlaneKeys
 	// Transcript drives the transcript viewer (P1.6), which takes over
 	// the Sessions tab while open.
 	Transcript TranscriptKeys
@@ -138,6 +140,17 @@ type PipelineKeys struct {
 	// "Fix this" (P2.8): the failed run to an agent; FixEdit edits first.
 	Fix     key.Binding
 	FixEdit key.Binding
+}
+
+// PlaneKeys are the Plane tab's actions (P3.2).
+type PlaneKeys struct {
+	Filters      key.Binding // project / assignee / state / label / cycle form
+	Mine         key.Binding // toggle assigned to me / anyone
+	ClearFilters key.Binding
+	DetailDown   key.Binding
+	DetailUp     key.Binding
+	Open         key.Binding // the work item in the browser
+	CopyURL      key.Binding
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -306,6 +319,15 @@ func DefaultKeyMap() *KeyMap {
 			Fix:          bind("fix this", "F"),
 			FixEdit:      bind("fix (edit prompt)", "alt+f"),
 		},
+		Plane: PlaneKeys{
+			Filters:      bind("filters", "f"),
+			Mine:         bind("mine only", "m"),
+			ClearFilters: bind("clear filters", "x"),
+			DetailDown:   bind("scroll detail down", "J"),
+			DetailUp:     bind("scroll detail up", "K"),
+			Open:         bind("open in browser", "o"),
+			CopyURL:      bind("copy URL", "y"),
+		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
 			Down:      bind("next entry", "j", "down"),
@@ -387,6 +409,7 @@ const (
 	scopeSessions = "tab:sessions"
 	scopePRs      = "tab:prs"
 	scopePipes    = "tab:pipelines"
+	scopePlane    = "tab:plane"
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
 	scopeTranscript = "transcript"
@@ -402,7 +425,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
-	pp, lg := &k.Pipelines, &k.Log
+	pp, lg, pl := &k.Pipelines, &k.Log, &k.Plane
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -466,6 +489,13 @@ func (k *KeyMap) actions() []action {
 		{"pipeline_cancel", scopePipes, &pp.CancelRun},
 		{"pipeline_fix", scopePipes, &pp.Fix},
 		{"pipeline_fix_edit", scopePipes, &pp.FixEdit},
+		{"plane_filters", scopePlane, &pl.Filters},
+		{"plane_mine", scopePlane, &pl.Mine},
+		{"plane_clear_filters", scopePlane, &pl.ClearFilters},
+		{"plane_detail_down", scopePlane, &pl.DetailDown},
+		{"plane_detail_up", scopePlane, &pl.DetailUp},
+		{"plane_open", scopePlane, &pl.Open},
+		{"plane_copy_url", scopePlane, &pl.CopyURL},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},
