@@ -29,6 +29,7 @@ import (
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
+	"github.com/daan3011/forge/internal/usage"
 )
 
 // Title is the tab's title, which routes its targeted messages.
@@ -127,6 +128,13 @@ type Tab struct {
 	transcriptID   int // bumps per opened viewer
 	transcriptPoll int // bumps on open/close/visibility; stale polls are dropped
 	width, height  int
+
+	// token usage (P5.4); usage is nil without a database
+	usage         tabs.UsageSource
+	usageTot      map[string]usage.Totals // by Claude session id
+	usageErr      error
+	usageScanAt   time.Time
+	usageScanning bool
 }
 
 var (
@@ -170,6 +178,8 @@ func New(d tabkit.Deps) *Tab {
 		rows:      map[string]agent.Row{},
 
 		resuming: map[string]bool{},
+		usage:    d.Usage,
+		usageTot: map[string]usage.Totals{},
 	}
 	cols := slices.Clone(columns)
 	cols[statusCol].Render = t.renderStatus
@@ -301,6 +311,8 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.capture()
 	case previewMsg:
 		return t, t.previewed(msg)
+	case usageTotalsMsg:
+		return t, t.usageLoaded(msg)
 	case templatesLoadedMsg:
 		return t, t.templatesLoaded(msg)
 	case templateResolvedMsg:
@@ -417,16 +429,20 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 
 // Refresh implements tabs.Tab. A refresh while one runs does nothing.
 func (t *Tab) Refresh() tea.Cmd {
-	if t.svc == nil || t.fetching {
+	if t.svc == nil {
 		return nil
 	}
+	if t.fetching {
+		return t.scanUsage()
+	}
+	scan := t.scanUsage()
 	t.fetching = true
 	svc, gen, now := t.svc, t.listGen, t.now
 	project := ""
 	if t.project != nil {
 		project = t.project.Name
 	}
-	return func() tea.Msg {
+	list := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
 		defer cancel()
 		rows, err := svc.List(ctx, project, false)
@@ -436,6 +452,7 @@ func (t *Tab) Refresh() tea.Cmd {
 		archive, err := svc.List(ctx, project, true)
 		return listedMsg{gen: gen, rows: rows, archive: archive, err: err, at: now()}
 	}
+	return tea.Batch(list, scan)
 }
 
 func (t *Tab) listed(msg listedMsg) tea.Cmd {
@@ -625,7 +642,7 @@ func (t *Tab) selectionChanged() tea.Cmd {
 	if t.previewFor != name {
 		t.clearPreview()
 	}
-	return t.capture()
+	return tea.Batch(t.capture(), t.loadUsage())
 }
 
 func (t *Tab) clearPreview() {
@@ -1291,6 +1308,9 @@ func (t *Tab) detail() string {
 		label("created", r.CreatedAt.Format("2006-01-02 15:04")),
 		label("activity", Ago(t.now(), r.LastActivityAt)),
 	)
+	if t.usage != nil {
+		lines = append(lines, label("usage", t.usageLine(r.ClaudeSessionID)))
+	}
 	if r.Archived() {
 		lines = append(lines, label("archived", t.archiveLine(r)))
 	}

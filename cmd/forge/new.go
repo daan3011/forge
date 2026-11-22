@@ -19,6 +19,7 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/packs"
 	agent "github.com/daan3011/forge/internal/sessions"
+	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/transcript"
 	"github.com/daan3011/forge/internal/sessions/worktree"
@@ -26,6 +27,7 @@ import (
 	sessionstab "github.com/daan3011/forge/internal/tabs/sessions"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/usage"
 )
 
 // githubPulls is forge's one GitHub client, through `gh auth`: it finds
@@ -65,6 +67,18 @@ func newCaches(cfg *config.Config, st *store.Store, svc agent.API) *cachectl.Con
 		WorktreeRoot: cfg.Sessions.WorktreeRoot,
 		DataDir:      filepath.Join(config.DataHome(), "forge"),
 		Dirty:        cachectl.DirtyFromGit(g),
+	})
+}
+
+// newUsage builds the token usage service over every Claude Code transcript
+// (P5.4).
+func newUsage(cfg *config.Config, st *store.Store) *usage.Service {
+	return usage.New(usage.Config{
+		Ledger:      st.Usage(),
+		Sessions:    st.Sessions(),
+		ProjectsDir: claude.DefaultProjectsDir(),
+		Projects:    cfg.Projects,
+		Usage:       cfg.Usage,
 	})
 }
 

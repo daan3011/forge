@@ -19,3 +19,12 @@ func TestHumanBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestUSD(t *testing.T) {
+	tests := map[float64]string{0: "$0", 0.004: "<$0.01", 0.42: "$0.42", 12.3: "$12.30", 1234.4: "$1234"}
+	for v, want := range tests {
+		if got := USD(v); got != want {
+			t.Errorf("USD(%v) = %q, want %q", v, got, want)
+		}
+	}
+}

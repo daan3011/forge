@@ -690,7 +690,34 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - The worktrees of archived sessions count under both Worktrees and Archived sessions, so the status bar total can double count them.
     - About 1 KB of placeholder rows from early tabs (`tab:home:` …) and app state (palette, notices) aren't listed under any type.
     - Orphans outside the worktree root are listed but never removed.
-- [ ] P5.4 Usage view
+- [x] P5.4 Usage view: a "Usage" view in the Context tab (`Memory │ Packs │ Cache │ Usage`, `u` switches), plus totals in the Sessions tab's detail pane. The logic is in `internal/usage` (no UI dependencies).
+  - **Ledger (migration 0009)**:
+    - `usage_messages` has one row per assistant message with a usage block, from every transcript under `~/.claude/projects`. Subagent files `<proj>/<session>/subagents/*.jsonl` count towards the parent session.
+    - Rows are keyed by `message.id`, or `requestId` when the id is missing. A message repeated in another file (a resumed or forked session) counts once: the first file ingested keeps it. Within a scan, new files go oldest message first, so the original session gets the credit. Within one file, the last streamed line wins.
+    - `usage_files` stores the read offset and a hash of the first 1 KB. Files are read incrementally. A file that shrank or was replaced is forgotten and read again.
+    - The ledger outlives Claude Code's transcript cleanup, so history stays.
+  - **Rollups**: after each scan the `usage` table is rebuilt from the ledger. The project is resolved at rollup time, so config changes need no rescan: the forge session's project first, else the longest matching project path for the transcript's `cwd`, else `other`. Sidechain lines are counted (the viewer parser still skips them).
+  - **Cost**: `usage.prices` in config gives USD per million tokens per model id. A key also matches longer ids that start with it. Only zero placeholders ship. A model left at 0 is unpriced and shows "—"; a cost that is only partly priced gets a `*`. `usage.days` (14) and `usage.top_sessions` (10) set the range.
+  - **View**: the left pane is the project table (All projects plus each project: tokens, cost). Moving the cursor filters the right pane, which shows:
+    - totals and the in/out/cache split;
+    - the last 14 days as a block-character bar chart (`ui.BarChart`, heat-coloured, with the peak day);
+    - the top sessions, labelled with the forge session name or the short id plus the cwd's base name.
+  - **Scanning**: the view scans when opened and on refresh (`r`). The Sessions tab's refresh also scans, at most once a minute, and the detail pane shows `usage: 1.2M tokens (in · out · cache r/w) · $x` for the selected session (archived ones too).
+  - **Keys / palette**: `context_usage` (u). Rescanning is the normal refresh. The plan's separate "filter" key was dropped because the project cursor filters. `ui.USD` was added.
+  - **Tests**:
+    - Parser table: id vs requestId, sidechain, malformed lines.
+    - Scanner: two files sharing messages count once and the original keeps the credit; subagent folding; incremental append and partial lines; truncated or replaced files; project resolution incl. `other`; idempotent rescans.
+    - Cost: prefix match, unpriced and partly priced. Report: gap filling, sorting, filter.
+    - Store ledger and migration 0009, config validation, bar chart.
+    - Context view and a teatest flow; Sessions detail totals and the scan throttle.
+  - **Verified live**:
+    - On the real `~/.claude/projects` (124 files, 14.6k usage lines), the first scan took 0.9 s and a rescan with nothing new took 8 ms.
+    - One session's totals matched a `jq` sum of its transcript deduped by message id exactly.
+    - forge in tmux, on a copy of forge.db, showed the chart, the project table and the top sessions.
+  - **Limits**:
+    - Credit for shared messages goes to whichever file was ingested first. A fork read before its original keeps the shared messages.
+    - Transcripts outside forge's projects all land in `other`, with no breakdown by directory beyond the session labels.
+    - The ledger isn't listed in the Cache view yet.
 
 ## Phase 6 — Workflow glue
 

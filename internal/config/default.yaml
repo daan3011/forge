@@ -109,6 +109,21 @@ context:
   # Context tab turns the total amber above it; 0 turns the warning off.
   token_budget: 8000
 
+usage:
+  # Days shown by the usage view (Context tab, u): the bar chart range and
+  # the window for the project and session tables. 1-90.
+  days: 14
+  # How many sessions the top sessions list shows.
+  top_sessions: 10
+  # Estimated cost: USD per million tokens, per model id. A key also matches
+  # longer ids that start with it (dated releases). These are placeholders:
+  # forge ships no prices, so fill in your own. A model whose prices are all
+  # 0 is unpriced and its cost shows as "—".
+  prices:
+    claude-opus-5-5: {input: 0, output: 0, cache_read: 0, cache_write: 0}
+    claude-sonnet-5-5: {input: 0, output: 0, cache_read: 0, cache_write: 0}
+    claude-haiku-5-5: {input: 0, output: 0, cache_read: 0, cache_write: 0}
+
 ui:
   # full | reduced | off
   animations: full
@@ -251,6 +266,7 @@ keybinds:
   # context_cache_prune: ["P"]    # remove entries older than N days; asks first
   # context_cache_orphans: ["o"]  # remove orphaned worktrees; asks first
   # context_cache_vacuum: ["V"]   # vacuum forge.db; asks first
+  # context_usage: ["u"]          # switch between memory files and token usage (P5.4)
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

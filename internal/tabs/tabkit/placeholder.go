@@ -95,6 +95,9 @@ type Deps struct {
 	// Caches measures and clears forge's stored data for the Context tab's
 	// Cache view (P5.3); nil shows it as unavailable.
 	Caches tabs.CacheControl
+	// Usage scans transcripts for token usage (P5.4): the Context tab's
+	// Usage view and the Sessions tab's totals; nil shows it as unavailable.
+	Usage tabs.UsageSource
 	// ArtifactWatcher signals artifact changes (P4.5); nil means the
 	// Artifacts tab only rescans on refresh.
 	ArtifactWatcher artifacts.Watcher

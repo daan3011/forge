@@ -226,6 +226,8 @@ type ContextKeys struct {
 	PruneCache    key.Binding // remove entries older than N days
 	RemoveOrphans key.Binding // remove orphaned worktrees
 	Vacuum        key.Binding // vacuum the database
+	// Usage view (P5.4).
+	Usage key.Binding // switch between memory files and token usage
 }
 
 // FilePickerKeys drive the fuzzy file picker (P5.2). Next / Prev, Accept
@@ -489,6 +491,8 @@ func DefaultKeyMap() *KeyMap {
 			PruneCache:    bind("prune older than…", "P"),
 			RemoveOrphans: bind("remove orphaned worktrees", "o"),
 			Vacuum:        bind("vacuum database", "V"),
+
+			Usage: bind("memory / usage", "u"),
 		},
 		FilePicker: FilePickerKeys{
 			Toggle:    bind("mark file", "tab"),
@@ -748,6 +752,7 @@ func (k *KeyMap) actions() []action {
 		{"context_cache_prune", scopeContext, &cx.PruneCache},
 		{"context_cache_orphans", scopeContext, &cx.RemoveOrphans},
 		{"context_cache_vacuum", scopeContext, &cx.Vacuum},
+		{"context_usage", scopeContext, &cx.Usage},
 		{"file_picker_toggle", scopeFilePicker, &fp.Toggle},
 		{"file_picker_toggle_all", scopeFilePicker, &fp.ToggleAll},
 		{"transcript_up", scopeTranscript, &tr.Up},

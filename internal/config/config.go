@@ -30,6 +30,7 @@ type Config struct {
 	Sessions       Sessions            `yaml:"sessions"`
 	Artifacts      Artifacts           `yaml:"artifacts"`
 	Context        Context             `yaml:"context"`
+	Usage          Usage               `yaml:"usage"`
 	UI             UI                  `yaml:"ui"`
 	Keybinds       map[string][]string `yaml:"keybinds"`
 	CustomCommands []CustomCommand     `yaml:"custom_commands"`
@@ -204,6 +205,36 @@ type Context struct {
 	TokenBudget int `yaml:"token_budget"`
 }
 
+// Usage holds the usage view settings (P5.4).
+type Usage struct {
+	// Days is how many days the usage view covers (the bar chart range).
+	Days int `yaml:"days"`
+	// TopSessions is how many sessions the top sessions list shows.
+	TopSessions int `yaml:"top_sessions"`
+	// Prices maps a model id (or id prefix) to its price. forge ships
+	// placeholders only; a model whose prices are all 0 is unpriced.
+	Prices map[string]Price `yaml:"prices"`
+}
+
+// Price is a model's price in USD per million tokens.
+type Price struct {
+	Input      float64 `yaml:"input"`
+	Output     float64 `yaml:"output"`
+	CacheRead  float64 `yaml:"cache_read"`
+	CacheWrite float64 `yaml:"cache_write"`
+}
+
+// IsZero reports whether no price was filled in.
+func (p Price) IsZero() bool { return p == Price{} }
+
+// Usage defaults.
+const (
+	DefaultUsageDays        = 14
+	DefaultUsageTopSessions = 10
+	// MaxUsageDays caps usage.days.
+	MaxUsageDays = 90
+)
+
 // DefaultTokenBudget is context.token_budget's default.
 const DefaultTokenBudget = 8000
 
@@ -284,7 +315,16 @@ func Default() *Config {
 		},
 		Artifacts: Artifacts{Preview: "auto"},
 		Context:   Context{TokenBudget: DefaultTokenBudget},
-		UI:        UI{Animations: AnimationsFull},
+		Usage: Usage{
+			Days:        DefaultUsageDays,
+			TopSessions: DefaultUsageTopSessions,
+			Prices: map[string]Price{
+				"claude-opus-5-5":   {},
+				"claude-sonnet-5-5": {},
+				"claude-haiku-5-5":  {},
+			},
+		},
+		UI: UI{Animations: AnimationsFull},
 	}
 }
 
