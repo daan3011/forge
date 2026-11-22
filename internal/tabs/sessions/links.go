@@ -61,8 +61,8 @@ func (t *Tab) StartSession(src tabs.Source) tea.Cmd {
 	if t.dialog != nil {
 		return info("finish the open dialog first")
 	}
-	if len(src.Docs) > 0 {
-		return t.startSendDocs(src)
+	if len(src.Docs) > 0 || len(src.Packs) > 0 {
+		return t.startSendDocs(src) // docsPicked / packsPicked ask where to
 	}
 	req := t.sourceRequest(src)
 	if src.Fix != nil {

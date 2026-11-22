@@ -17,6 +17,7 @@ import (
 
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/packs"
 	"github.com/daan3011/forge/internal/refresh"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/claude"
@@ -75,6 +76,7 @@ type Tab struct {
 	browser browser.Opener
 	// session templates (P1.7)
 	tmplDir   string
+	packsDir  string // context packs (P5.2); "" offers none
 	providers *templates.Registry
 	anim      *anim.Engine
 	now       func() time.Time
@@ -157,6 +159,7 @@ func New(d tabkit.Deps) *Tab {
 		live:      d.Live,
 		browser:   d.Browser,
 		tmplDir:   d.TemplatesDir,
+		packsDir:  d.PacksDir,
 		providers: d.Providers,
 		anim:      d.Engine(),
 		now:       time.Now,
@@ -241,6 +244,7 @@ type previewMsg struct {
 type templatesLoadedMsg struct {
 	req       NewRequest
 	templates []templates.Template
+	packs     []packs.Pack
 	errs      []error
 }
 
@@ -304,7 +308,17 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	case fixReadyMsg:
 		return t, t.fixReady(msg)
 	case docsPickMsg:
+		if len(msg.src.Packs) > 0 {
+			t.busy--
+			return t, t.packsPicked(msg)
+		}
 		return t, t.docsPicked(msg)
+	case packsResolvedMsg:
+		return t, t.packsResolved(msg)
+	case packsForMsg:
+		return t, t.packsFor(msg)
+	case packSentMsg:
+		return t, t.packSent(msg)
 	case docsSentMsg:
 		return t, t.docsSent(msg)
 	case startedMsg:
@@ -370,6 +384,8 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.openLinked(store.KindGitHubPR)
 	case key.Matches(kp, s.OpenIssue):
 		return t, t.openLinked(store.KindPlaneIssue)
+	case key.Matches(kp, s.AttachPack):
+		return t, t.attachPack()
 	case key.Matches(kp, s.New):
 		return t, t.openNew()
 	case key.Matches(kp, s.Kill):
@@ -713,10 +729,11 @@ func (t *Tab) openNewWith(req NewRequest) tea.Cmd {
 	if t.svc == nil {
 		return errCmd(errUnavailable)
 	}
-	dir := t.tmplDir
+	dir, pdir := t.tmplDir, t.packsDir
 	return func() tea.Msg {
 		ts, errs := loadTemplates(dir)
-		return templatesLoadedMsg{req: req, templates: ts, errs: errs}
+		ps, perrs := LoadPacks(pdir)
+		return templatesLoadedMsg{req: req, templates: ts, packs: ps, errs: append(errs, perrs...)}
 	}
 }
 
@@ -734,8 +751,8 @@ func (t *Tab) templatesLoaded(msg templatesLoadedMsg) tea.Cmd {
 	}
 	f, v, err := NewForm(FormInput{
 		Theme: t.theme, Keys: t.keys, Projects: t.cfg.Projects, Values: vals,
-		Templates: msg.templates,
-		Taken:     func(name string) bool { _, ok := t.rows[name]; return ok },
+		Templates: msg.templates, Packs: msg.packs,
+		Taken: func(name string) bool { _, ok := t.rows[name]; return ok },
 	})
 	if err != nil {
 		return tea.Batch(append(cmds, errCmd(err))...)
@@ -744,14 +761,14 @@ func (t *Tab) templatesLoaded(msg templatesLoadedMsg) tea.Cmd {
 	in := FormInput{Projects: t.cfg.Projects, Templates: msg.templates}
 	open := t.openDialog("", f, func() tea.Cmd {
 		req.Opts = *v
-		tmpl, ok := templates.Find(msg.templates, v.Template)
-		if !ok {
-			o := t.withRefLinks(*v, req.Refs)
-			o.Docs = t.docsPlan(req)
-			o.Prompt = DocsPrompt(templates.Template{}, o.Prompt, o.Docs)
-			return t.start(o)
-		}
-		return t.askRefs(req, tmpl)
+		return t.resolvePacks(req, msg.packs, func(req NewRequest) tea.Cmd {
+			tmpl, ok := templates.Find(msg.templates, req.Opts.Template)
+			if !ok {
+				o := t.withRefLinks(req.Opts, req.Refs)
+				return t.start(t.withPacks(o, req, templates.Template{}, o.Prompt))
+			}
+			return t.askRefs(req, tmpl)
+		})
 	})
 	t.dialog.preview = func() string { return previewText(in, *v) }
 	if len(msg.templates) > 0 {
@@ -807,9 +824,7 @@ func (t *Tab) templateResolved(msg templateResolvedMsg) tea.Cmd {
 
 // confirmPrompt shows the rendered prompt, editable, then starts.
 func (t *Tab) confirmPrompt(req NewRequest, tmpl templates.Template, vals map[string]string) tea.Cmd {
-	o := t.withRefLinks(req.Opts, req.Refs)
-	o.Docs = t.docsPlan(req)
-	o.Prompt = DocsPrompt(tmpl, RenderPrompt(tmpl, vals), o.Docs)
+	o := t.withPacks(t.withRefLinks(req.Opts, req.Refs), req, tmpl, RenderPrompt(tmpl, vals))
 	f := PromptForm(t.theme, t.keys, &o.Prompt)
 	return t.openDialog("", f, func() tea.Cmd { return t.start(o) })
 }
@@ -1357,7 +1372,7 @@ func (t *Tab) ShortHelp() []key.Binding {
 func (t *Tab) FullHelp() [][]key.Binding {
 	l, in, s, tr := t.keys.List, t.keys.Input, t.keys.Sessions, t.keys.Transcript
 	return [][]key.Binding{
-		{s.Attach, s.Resume, s.Transcript, s.OpenPR, s.OpenIssue, s.New, s.Kill, s.ArchiveView, s.Archive, s.Delete},
+		{s.Attach, s.Resume, s.Transcript, s.OpenPR, s.OpenIssue, s.AttachPack, s.New, s.Kill, s.ArchiveView, s.Archive, s.Delete},
 		{tr.Up, tr.Down, tr.PageUp, tr.PageDown, tr.Top, tr.Bottom, tr.Toggle, tr.ToggleAll, tr.Follow, tr.Close},
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{l.Filter, l.ShrinkPane, l.GrowPane},
@@ -1387,6 +1402,7 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "session_transcript", Title: "Open session transcript", Key: s.Transcript, Run: t.openTranscript},
 		{ID: "session_open_pr", Title: "Open linked PR in browser", Key: s.OpenPR, Run: func() tea.Cmd { return t.openLinked(store.KindGitHubPR) }},
 		{ID: "session_open_issue", Title: "Open linked issue in browser", Key: s.OpenIssue, Run: func() tea.Cmd { return t.openLinked(store.KindPlaneIssue) }},
+		{ID: "session_attach_pack", Title: "Attach context pack to session…", Key: s.AttachPack, Run: t.attachPack},
 		{ID: "session_new", Title: "New session…", Key: s.New, Run: t.openNew},
 		{ID: "session_kill", Title: kill, Key: s.Kill, Run: killRun},
 		{ID: "session_archive_view", Title: view, Key: s.ArchiveView, Run: t.toggleArchive},

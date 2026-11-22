@@ -3,11 +3,13 @@ package sessions
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/huh/v2"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/packs"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/templates"
@@ -25,6 +27,8 @@ type FormInput struct {
 	// Templates offered; the field is left out when empty. With a template
 	// chosen the prompt field is hidden: the template flow fills it in.
 	Templates []templates.Template
+	// Packs offered as a multi-select (P5.2); left out when empty.
+	Packs []packs.Pack
 	// Taken reports names already used, for instant feedback. The service
 	// checks again against the database.
 	Taken func(name string) bool
@@ -99,6 +103,24 @@ func NewForm(in FormInput) (*huh.Form, *agent.StartOpts, error) {
 		// command, racing the fields that write vals.
 		fields = append(fields, huh.NewSelect[string]().Key("template").Title("Template").
 			Options(topts...).Value(&vals.Template))
+	}
+	if len(in.Packs) > 0 {
+		vals.Packs = slices.DeleteFunc(slices.Clone(vals.Packs), func(n string) bool {
+			_, ok := packs.Find(in.Packs, n)
+			return !ok
+		})
+		popts := make([]huh.Option[string], len(in.Packs))
+		for i, p := range in.Packs {
+			popts[i] = huh.NewOption(packLabel(p), p.Name)
+		}
+		// Right after the project: the packs' files are that checkout's.
+		// Height +2: the title and description.
+		pf := huh.NewMultiSelect[string]().Key("packs").Title("Context packs").
+			Description("their files and preamble start the first prompt").
+			Options(popts...).Height(min(len(popts), 6) + 2).Value(&vals.Packs)
+		fields = slices.Insert(fields, 2, huh.Field(pf))
+	} else {
+		vals.Packs = nil
 	}
 	groups := []*huh.Group{huh.NewGroup(fields...).Title("New session")}
 	prompt := promptField(&vals.Prompt)

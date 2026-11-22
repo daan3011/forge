@@ -56,6 +56,8 @@ type Deps struct {
 	// TemplatesDir is the session templates folder (P1.7), created with
 	// the defaults on first use; "" offers no templates.
 	TemplatesDir string
+	// PacksDir is the context packs folder (P5.2); "" offers none.
+	PacksDir string
 	// Providers resolve {issue_*} / {pr_*} template variables; nil has
 	// none, so those are asked for in the form.
 	Providers *templates.Registry

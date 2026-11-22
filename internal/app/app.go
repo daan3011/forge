@@ -98,6 +98,7 @@ type Model struct {
 	sessions     agent.API     // from WithSessions
 	live         <-chan live.Ping
 	templatesDir string              // from WithTemplates
+	packsDir     string              // from WithPacks
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
 	github       github.PRClient     // from WithGitHub
@@ -152,7 +153,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 	d := tabkit.Deps{
 		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
 		Config: cfg, Sessions: m.sessions, Live: m.live,
-		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
+		TemplatesDir: m.templatesDir, PacksDir: m.packsDir, Providers: m.providers, Browser: m.browser,
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
 		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,

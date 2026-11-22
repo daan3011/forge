@@ -43,6 +43,10 @@ type Tab struct {
 	git     worktreeLister
 	home    string
 	managed string
+	// packsDir holds the context packs (P5.2); "" hides the Packs view's
+	// actions. lister lists a checkout's files for the picker.
+	packsDir string
+	lister   fileLister
 
 	split  ui.SplitPane
 	width  int
@@ -66,6 +70,8 @@ type Tab struct {
 	focusDetail bool
 	det         detailState
 	matrix      bool // the right pane shows worktree inheritance
+
+	pk packState // the Packs view (P5.2)
 }
 
 var (
@@ -74,6 +80,7 @@ var (
 	_ tabs.Updater         = (*Tab)(nil)
 	_ tabs.StatusDetailer  = (*Tab)(nil)
 	_ tabs.VisibilityAware = (*Tab)(nil)
+	_ tabs.InputCapturer   = (*Tab)(nil)
 )
 
 // New returns the Context tab.
@@ -85,13 +92,16 @@ func newTab(d tabkit.Deps) *Tab {
 		cfg = config.Default()
 	}
 	home, _ := os.UserHomeDir()
+	git := worktree.NewExec()
 	t := &Tab{
 		theme: d.Theme, keys: d.Keys, cfg: cfg, now: time.Now,
-		git:     worktree.NewExec(),
-		home:    home,
-		managed: memory.DefaultManaged(),
-		split:   ui.NewSplitPane(d.Theme),
-		det:     newDetailState(),
+		git:      git,
+		lister:   git,
+		packsDir: d.PacksDir,
+		home:     home,
+		managed:  memory.DefaultManaged(),
+		split:    ui.NewSplitPane(d.Theme),
+		det:      newDetailState(),
 	}
 	t.split.SetRatio(0.4)
 	t.edit = func(path string) tea.Cmd {
@@ -153,14 +163,14 @@ func (t *Tab) overBudget() bool {
 func (t *Tab) Init() tea.Cmd { return nil }
 
 // Refresh implements tabs.Tab: resolves the memory files of the checkout
-// and of each of its worktrees.
+// and of each of its worktrees, and reloads the context packs.
 func (t *Tab) Refresh() tea.Cmd {
 	gen, root, home, managed, git, now := t.gen, t.root(), t.home, t.managed, t.git, t.now
-	return func() tea.Msg {
+	return tea.Batch(func() tea.Msg {
 		msg := scanned(root, home, managed, git)
 		msg.gen, msg.at = gen, now()
 		return msg
-	}
+	}, t.loadPacks())
 }
 
 // scanned does the work of Refresh, off the update loop.
@@ -234,6 +244,18 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 
 func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
+	case packsLoadedMsg:
+		t.packsLoaded(msg)
+		return nil
+	case filesListedMsg:
+		return t.filesListed(msg)
+	case packSavedMsg:
+		return t.packSaved(msg)
+	}
+	if t.pk.dialog != nil {
+		return t.updatePackDialog(msg)
+	}
+	switch msg := msg.(type) {
 	case scannedMsg:
 		t.scannedIn(msg)
 		return nil
@@ -256,6 +278,12 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	ck, l := t.keys.Context, t.keys.List
+	if key.Matches(kp, ck.Packs) {
+		return t.togglePacks()
+	}
+	if t.pk.on {
+		return t.packKey(kp)
+	}
 	switch {
 	case key.Matches(kp, ck.Edit):
 		return t.editSelected()
@@ -345,9 +373,20 @@ func errCmd(err error) tea.Cmd {
 // SetSize implements tabs.Tab.
 func (t *Tab) SetSize(width, height int) {
 	t.width, t.height = width, height
-	t.split.SetSize(width, height)
+	t.split.SetSize(width, max(height-sectionBarLines, 1))
 	t.clampTop()
+	if t.pk.dialog != nil && t.pk.dialog.form != nil {
+		w, h := t.dialogSize()
+		_, _ = t.pk.dialog.form.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	}
 }
+
+// sectionBarLines is the Memory | Packs bar above the panes.
+const sectionBarLines = 1
+
+// CapturingInput implements tabs.InputCapturer: a pack form or the file
+// picker takes every key.
+func (t *Tab) CapturingInput() bool { return t.pk.dialog != nil }
 
 // SetProject implements tabs.Tab.
 func (t *Tab) SetProject(p *config.Project) {
@@ -357,6 +396,7 @@ func (t *Tab) SetProject(p *config.Project) {
 	t.files, t.trees, t.inherit, t.wtErr = nil, nil, nil, nil
 	t.rows, t.cursor, t.top, t.selPath = nil, 0, 0, ""
 	t.focusDetail = false
+	t.pk.loaded, t.pk.entries, t.pk.errs, t.pk.offset = false, nil, nil, 0
 }
 
 // SetVisible implements tabs.VisibilityAware: memory files change outside
@@ -376,6 +416,13 @@ func (t *Tab) LastUpdated() time.Time { return t.updated }
 
 // StatusDetail implements tabs.StatusDetailer.
 func (t *Tab) StatusDetail() string {
+	if t.pk.on {
+		e, ok := t.selectedPack()
+		if !ok {
+			return ""
+		}
+		return fmt.Sprintf("pack %s ≈%s tokens", e.pack.Name, ui.CompactCount(e.tokens))
+	}
 	if !t.scanned {
 		return ""
 	}
@@ -392,11 +439,19 @@ func (t *Tab) StatusDetail() string {
 // ShortHelp implements tabs.Tab.
 func (t *Tab) ShortHelp() []key.Binding {
 	ck := t.keys.Context
+	switch {
+	case t.pk.dialog != nil && t.pk.dialog.picker != nil:
+		return t.pk.dialog.picker.Help()
+	case t.pk.dialog != nil:
+		return t.keys.FormHelp()
+	case t.pk.on:
+		return []key.Binding{ck.Packs, ck.NewPack, ck.AddFiles, ck.Edit, ck.SendPack, ck.DeletePack}
+	}
 	if t.focusDetail {
 		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to list"))
 		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back, ck.Edit}
 	}
-	return []key.Binding{ck.Worktrees, ck.Open, ck.Edit}
+	return []key.Binding{ck.Packs, ck.Worktrees, ck.Open, ck.Edit}
 }
 
 // FullHelp implements tabs.Tab.
@@ -405,7 +460,8 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{ck.Open, ck.Back, t.keys.Input.Cancel, ck.DetailDown, ck.DetailUp, l.ShrinkPane, l.GrowPane},
-		{ck.Edit, ck.Worktrees},
+		{ck.Edit, ck.Worktrees, ck.Packs},
+		{ck.NewPack, ck.AddFiles, ck.DeletePack, ck.SendPack},
 	}
 }
 
@@ -414,8 +470,13 @@ func (t *Tab) Commands() []tabs.Command {
 	l, ck := t.keys.List, t.keys.Context
 	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return nil } }
 	return []tabs.Command{
-		{ID: "context_edit", Title: "Context: edit memory file in $EDITOR", Key: ck.Edit, Run: t.editSelected},
+		{ID: "context_edit", Title: "Context: edit memory file / pack in $EDITOR", Key: ck.Edit, Run: t.editCurrent},
 		{ID: "context_worktrees", Title: "Context: toggle worktree inheritance", Key: ck.Worktrees, Run: do(t.toggleMatrix)},
+		{ID: "context_packs", Title: "Context: switch memory files / packs", Key: ck.Packs, Run: t.togglePacks},
+		{ID: "context_new_pack", Title: "Context: new context pack", Key: ck.NewPack, Run: t.inPacks(t.newPack)},
+		{ID: "context_add_files", Title: "Context: pick the pack's files", Key: ck.AddFiles, Run: t.inPacks(t.addFiles)},
+		{ID: "context_delete_pack", Title: "Context: delete context pack", Key: ck.DeletePack, Run: t.inPacks(t.deletePack)},
+		{ID: "context_send_pack", Title: "Context: send pack to a session", Key: ck.SendPack, Run: t.inPacks(t.sendPack)},
 		{ID: "context_open", Title: "Context: focus the rendered file", Key: ck.Open, Run: do(t.focus)},
 		{ID: "context_back", Title: "Context: back to the file list", Key: ck.Back, Run: do(func() { t.focusDetail = false })},
 		{ID: "context_detail_down", Title: "Context: scroll file down", Key: ck.DetailDown, Run: do(func() { t.scrollDetail(1) })},
@@ -427,8 +488,52 @@ func (t *Tab) Commands() []tabs.Command {
 
 // --- view ------------------------------------------------------------------------
 
+// editCurrent edits the selected pack in the Packs view, else the
+// selected memory file.
+func (t *Tab) editCurrent() tea.Cmd {
+	if t.pk.on {
+		return t.editPack()
+	}
+	return t.editSelected()
+}
+
+// inPacks wraps a Packs view action for the palette: it shows the view
+// first (loading the packs if needed).
+func (t *Tab) inPacks(f func() tea.Cmd) func() tea.Cmd {
+	return func() tea.Cmd {
+		var load tea.Cmd
+		if !t.pk.on {
+			load = t.togglePacks()
+		}
+		if !t.pk.loaded {
+			return load // the packs aren't there yet; the view shows them
+		}
+		return tea.Batch(load, f())
+	}
+}
+
 // View implements tabs.Tab.
 func (t *Tab) View() string {
+	if t.pk.dialog != nil {
+		return t.packDialogView()
+	}
+	active, packCount := 0, -1
+	if t.pk.on {
+		active = 1
+	}
+	if t.pk.loaded {
+		packCount = len(t.pk.entries)
+	}
+	bar := ui.SectionBar(t.theme, []string{"Memory", "Packs"}, []int{-1, packCount}, active, t.width)
+	return bar + "\n" + t.panes()
+}
+
+func (t *Tab) panes() string {
+	if t.pk.on {
+		lw, lh := t.split.LeftSize()
+		rw, rh := t.split.RightSize()
+		return t.split.View(t.packsListView(lw, lh), t.packDetailView(rw, rh), true)
+	}
 	if t.split.Collapsed() && t.focusDetail {
 		w, h := t.split.LeftSize()
 		return t.split.View(t.detailView(w, h), "", true)

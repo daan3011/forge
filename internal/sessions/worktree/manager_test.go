@@ -668,3 +668,24 @@ func TestCreateFromCommit(t *testing.T) {
 		}
 	})
 }
+
+func TestLsFiles(t *testing.T) {
+	g := newGit(t)
+	dir := t.TempDir()
+	git(t, g, dir, "init", "-q", "-b", "main")
+	write(t, filepath.Join(dir, ".gitignore"), "*.log\n")
+	write(t, filepath.Join(dir, "b.go"), "b")
+	write(t, filepath.Join(dir, "sub", "a b.go"), "a")
+	git(t, g, dir, "add", "-A")
+	git(t, g, dir, "commit", "-q", "-m", "init")
+	write(t, filepath.Join(dir, "new.md"), "untracked")
+	write(t, filepath.Join(dir, "x.log"), "ignored")
+	got, err := g.LsFiles(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".gitignore", "b.go", "new.md", "sub/a b.go"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("LsFiles = %q, want %q", got, want)
+	}
+}

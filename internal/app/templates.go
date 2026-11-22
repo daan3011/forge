@@ -27,6 +27,12 @@ func WithTemplates(dir string, providers *templates.Registry) Option {
 	return func(m *Model) { m.templatesDir, m.providers = dir, providers }
 }
 
+// WithPacks sets the context packs folder (P5.2) for the Context tab's
+// Packs view and the new-session form.
+func WithPacks(dir string) Option {
+	return func(m *Model) { m.packsDir = dir }
+}
+
 // WithBrowser gives tabs a way to open URLs (linked issues and PRs).
 func WithBrowser(b browser.Opener) Option {
 	return func(m *Model) { m.browser = b }

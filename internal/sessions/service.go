@@ -249,7 +249,11 @@ type StartOpts struct {
 	Project  string // project name
 	Base     string // base branch; empty means DefaultBase
 	Template string // template name, recorded only (P1.7)
-	Prompt   string // first prompt; empty starts claude without one
+	// Packs are context pack names chosen in the new-session form (P5.2).
+	// The form flow turns them into Docs and the start of Prompt; Start
+	// ignores them.
+	Packs  []string
+	Prompt string // first prompt; empty starts claude without one
 	// Branch is the branch to work on; empty means agent/<name>. See
 	// worktree.CreateOpts.Branch for how an existing branch is used.
 	Branch string
