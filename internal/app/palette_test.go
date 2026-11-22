@@ -17,6 +17,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/tabs/docs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
 )
@@ -505,5 +506,54 @@ func TestLoadRecentsErrors(t *testing.T) {
 	}
 	if loadRecents(nil) != nil || saveRecents(nil, nil) != nil {
 		t.Fatal("no store means no commands")
+	}
+}
+
+// TestPaletteLogDecision: from another tab, "Log a decision" switches to
+// the Docs tab and opens its form (P4.4).
+func TestPaletteLogDecision(t *testing.T) {
+	var model tea.Model = mustNew(t, config.Default())
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	model, cmd := runPalette(t, model, "log a decision")
+	m := model.(Model)
+	if m.tabs[m.active].Title() != docs.Title {
+		t.Fatalf("active tab = %s", m.tabs[m.active].Title())
+	}
+	var got bool
+	for _, msg := range flatten(cmd) {
+		if _, ok := msg.(docs.LogDecisionMsg); ok {
+			got = true
+		}
+	}
+	if !got {
+		t.Error("no LogDecisionMsg sent")
+	}
+	// On the Docs tab only its own command is listed.
+	for _, it := range m.paletteItems() {
+		if it.id == "adr" {
+			t.Error("global adr item shown on the Docs tab")
+		}
+	}
+}
+
+// flatten runs cmd and its batches, skipping commands that block.
+func flatten(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	ch := make(chan tea.Msg, 1)
+	go func() { ch <- cmd() }()
+	select {
+	case msg := <-ch:
+		if b, ok := msg.(tea.BatchMsg); ok {
+			var out []tea.Msg
+			for _, c := range b {
+				out = append(out, flatten(c)...)
+			}
+			return out
+		}
+		return []tea.Msg{msg}
+	case <-time.After(200 * time.Millisecond):
+		return nil
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/tabs"
+	"github.com/daan3011/forge/internal/tabs/docs"
 	"github.com/daan3011/forge/internal/tabs/sessions"
 	"github.com/daan3011/forge/internal/ui"
 )
@@ -95,6 +96,17 @@ func (m Model) paletteItems() []item {
 			detail: "title #project !priority @me +label",
 			run:    func(m Model) (Model, tea.Cmd) { return m.openCapture() },
 		},
+	}
+	// Log a decision from any tab (P4.4); the Docs tab lists its own.
+	if i := m.tabIndex(docs.Title); i >= 0 && i != m.active {
+		items = append(items, item{
+			id: "adr", title: "Log a decision (ADR)…", group: groupCommands,
+			detail: "title, context, decision → docs/decisions",
+			run: func(m Model) (Model, tea.Cmd) {
+				m, cmd := m.switchTo(i)
+				return m, tea.Batch(cmd, func() tea.Msg { return docs.LogDecisionMsg{} })
+			},
+		})
 	}
 	if m.templatesDir != "" {
 		dir := m.templatesDir
@@ -302,4 +314,14 @@ func (m Model) setProject(p *config.Project) (Model, tea.Cmd) {
 	m.now = m.clock()
 	cmds = append(cmds, m.toast.Show("project: "+name, ui.ToastInfo), m.ensureClock())
 	return m, tea.Batch(cmds...)
+}
+
+// tabIndex is the index of the tab titled title, or -1.
+func (m Model) tabIndex(title string) int {
+	for i, t := range m.tabs {
+		if t.Title() == title {
+			return i
+		}
+	}
+	return -1
 }

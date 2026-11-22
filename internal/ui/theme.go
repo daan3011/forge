@@ -213,6 +213,10 @@ type Theme struct {
 	// Docs tab (P4.3).
 	DocMarked lipgloss.Style // a doc marked for sending to an agent
 
+	// Decision log (P4.4).
+	DecisionNumber     lipgloss.Style // "0007" in the decisions view
+	DecisionSuperseded lipgloss.Style // a superseded decision's row
+
 	// Plane cycle summary (P3.6).
 	CycleName    lipgloss.Style // the current cycle's name
 	CycleBlocked lipgloss.Style // the blocked count
@@ -348,13 +352,15 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		StatusCard:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
 		CardTitle:       lipgloss.NewStyle().Foreground(p.Text).Bold(true),
 
-		BoardHeader:       lipgloss.NewStyle().Foreground(p.Muted),
-		BoardCard:         lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
-		BoardCardSelected: lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(p.Accent).Padding(0, 1),
-		BoardCollapsed:    lipgloss.NewStyle().Foreground(p.Muted),
-		DocMarked:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
-		BoardScrollHint:   lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
-		BoardOverlay:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
+		BoardHeader:        lipgloss.NewStyle().Foreground(p.Muted),
+		BoardCard:          lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
+		BoardCardSelected:  lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(p.Accent).Padding(0, 1),
+		BoardCollapsed:     lipgloss.NewStyle().Foreground(p.Muted),
+		DocMarked:          lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		DecisionNumber:     lipgloss.NewStyle().Foreground(p.Highlight),
+		DecisionSuperseded: lipgloss.NewStyle().Foreground(p.Muted).Strikethrough(true),
+		BoardScrollHint:    lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		BoardOverlay:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
 
 		CycleName:    lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
 		CycleBlocked: lipgloss.NewStyle().Foreground(p.Error).Bold(true),

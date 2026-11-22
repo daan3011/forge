@@ -192,6 +192,9 @@ type DocKeys struct {
 	DetailUp   key.Binding
 	Mark       key.Binding // mark / unmark the doc for sending to an agent (P4.3)
 	Send       key.Binding // send the marked docs (or the selected one) to an agent session
+	Decision   key.Binding // log a decision (P4.4)
+	Decisions  key.Binding // toggle the decisions view
+	Supersede  key.Binding // mark the selected decision superseded by a newer one
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -412,6 +415,9 @@ func DefaultKeyMap() *KeyMap {
 			DetailUp:   bind("scroll detail up", "K"),
 			Mark:       bind("mark for agent", "space"),
 			Send:       bind("send to agent", "s"),
+			Decision:   bind("log decision", "a"),
+			Decisions:  bind("decisions view", "d"),
+			Supersede:  bind("mark superseded", "S"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -621,6 +627,9 @@ func (k *KeyMap) actions() []action {
 		{"docs_detail_up", scopeDocs, &dc.DetailUp},
 		{"docs_mark", scopeDocs, &dc.Mark},
 		{"docs_send", scopeDocs, &dc.Send},
+		{"docs_decision", scopeDocs, &dc.Decision},
+		{"docs_decisions", scopeDocs, &dc.Decisions},
+		{"docs_supersede", scopeDocs, &dc.Supersede},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},
