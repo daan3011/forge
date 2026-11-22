@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daan3011/forge/internal/config"
+	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
@@ -652,3 +653,55 @@ func TestClearWaitingStaleView(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestStartAttachesDocs(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	notes := filepath.Join(t.TempDir(), "notes.md")
+	draft := filepath.Join(e.proj.Path, "docs", "draft.md")
+	for p, body := range map[string]string{notes: "outside", draft: "draft"} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	docs := docfs.Plan(e.proj.Path, []string{draft, notes})
+	res, err := e.svc.Start(ctx, StartOpts{Name: "read-docs", Project: "forge", Prompt: docfs.Mentions(docs), Docs: docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := res.Session.Worktree
+	for rel, want := range map[string]string{"docs/draft.md": "draft", ".forge/attached/notes.md": "outside"} {
+		if b, err := os.ReadFile(filepath.Join(wt, rel)); err != nil || string(b) != want {
+			t.Errorf("%s = %q, %v; want %q", rel, b, err, want)
+		}
+	}
+	if want := filepath.Join(wt, docfs.CopyDir); !slices.Equal(e.wt.excluded, []string{want}) {
+		t.Errorf("excluded %q, want %q", e.wt.excluded, want)
+	}
+}
+
+func TestAttachDocs(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	x := e.start(t, "running")
+	src := filepath.Join(t.TempDir(), "spec.md")
+	if err := os.WriteFile(src, []byte("spec"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	docs := docfs.Plan(e.proj.Path, []string{src})
+	if err := e.svc.AttachDocs(ctx, x, docs); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(x.Worktree, ".forge/attached/spec.md")); err != nil || string(b) != "spec" {
+		t.Errorf("copy = %q, %v", b, err)
+	}
+
+	gone := x
+	gone.Worktree = filepath.Join(t.TempDir(), "gone")
+	if err := e.svc.AttachDocs(ctx, gone, docs); !errors.Is(err, ErrWorktreeMissing) {
+		t.Errorf("gone worktree: err = %v, want ErrWorktreeMissing", err)
+	}
+}

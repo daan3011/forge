@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daan3011/forge/internal/config"
+	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
@@ -261,6 +262,9 @@ type StartOpts struct {
 	// StartCommit starts a new branch at this commit instead of Base (P2.8
 	// fix branches); see worktree.CreateOpts.StartCommit.
 	StartCommit string
+	// Docs are put into the worktree before the agent starts (P4.3); the
+	// prompt mentions them by their Rel paths.
+	Docs []docfs.Attachment
 }
 
 // LinkSpec is a link a new session gets: To and what forge knows of it.
@@ -342,6 +346,11 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		if err := s.c.Worktrees.EnsureExcluded(ctx, wt.Path, hooks.SettingsRel); err != nil {
 			return Started{}, fmt.Errorf("git-ignore hook settings: %w", err)
 		}
+	}
+
+	// The worktree's removal (undo above) takes copied docs along.
+	if err := s.materialize(ctx, wt.Path, o.Docs); err != nil {
+		return Started{}, err
 	}
 
 	id, err := s.c.NewID()
@@ -877,6 +886,33 @@ func (s *Service) SendPrompt(ctx context.Context, x store.Session, text string) 
 	return nil
 }
 
+// AttachDocs puts docs into x's worktree so a prompt can mention them
+// (P4.3). A worktree that is gone gives *WorktreeMissingError.
+func (s *Service) AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) error {
+	if !isDir(x.Worktree) {
+		return &WorktreeMissingError{Path: x.Worktree, Branch: x.Branch}
+	}
+	return s.materialize(ctx, x.Worktree, docs)
+}
+
+// materialize copies docs into the worktree at dir and git-ignores the
+// copy folder when anything went there.
+func (s *Service) materialize(ctx context.Context, dir string, docs []docfs.Attachment) error {
+	if len(docs) == 0 {
+		return nil
+	}
+	n, err := docfs.Materialize(dir, docs)
+	if err != nil {
+		return fmt.Errorf("attach docs: %w", err)
+	}
+	if n > 0 {
+		if err := s.c.Worktrees.EnsureExcluded(ctx, dir, docfs.CopyDir); err != nil {
+			return fmt.Errorf("git-ignore copied docs: %w", err)
+		}
+	}
+	return nil
+}
+
 // KillOpts are the inputs to Kill.
 type KillOpts struct {
 	// RemoveWorktree also removes the worktree and archives the session.
@@ -1022,6 +1058,7 @@ type API interface {
 	List(ctx context.Context, project string, archived bool) ([]Row, error)
 	Preview(ctx context.Context, x store.Session, lines int) (string, error)
 	SendPrompt(ctx context.Context, x store.Session, text string) error
+	AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) error
 	Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error)
 	Delete(ctx context.Context, x store.Session) error
 	ClearWaiting(ctx context.Context, x store.Session) (bool, error)

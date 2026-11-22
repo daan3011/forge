@@ -197,6 +197,8 @@ keybinds:
   # docs_back: ["h", "left"]           # collapse a folder / back to the tree (esc too)
   # docs_detail_down: ["J"]
   # docs_detail_up: ["K"]
+  # docs_mark: ["space"]           # mark docs to send to an agent
+  # docs_send: ["s"]               # send marked docs to a new or running session
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

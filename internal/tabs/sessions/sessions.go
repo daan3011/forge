@@ -303,6 +303,10 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, t.templateResolved(msg)
 	case fixReadyMsg:
 		return t, t.fixReady(msg)
+	case docsPickMsg:
+		return t, t.docsPicked(msg)
+	case docsSentMsg:
+		return t, t.docsSent(msg)
 	case startedMsg:
 		return t, t.started(msg)
 	case killedMsg:
@@ -742,7 +746,10 @@ func (t *Tab) templatesLoaded(msg templatesLoadedMsg) tea.Cmd {
 		req.Opts = *v
 		tmpl, ok := templates.Find(msg.templates, v.Template)
 		if !ok {
-			return t.start(t.withRefLinks(*v, req.Refs))
+			o := t.withRefLinks(*v, req.Refs)
+			o.Docs = t.docsPlan(req)
+			o.Prompt = DocsPrompt(templates.Template{}, o.Prompt, o.Docs)
+			return t.start(o)
 		}
 		return t.askRefs(req, tmpl)
 	})
@@ -769,6 +776,7 @@ func (t *Tab) askRefs(req NewRequest, tmpl templates.Template) tea.Cmd {
 // resolveTemplate asks the context providers for the template's variables
 // in a command; templateResolved continues the flow.
 func (t *Tab) resolveTemplate(req NewRequest, tmpl templates.Template) tea.Cmd {
+	req = t.withDocsVar(req)
 	t.busy++
 	reg, projects := t.providers, t.cfg.Projects
 	return func() tea.Msg {
@@ -800,7 +808,8 @@ func (t *Tab) templateResolved(msg templateResolvedMsg) tea.Cmd {
 // confirmPrompt shows the rendered prompt, editable, then starts.
 func (t *Tab) confirmPrompt(req NewRequest, tmpl templates.Template, vals map[string]string) tea.Cmd {
 	o := t.withRefLinks(req.Opts, req.Refs)
-	o.Prompt = RenderPrompt(tmpl, vals)
+	o.Docs = t.docsPlan(req)
+	o.Prompt = DocsPrompt(tmpl, RenderPrompt(tmpl, vals), o.Docs)
 	f := PromptForm(t.theme, t.keys, &o.Prompt)
 	return t.openDialog("", f, func() tea.Cmd { return t.start(o) })
 }

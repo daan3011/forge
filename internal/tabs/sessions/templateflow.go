@@ -30,6 +30,9 @@ type NewRequest struct {
 	Opts agent.StartOpts
 	Refs map[store.LinkKind]string
 	Vars map[string]string
+	// Docs are absolute doc paths to hand the session (P4.3); they fill
+	// {docs} as @path mentions for the chosen project's worktree.
+	Docs []string
 }
 
 // TemplateInput is what templates.Resolve needs for the chosen options.

@@ -180,6 +180,10 @@ func (t *Tab) rowView(r row, selected bool, w int) string {
 		style = th.DetailLabel
 	default:
 		label = "  " + n.Name
+		if t.isMarked(n.Path) {
+			label = "● " + n.Name
+			style = th.DocMarked
+		}
 		right = ui.ShortAge(t.now().Sub(n.ModTime))
 	}
 	label = indent + label
