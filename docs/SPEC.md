@@ -922,7 +922,7 @@ Done when: an HTML mockup written by an agent appears in the gallery within seco
 Add pinning and tagging (spec P4.6).
 
 - `p` pins (pinned float to the top, star icon); `t` edits tags (comma separated, with
-  completion from existing tags); `r` renames the display title.
+  completion from existing tags); `m` renames the display title (`r` is the global refresh).
 - Filter by tag and pinned-only. Pinned artifacts are copied to .forge/artifacts/ automatically.
 - Pins show on the Home screen later.
 

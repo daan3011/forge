@@ -112,6 +112,17 @@ type ArtifactIndex interface {
 	Sync(ctx context.Context, roots []string, found []store.Artifact) error
 	List(ctx context.Context, project string) ([]store.Artifact, error)
 	Delete(ctx context.Context, paths []string) error
+
+	// Pins, titles, tags and synced copies (P4.6).
+	SetPinned(ctx context.Context, path, project string, on bool) error
+	SetTitle(ctx context.Context, path, title string) error
+	SetTags(ctx context.Context, path string, tags []string) error
+	AllTags(ctx context.Context) ([]string, error)
+	MoveMeta(ctx context.Context, from, to string) error
+	Link(ctx context.Context, l store.ArtifactLink) error
+	ActiveLinks(ctx context.Context) ([]store.ArtifactLink, error)
+	MarkSynced(ctx context.Context, copyPath string, at time.Time) error
+	Detach(ctx context.Context, copyPath, reason string, at time.Time) error
 }
 
 // InputCapturer is implemented by tabs that can take text input (a filter,
