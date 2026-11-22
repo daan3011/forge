@@ -96,6 +96,12 @@ artifacts:
     # - "design/**"
     # - ".forge/artifacts/**"
     # - ~/Desktop/mockups/**
+  # How the detail pane previews images: auto | kitty | sixel | chafa | text | off.
+  # auto uses kitty graphics (kitty, Ghostty), then sixel (WezTerm, foot,
+  # iTerm2...), then chafa if installed, else just the file's details. SVGs
+  # need rsvg-convert (librsvg). Inside tmux, graphics need
+  # `set -g allow-passthrough on`.
+  preview: auto
 
 ui:
   # full | reduced | off

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -14,6 +15,7 @@ import (
 	"github.com/daan3011/forge/internal/app"
 	"github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/chafa"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
@@ -22,12 +24,14 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/notify"
 	"github.com/daan3011/forge/internal/plane"
+	"github.com/daan3011/forge/internal/rsvg"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/templates"
+	"github.com/daan3011/forge/internal/ui/termcaps"
 )
 
 // deps are the external collaborators of the CLI, swapped for fakes in tests.
@@ -126,6 +130,8 @@ func newRootCmd(d deps) *cobra.Command {
 				app.WithClipboard(clipboard.Exec{}), app.WithCheckout(newCheckout(cfg)),
 				app.WithDelta(delta.Exec{Dark: true}),
 				app.WithArtifacts(st.Artifacts()), app.WithFiles(browser.Exec{}),
+				app.WithPreviewTools(chafa.Exec{}, rsvg.Exec{}),
+				app.WithCapsDetector(previewDetector(cfg)),
 				app.WithAlerts(alert.Checker{
 					Store: st.Sessions(), Notifier: d.notifications(), Watcher: d.tmuxWatcher(),
 					Policy: alert.PolicyFrom(cfg.Sessions),
@@ -195,6 +201,16 @@ func newRootCmd(d deps) *cobra.Command {
 		newDemoCmd(),
 	)
 	return root
+}
+
+// previewDetector detects terminal graphics for artifact previews (P4.7)
+// in the mode the config asks for (validated on load, so auto on error).
+func previewDetector(cfg *config.Config) *termcaps.Detector {
+	mode, err := termcaps.ParseMode(cfg.Artifacts.Preview)
+	if err != nil {
+		mode = termcaps.ModeAuto
+	}
+	return termcaps.NewDetector(mode, os.Getenv, termcaps.ExecTmux{})
 }
 
 // tmuxNotice tells once per config version that forge's tmux.conf is

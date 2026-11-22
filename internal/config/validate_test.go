@@ -36,6 +36,7 @@ func TestValidation(t *testing.T) {
 		{"negative notify", "sessions:\n  notify_after_minutes: -1\n", "sessions.notify_after_minutes", 2, "0 or more"},
 		{"archive cleanup enum", "sessions:\n  archive_cleanup: sometimes\n", "sessions.archive_cleanup", 2, `must be one of ask, always, never; got "sometimes"`},
 		{"bad glob", "artifacts:\n  watch:\n    - /a/[b\n", "artifacts.watch[0]", 3, "invalid glob"},
+		{"preview enum", "artifacts:\n  preview: iterm\n", "artifacts.preview", 2, `must be one of auto, kitty, sixel, chafa, text, off; got "iterm"`},
 		{"animations enum", "ui:\n  animations: fast\n", "ui.animations", 2, `must be one of full, reduced, off; got "fast"`},
 		{"theme colour", "ui:\n  theme:\n    ember: orange\n", "ui.theme.ember", 3, "must be a colour"},
 		{"keybind empty list", "keybinds:\n  quit: []\n", "keybinds.quit", 2, "at least one key"},

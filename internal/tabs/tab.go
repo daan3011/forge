@@ -13,6 +13,7 @@ import (
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/ui/termcaps"
 )
 
 // SessionPingMsg tells the root model that `forge hook` recorded an event,
@@ -90,6 +91,20 @@ type Animator interface {
 // the tab it shows and SetVisible(false) on the one it hides.
 type VisibilityAware interface {
 	SetVisible(visible bool) tea.Cmd
+}
+
+// GraphicsAware is implemented by tabs that draw terminal graphics (the
+// Artifacts preview, P4.7).
+type GraphicsAware interface {
+	// SetCaps says what the terminal can show. The root model calls it
+	// when detection finishes and again when the cell size changes.
+	SetCaps(c termcaps.Caps) tea.Cmd
+	// SetOccluded says whether something is drawn over the active tab (the
+	// palette, help, quick capture, a toast). Sixel images aren't part of
+	// the cell grid, so they must be cleared and redrawn around overlays.
+	SetOccluded(covered bool) tea.Cmd
+	// Resized follows SetSize after a window resize.
+	Resized() tea.Cmd
 }
 
 // TargetedMsg is a message meant for one tab, such as the result of its

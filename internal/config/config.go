@@ -189,7 +189,15 @@ const (
 // Artifacts holds the artifact gallery settings.
 type Artifacts struct {
 	Watch []string `yaml:"watch"`
+	// Preview picks how the detail pane previews images (P4.7): auto
+	// detects kitty graphics, then sixel, then chafa; kitty / sixel / chafa
+	// force one; text shows HTML summaries and metadata only; off shows
+	// metadata only. Empty means auto.
+	Preview string `yaml:"preview"`
 }
+
+// PreviewModes are the valid artifacts.preview values.
+var PreviewModes = []string{"auto", "kitty", "sixel", "chafa", "text", "off"}
 
 // Animations is the animation level.
 type Animations string
@@ -263,7 +271,8 @@ func Default() *Config {
 			RefreshInterval:    Duration{10 * time.Second},
 			ArchiveCleanup:     CleanupAsk,
 		},
-		UI: UI{Animations: AnimationsFull},
+		Artifacts: Artifacts{Preview: "auto"},
+		UI:        UI{Animations: AnimationsFull},
 	}
 }
 

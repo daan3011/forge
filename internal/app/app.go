@@ -15,6 +15,7 @@ import (
 
 	artfs "github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/chafa"
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
@@ -23,6 +24,7 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/refresh"
+	"github.com/daan3011/forge/internal/rsvg"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/live"
@@ -39,6 +41,7 @@ import (
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
+	"github.com/daan3011/forge/internal/ui/termcaps"
 )
 
 // statusBarHeight is the number of rows the status bar takes.
@@ -112,6 +115,11 @@ type Model struct {
 	artifactWatch artfs.Watcher      // from WithArtifactWatcher
 	files         browser.FileOpener // from WithFiles
 
+	capsDet  *termcaps.Detector // from WithCapsDetector; nil: no graphics
+	chafa    chafa.Renderer     // from WithPreviewTools
+	rsvg     rsvg.Rasterizer    // from WithPreviewTools
+	occluded bool               // an overlay or toast covers the active tab
+
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
 	alertsFailing bool           // the last waiting check failed
@@ -149,6 +157,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
 		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,
 		Artifacts: m.artifactIdx, ArtifactWatcher: m.artifactWatch, Files: m.files,
+		Chafa: m.chafa, Rsvg: m.rsvg,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),
@@ -223,6 +232,9 @@ func (m Model) Init() tea.Cmd {
 	if len(m.tabs) > 0 {
 		cmds = append(cmds, setVisible(m.tabs[m.active], true))
 	}
+	if m.capsDet != nil {
+		cmds = append(cmds, m.capsDet.Start())
+	}
 	for _, w := range m.Warnings() {
 		cmds = append(cmds, func() tea.Msg { return ui.InfoMsg{Text: "warning: " + w} })
 	}
@@ -255,7 +267,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // something visible animates, and the status clock runs while the active
 // tab shows an update time.
 func (m Model) settle(cmd tea.Cmd) (Model, tea.Cmd) {
-	return m, tea.Batch(cmd, m.anim.Sync(m.animating()), m.ensureClock())
+	m, occ := m.syncOccluded()
+	return m, tea.Batch(cmd, occ, m.anim.Sync(m.animating()), m.ensureClock())
 }
 
 // animating reports whether anything on screen moves: the splash, a spark
@@ -306,6 +319,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.anim.Update(msg) {
 		return m.frame(), nil
 	}
+	if next, cmd, handled := m.updateCaps(msg); handled {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -319,7 +335,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.SetSize(m.contentSize())
 		}
 		m.help.SetSize(m.width, m.height)
-		return m, nil
+		return m, m.resized()
 
 	case tea.BackgroundColorMsg:
 		*m.theme = *ui.NewTheme(msg.IsDark(), m.cfg.UI.Theme)
@@ -631,6 +647,9 @@ func (m Model) switchTo(i int) (Model, tea.Cmd) {
 	var vis []tea.Cmd
 	if i != m.active {
 		vis = append(vis, setVisible(m.tabs[m.active], false), setVisible(m.tabs[i], true))
+		if g, ok := graphicsAware(m.tabs[i]); ok {
+			vis = append(vis, g.SetOccluded(m.occluded))
+		}
 	}
 	m.active = i
 	m.now = m.clock()

@@ -54,6 +54,10 @@ func TestDefaultConfig(t *testing.T) {
 	if v, ok := ParseConfigVersion([]byte(conf)); !ok || v != ConfigVersion {
 		t.Errorf("version header = %d, %v", v, ok)
 	}
+	// v3: image previews need passthrough (P4.7).
+	if ConfigVersion < 3 || !strings.Contains(conf, "\nset -gq allow-passthrough on\n") {
+		t.Error("allow-passthrough missing from the default config")
+	}
 }
 
 func TestParseConfigVersion(t *testing.T) {

@@ -15,8 +15,10 @@ import (
 
 	artfs "github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/chafa"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/rsvg"
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/tabs"
@@ -52,6 +54,8 @@ type Tab struct {
 	watcher  artfs.Watcher
 	files    browser.FileOpener
 	clip     clipboard.Copier
+	chafa    chafa.Renderer
+	rsvg     rsvg.Rasterizer
 
 	split  ui.SplitPane
 	width  int
@@ -75,6 +79,8 @@ type Tab struct {
 	allTags []string // every tag in use, for completion and the filter form
 	dialog  *huh.Form
 	onDone  func() tea.Cmd
+
+	pv previewState // inline preview (P4.7), see preview.go
 }
 
 var (
@@ -102,6 +108,8 @@ func newTab(d tabkit.Deps) *Tab {
 		watcher: d.ArtifactWatcher,
 		files:   d.Files,
 		clip:    d.Clipboard,
+		chafa:   d.Chafa,
+		rsvg:    d.Rsvg,
 		split:   ui.NewSplitPane(d.Theme),
 	}
 	if d.Sessions != nil {
@@ -312,10 +320,14 @@ func (t *Tab) waitWatch() tea.Cmd {
 
 // Update implements tabs.Tab.
 func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
-	return t, t.update(msg)
+	cmd := t.update(msg)
+	return t, tea.Batch(cmd, t.syncPreview())
 }
 
 func (t *Tab) update(msg tea.Msg) tea.Cmd {
+	if cmd, ok := t.updatePreview(msg); ok {
+		return cmd
+	}
 	switch msg := msg.(type) {
 	case cachedMsg:
 		if msg.gen == t.gen && !t.scanned {
@@ -469,6 +481,7 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "artifacts_pinned_only", Title: "Artifacts: toggle pinned only", Key: ak.PinnedOnly, Run: do(t.togglePinnedOnly)},
 		{ID: "artifacts_clear_filters", Title: "Artifacts: clear filters", Key: ak.ClearFilters, Run: do(t.clearFilters)},
 		{ID: "artifacts_detach", Title: "Artifacts: detach from session (stop syncing the pinned copy)", Run: t.detachSelected},
+		{ID: "artifacts_redraw_preview", Title: "Artifacts: redraw preview", Run: t.redrawPreview},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(t.split.Grow)},
 		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(t.split.Shrink)},
 	}

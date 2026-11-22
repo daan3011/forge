@@ -98,6 +98,15 @@ func (s *SplitPane) RightSize() (width, height int) {
 	return max(s.rightOut-borderSize, 0), max(s.height-borderSize, 0)
 }
 
+// RightOrigin is where the right pane's inside (past its border) starts,
+// relative to the split pane's top left. ok is false when collapsed.
+func (s *SplitPane) RightOrigin() (x, y int, ok bool) {
+	if s.rightOut == 0 {
+		return 0, 0, false
+	}
+	return s.leftOut + borderSize/2, borderSize / 2, true
+}
+
 // View renders both panes at exactly the pane's size. focusLeft picks which
 // pane gets the ember border.
 func (s *SplitPane) View(left, right string, focusLeft bool) string {

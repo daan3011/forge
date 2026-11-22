@@ -24,6 +24,10 @@ set -s extended-keys on
 # Ask xterm-like outer terminals to send those extended keys.
 set -as terminal-features ",xterm*:extkeys"
 
+# Let image previews (kitty graphics, sixel) through to the outer terminal
+# (tmux 3.3+; -q keeps older tmux quiet).
+set -gq allow-passthrough on
+
 # --- Behaviour ---------------------------------------------------------------
 
 # Mouse wheel scrolls, clicks select panes and windows.

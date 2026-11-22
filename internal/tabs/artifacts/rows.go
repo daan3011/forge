@@ -383,6 +383,9 @@ func (t *Tab) detailView(w, h int) string {
 	if !ok {
 		return th.Hint.Render("Nothing selected")
 	}
+	if s, ok := t.previewDetail(a, w, h); ok {
+		return s
+	}
 	field := func(label, value string) string {
 		return th.DetailLabel.Render(padRight(label, 9)) + th.Body.Render(ansi.Truncate(value, max(w-9, 1), "…"))
 	}
@@ -428,7 +431,15 @@ func (t *Tab) detailView(w, h int) string {
 			lines = append(lines, field("Copied", "from "+from+" · final ("+l.DetachReason+")"))
 		}
 	}
-	lines = append(lines, "")
+	lines = append(lines, "", t.detailHints(a, w))
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// detailHints is the key hint line at the bottom of the detail pane.
+func (t *Tab) detailHints(a store.Artifact, w int) string {
 	ak := t.keys.Artifacts
 	pin := " pin"
 	if a.Pinned {
@@ -441,11 +452,7 @@ func (t *Tab) detailView(w, h int) string {
 	if !artfs.IsKept(a.Path) {
 		hints = append(hints, ak.Keep.Help().Key+" keep a copy")
 	}
-	lines = append(lines, th.Hint.Render(ansi.Truncate(strings.Join(hints, " · "), w, "…")))
-	if len(lines) > h {
-		lines = lines[:h]
-	}
-	return strings.Join(lines, "\n")
+	return t.theme.Hint.Render(ansi.Truncate(strings.Join(hints, " · "), w, "…"))
 }
 
 // ago is "just now" or "5m ago".
