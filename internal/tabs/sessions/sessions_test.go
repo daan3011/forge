@@ -61,25 +61,30 @@ type fakeSvc struct {
 	// send docs (P4.3)
 	attached  map[string][]docfs.Attachment // AttachDocs by session name
 	attachErr error                         // returned once by AttachDocs
+	attachOut []docfs.Attachment            // AttachDocs result; nil echoes the input
 
 	// transcripts by session name; a missing name means no transcript.
 	transcripts     map[string]transcript.Transcript
 	transcriptLoads int
 }
 
-// AttachDocs records the docs; attachErr is returned once.
-func (f *fakeSvc) AttachDocs(_ context.Context, x store.Session, docs []docfs.Attachment) error {
+// AttachDocs records the docs and returns attachOut when set, else the
+// docs as given; attachErr is returned once.
+func (f *fakeSvc) AttachDocs(_ context.Context, x store.Session, docs []docfs.Attachment) ([]docfs.Attachment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.attachErr; err != nil {
 		f.attachErr = nil
-		return err
+		return nil, err
 	}
 	if f.attached == nil {
 		f.attached = map[string][]docfs.Attachment{}
 	}
 	f.attached[x.Name] = append(f.attached[x.Name], docs...)
-	return nil
+	if f.attachOut != nil {
+		return f.attachOut, nil
+	}
+	return docs, nil
 }
 
 func (f *fakeSvc) Transcript(_ context.Context, x store.Session) (transcript.Transcript, error) {

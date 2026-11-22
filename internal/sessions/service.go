@@ -348,10 +348,14 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		}
 	}
 
-	// The worktree's removal (undo above) takes copied docs along.
-	if err := s.materialize(ctx, wt.Path, o.Docs); err != nil {
+	// The worktree's removal (undo above) takes copied docs along. The
+	// prompt was rendered before the worktree existed; docs that had to go
+	// elsewhere (a differing version on the branch) are re-mentioned.
+	docs, err := s.materialize(ctx, wt.Path, o.Base, o.Docs)
+	if err != nil {
 		return Started{}, err
 	}
+	o.Prompt = docfs.Rewrite(o.Prompt, o.Docs, docs)
 
 	id, err := s.c.NewID()
 	if err != nil {
@@ -887,30 +891,36 @@ func (s *Service) SendPrompt(ctx context.Context, x store.Session, text string) 
 }
 
 // AttachDocs puts docs into x's worktree so a prompt can mention them
-// (P4.3). A worktree that is gone gives *WorktreeMissingError.
-func (s *Service) AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) error {
+// (P4.3) and returns them as they ended up (see docfs.Materialize). A
+// worktree that is gone gives *WorktreeMissingError.
+func (s *Service) AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) ([]docfs.Attachment, error) {
 	if !isDir(x.Worktree) {
-		return &WorktreeMissingError{Path: x.Worktree, Branch: x.Branch}
+		return nil, &WorktreeMissingError{Path: x.Worktree, Branch: x.Branch}
 	}
-	return s.materialize(ctx, x.Worktree, docs)
+	base := x.BaseBranch
+	if base == "" {
+		base = DefaultBase
+	}
+	return s.materialize(ctx, x.Worktree, base, docs)
 }
 
-// materialize copies docs into the worktree at dir and git-ignores the
-// copy folder when anything went there.
-func (s *Service) materialize(ctx context.Context, dir string, docs []docfs.Attachment) error {
+// materialize copies docs into the worktree at dir (on a branch made from
+// base) and git-ignores the copy folder when anything went there.
+func (s *Service) materialize(ctx context.Context, dir, base string, docs []docfs.Attachment) ([]docfs.Attachment, error) {
 	if len(docs) == 0 {
-		return nil
+		return docs, nil
 	}
-	n, err := docfs.Materialize(dir, docs)
+	changed := func(rel string) (bool, error) { return s.c.Worktrees.ChangedOnBranch(ctx, dir, base, rel) }
+	out, n, err := docfs.Materialize(dir, docs, changed)
 	if err != nil {
-		return fmt.Errorf("attach docs: %w", err)
+		return nil, fmt.Errorf("attach docs: %w", err)
 	}
 	if n > 0 {
 		if err := s.c.Worktrees.EnsureExcluded(ctx, dir, docfs.CopyDir); err != nil {
-			return fmt.Errorf("git-ignore copied docs: %w", err)
+			return nil, fmt.Errorf("git-ignore copied docs: %w", err)
 		}
 	}
-	return nil
+	return out, nil
 }
 
 // KillOpts are the inputs to Kill.
@@ -1058,7 +1068,7 @@ type API interface {
 	List(ctx context.Context, project string, archived bool) ([]Row, error)
 	Preview(ctx context.Context, x store.Session, lines int) (string, error)
 	SendPrompt(ctx context.Context, x store.Session, text string) error
-	AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) error
+	AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) ([]docfs.Attachment, error)
 	Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error)
 	Delete(ctx context.Context, x store.Session) error
 	ClearWaiting(ctx context.Context, x store.Session) (bool, error)

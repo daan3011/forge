@@ -159,11 +159,12 @@ func (t *Tab) sendDocs(x store.Session, paths []string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		msg := docsSentMsg{name: x.Name, n: len(plan)}
-		if err := svc.AttachDocs(ctx, x, plan); err != nil {
+		docs, err := svc.AttachDocs(ctx, x, plan)
+		if err != nil {
 			msg.err = err
 			return msg
 		}
-		msg.err = svc.SendPrompt(ctx, x, DocsMessage(plan))
+		msg.err = svc.SendPrompt(ctx, x, DocsMessage(docs))
 		return msg
 	}
 }

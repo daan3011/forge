@@ -48,6 +48,12 @@ type Git interface {
 	// "info/exclude" (shared by every worktree of a repo), as an absolute
 	// path.
 	GitPath(ctx context.Context, dir, name string) (string, error)
+	// MergeBase returns the best common ancestor of a and b.
+	MergeBase(ctx context.Context, dir, a, b string) (string, error)
+	// ChangedSince reports whether path (relative to dir) differs between
+	// rev and the working tree, uncommitted changes included. A path rev
+	// doesn't have counts as changed.
+	ChangedSince(ctx context.Context, dir, rev, path string) (bool, error)
 }
 
 // Error is a failed git invocation.
@@ -230,6 +236,34 @@ func (e *Exec) DeleteBranch(ctx context.Context, repo, branch string, force bool
 	}
 	_, err := e.Run(ctx, repo, "branch", flag, "--", branch)
 	return err
+}
+
+// MergeBase implements Git.
+func (e *Exec) MergeBase(ctx context.Context, dir, a, b string) (string, error) {
+	out, err := e.Run(ctx, dir, "merge-base", "--end-of-options", a, b)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// ChangedSince implements Git.
+func (e *Exec) ChangedSince(ctx context.Context, dir, rev, path string) (bool, error) {
+	path = filepath.ToSlash(path)
+	if _, err := e.Run(ctx, dir, "cat-file", "-e", "--end-of-options", rev+":"+path); err != nil {
+		if exitCode(err) <= 0 {
+			return false, err // git didn't run
+		}
+		return true, nil // not in rev: the branch added it
+	}
+	_, err := e.Run(ctx, dir, "diff", "--quiet", "--end-of-options", rev, "--", path)
+	switch {
+	case err == nil:
+		return false, nil
+	case exitCode(err) == 1:
+		return true, nil
+	}
+	return false, err
 }
 
 // CheckIgnore implements Git.

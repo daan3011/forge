@@ -169,3 +169,24 @@ func TestDocsSessionName(t *testing.T) {
 		}
 	}
 }
+
+func TestSendDocsMessageUsesAttachedVersions(t *testing.T) {
+	svc := newFakeSvc(row("work", store.StatusIdle))
+	svc.attachOut = []docfs.Attachment{
+		{Src: "/code/forge/docs/plan.md", Rel: ".forge/attached/docs/plan.md", Copy: true, Newer: true},
+		{Src: "/code/forge/docs/api.md", Rel: ".forge/attached/docs/api.md", Copy: true, Diverged: true},
+	}
+	tab := fixTab(t, svc)
+	toasts := pumpForm(tab, tab.sendDocs(svc.rows[0].Session, []string{"/code/forge/docs/plan.md", "/code/forge/docs/api.md"}))
+	if !slices.Contains(toasts, "ok: sent 2 docs to work") {
+		t.Errorf("toasts = %q", toasts)
+	}
+	svc.mu.Lock()
+	sent := svc.sent["work"]
+	svc.mu.Unlock()
+	want := "Read these docs for context: @.forge/attached/docs/plan.md " + docfs.NewerNote +
+		" @.forge/attached/docs/api.md " + docfs.DivergedNote + " and keep them in mind."
+	if len(sent) != 1 || sent[0] != want {
+		t.Errorf("sent = %q, want %q", sent, want)
+	}
+}

@@ -156,6 +156,11 @@ type Manager interface {
 	// by adding it to the repo's local exclude file unless it already is.
 	// Tracked files and global git config are never touched.
 	EnsureExcluded(ctx context.Context, dir, rel string) error
+	// ChangedOnBranch reports whether the worktree at dir changed rel
+	// (relative to it) since its branch left base: committed after the
+	// merge-base with origin/<base> (or <base>), or uncommitted. A file
+	// that isn't at the merge-base counts as changed.
+	ChangedOnBranch(ctx context.Context, dir, base, rel string) (bool, error)
 }
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)

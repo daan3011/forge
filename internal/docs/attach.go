@@ -1,6 +1,7 @@
 package docs
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -14,19 +15,34 @@ import (
 // Sending docs to an agent (P4.3): each doc becomes an @path mention
 // relative to the session's worktree. Docs inside the repo keep their path
 // (the worktree has the same layout); docs outside it are copied into
-// CopyDir, which is git-ignored.
+// CopyDir, which is git-ignored. When the worktree's copy of an in-repo doc
+// differs from the source, the branch's file is left alone and the source
+// goes into CopyDir too, mentioned with a note saying which is which.
 
 // CopyDir is where docs from outside the repo are copied in a worktree,
 // slash-separated and relative to it. It is not config.DefaultDocsDir, so
 // copies never mix with (or git-ignore) a project's own docs.
 const CopyDir = ".forge/attached"
 
+// Notes written after the mention of a doc whose worktree version differs.
+const (
+	NewerNote    = "(newer version than on this branch)"
+	DivergedNote = "(version from the main checkout; this branch has its own changes to this file)"
+)
+
 // Attachment is a doc handed to an agent session.
 type Attachment struct {
 	Src string // absolute path of the doc
 	Rel string // slash-separated path relative to the worktree
-	// Copy is set for docs outside the repo: they go into CopyDir.
+	// Copy is set for docs that go into CopyDir: from outside the repo, or
+	// differing from the branch's version (Newer / Diverged).
 	Copy bool
+	// Newer: the branch has the doc unchanged since it left its base, so
+	// the source is the newer version.
+	Newer bool
+	// Diverged: the branch changed the doc itself (or that couldn't be
+	// told), so the source is just the main checkout's version.
+	Diverged bool
 }
 
 // Plan maps srcs (absolute doc paths) to worktree paths for a repo whose
@@ -47,16 +63,22 @@ func Plan(repoRoot string, srcs []string) []Attachment {
 			out = append(out, Attachment{Src: src, Rel: rel})
 			continue
 		}
-		base := filepath.Base(src)
-		ext := path.Ext(base)
-		stem := strings.TrimSuffix(base, ext)
-		rel := CopyDir + "/" + base
-		for n := 2; taken[rel]; n++ {
-			rel = fmt.Sprintf("%s/%s-%d%s", CopyDir, stem, n, ext)
-		}
-		taken[rel] = true
+		rel := uniqueRel(taken, CopyDir+"/"+filepath.Base(src))
 		out = append(out, Attachment{Src: src, Rel: rel, Copy: true})
 	}
+	return out
+}
+
+// uniqueRel returns rel, or rel with -2, -3, … before the extension, so
+// that it isn't in taken; the result is added to taken.
+func uniqueRel(taken map[string]bool, rel string) string {
+	ext := path.Ext(rel)
+	stem := strings.TrimSuffix(rel, ext)
+	out := rel
+	for n := 2; taken[out]; n++ {
+		out = fmt.Sprintf("%s-%d%s", stem, n, ext)
+	}
+	taken[out] = true
 	return out
 }
 
@@ -72,31 +94,75 @@ func inside(root, src string) (string, bool) {
 	return filepath.ToSlash(rel), true
 }
 
-// Materialize puts the attachments into worktree: copied docs always (they
-// are refreshed), in-repo docs only when the worktree lacks them (e.g. an
-// uncommitted draft). A file the branch already has is never overwritten.
-// It returns how many docs went into CopyDir.
-func Materialize(worktree string, as []Attachment) (copied int, err error) {
+// ChangedFunc reports whether the session's branch changed the file at rel
+// (relative to the worktree) since it left its base, committed or not.
+type ChangedFunc func(rel string) (bool, error)
+
+// Materialize puts the attachments into worktree and returns them as they
+// ended up, with how many went into CopyDir:
+//
+//   - Copy docs are (re)copied into CopyDir.
+//   - An in-repo doc the worktree lacks (an uncommitted draft) is copied to
+//     its own path.
+//   - An in-repo doc the worktree has with the same content is left alone.
+//   - One it has with different content is left alone too; the source goes
+//     to CopyDir/<Rel> instead, marked Newer when changed says the branch
+//     didn't touch the file, else Diverged (also when changed fails). A nil
+//     changed counts as untouched.
+//
+// A file the branch has is never overwritten.
+func Materialize(worktree string, as []Attachment, changed ChangedFunc) (out []Attachment, copied int, err error) {
 	if worktree == "" {
-		return 0, errors.New("no worktree")
+		return nil, 0, errors.New("no worktree")
 	}
+	taken := map[string]bool{}
 	for _, a := range as {
-		dst := filepath.Join(worktree, filepath.FromSlash(a.Rel))
+		taken[a.Rel] = true
+	}
+	out = make([]Attachment, 0, len(as))
+	for _, a := range as {
 		if !a.Copy {
-			if _, err := os.Stat(dst); err == nil {
-				continue
-			} else if !errors.Is(err, fs.ErrNotExist) {
-				return copied, err
+			b, rerr := os.ReadFile(filepath.Join(worktree, filepath.FromSlash(a.Rel)))
+			switch {
+			case errors.Is(rerr, fs.ErrNotExist):
+			case rerr != nil:
+				return out, copied, rerr
+			default:
+				src, err := os.ReadFile(a.Src)
+				if err != nil {
+					return out, copied, fmt.Errorf("read %s: %w", filepath.Base(a.Src), err)
+				}
+				if bytes.Equal(src, b) {
+					out = append(out, a)
+					continue
+				}
+				a = divergent(a, taken, changed)
 			}
 		}
-		if err := copyFile(a.Src, dst); err != nil {
-			return copied, fmt.Errorf("copy %s: %w", filepath.Base(a.Src), err)
+		if err := copyFile(a.Src, filepath.Join(worktree, filepath.FromSlash(a.Rel))); err != nil {
+			return out, copied, fmt.Errorf("copy %s: %w", filepath.Base(a.Src), err)
 		}
 		if a.Copy {
 			copied++
 		}
+		out = append(out, a)
 	}
-	return copied, nil
+	return out, copied, nil
+}
+
+// divergent moves a, whose worktree version differs from the source, into
+// CopyDir and says which version is newer.
+func divergent(a Attachment, taken map[string]bool, changed ChangedFunc) Attachment {
+	branchChanged := false
+	if changed != nil {
+		var err error
+		if branchChanged, err = changed(a.Rel); err != nil {
+			branchChanged = true // can't tell: don't claim the source is newer
+		}
+	}
+	a.Rel = uniqueRel(taken, CopyDir+"/"+a.Rel)
+	a.Copy, a.Newer, a.Diverged = true, !branchChanged, branchChanged
+	return a
 }
 
 func copyFile(src, dst string) error {
@@ -119,16 +185,85 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// Mentions returns the attachments as Claude Code file mentions separated
-// by spaces: @docs/a.md @"docs/with space.md".
+// mention is a's bare file mention: @docs/a.md, or @"docs/with space.md".
+func (a Attachment) mention() string {
+	if strings.ContainsAny(a.Rel, " \t") {
+		return `@"` + a.Rel + `"`
+	}
+	return "@" + a.Rel
+}
+
+// Mention is a's file mention, followed by a note when the worktree has a
+// different version of the doc.
+func (a Attachment) Mention() string {
+	switch {
+	case a.Newer:
+		return a.mention() + " " + NewerNote
+	case a.Diverged:
+		return a.mention() + " " + DivergedNote
+	}
+	return a.mention()
+}
+
+// Mentions returns the attachments' mentions separated by spaces.
 func Mentions(as []Attachment) string {
-	parts := make([]string, 0, len(as))
-	for _, a := range as {
-		if strings.ContainsAny(a.Rel, " \t") {
-			parts = append(parts, `@"`+a.Rel+`"`)
-		} else {
-			parts = append(parts, "@"+a.Rel)
-		}
+	parts := make([]string, len(as))
+	for i, a := range as {
+		parts[i] = a.Mention()
 	}
 	return strings.Join(parts, " ")
 }
+
+// Rewrite updates a prompt rendered from before (Plan's attachments) to
+// after (what Materialize did): each mention of a doc that moved or got a
+// note is replaced, as a whole token, by its new mention.
+func Rewrite(prompt string, before, after []Attachment) string {
+	for i := range min(len(before), len(after)) {
+		old, upd := before[i].Mention(), after[i].Mention()
+		if old != upd {
+			prompt = replaceToken(prompt, old, upd)
+		}
+	}
+	return prompt
+}
+
+// replaceToken replaces old in s where it stands alone: at the start or
+// after whitespace, and followed by the end, whitespace or punctuation
+// that ends a sentence (not more path, as in @a.md.bak).
+func replaceToken(s, old, upd string) string {
+	var b strings.Builder
+	from := 0 // s[:from] is written
+	for at := 0; ; {
+		i := strings.Index(s[at:], old)
+		if i < 0 {
+			break
+		}
+		i += at
+		end := i + len(old)
+		if startsToken(s, i) && endsToken(s, end) {
+			b.WriteString(s[from:i])
+			b.WriteString(upd)
+			from = end
+		}
+		at = end
+	}
+	b.WriteString(s[from:])
+	return b.String()
+}
+
+func startsToken(s string, i int) bool { return i == 0 || isSpace(s[i-1]) }
+
+func endsToken(s string, end int) bool {
+	if end == len(s) || isSpace(s[end]) {
+		return true
+	}
+	switch s[end] {
+	case ',', ';', ':', ')', '!', '?':
+		return true
+	case '.':
+		return end+1 == len(s) || isSpace(s[end+1])
+	}
+	return false
+}
+
+func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
