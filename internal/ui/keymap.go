@@ -199,11 +199,17 @@ type DocKeys struct {
 	Supersede  key.Binding // mark the selected decision superseded by a newer one
 }
 
-// ArtifactKeys are the Artifacts tab's actions (P4.5).
+// ArtifactKeys are the Artifacts tab's actions (P4.5, P4.6).
 type ArtifactKeys struct {
-	Open     key.Binding // open in the default app (browser for HTML)
-	CopyPath key.Binding // copy the artifact's path
-	Keep     key.Binding // copy it into the project's .forge/artifacts
+	Open         key.Binding // open in the default app (browser for HTML)
+	CopyPath     key.Binding // copy the artifact's path
+	Keep         key.Binding // copy it into the project's .forge/artifacts
+	Pin          key.Binding // pin / unpin (pinned float to the top)
+	Tags         key.Binding // edit the comma separated tags
+	Rename       key.Binding // set the display title
+	Filters      key.Binding // filter by tag / pinned only
+	PinnedOnly   key.Binding // toggle showing pinned artifacts only
+	ClearFilters key.Binding // drop the tag and pinned-only filters
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -429,9 +435,15 @@ func DefaultKeyMap() *KeyMap {
 			Supersede:  bind("mark superseded", "S"),
 		},
 		Artifacts: ArtifactKeys{
-			Open:     bind("open", "o"),
-			CopyPath: bind("copy path", "y"),
-			Keep:     bind("keep a copy", "c"),
+			Open:         bind("open", "o"),
+			CopyPath:     bind("copy path", "y"),
+			Keep:         bind("keep a copy", "c"),
+			Pin:          bind("pin / unpin", "p"),
+			Tags:         bind("edit tags", "t"),
+			Rename:       bind("rename", "m"),
+			Filters:      bind("filters", "f"),
+			PinnedOnly:   bind("pinned only", "P"),
+			ClearFilters: bind("clear filters", "x"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -648,6 +660,12 @@ func (k *KeyMap) actions() []action {
 		{"artifacts_open", scopeArts, &ar.Open},
 		{"artifacts_copy_path", scopeArts, &ar.CopyPath},
 		{"artifacts_keep", scopeArts, &ar.Keep},
+		{"artifacts_pin", scopeArts, &ar.Pin},
+		{"artifacts_tags", scopeArts, &ar.Tags},
+		{"artifacts_rename", scopeArts, &ar.Rename},
+		{"artifacts_filters", scopeArts, &ar.Filters},
+		{"artifacts_pinned_only", scopeArts, &ar.PinnedOnly},
+		{"artifacts_clear_filters", scopeArts, &ar.ClearFilters},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

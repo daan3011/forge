@@ -3,6 +3,7 @@ package artifacts
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,28 +32,63 @@ func (t *Tab) setItems(items []store.Artifact) {
 	t.rebuild()
 }
 
-// rebuild groups the items into rows: with every project shown, one header
-// per project, projects ordered by their newest artifact; items stay
-// newest first.
+// visible are the indexes of the items the filters let through, pinned
+// first, each part newest first.
+func (t *Tab) visible() []int {
+	var pinned, rest []int
+	for i, a := range t.items {
+		switch {
+		case !t.filt.match(a):
+		case a.Pinned:
+			pinned = append(pinned, i)
+		default:
+			rest = append(rest, i)
+		}
+	}
+	return append(pinned, rest...)
+}
+
+// shown counts the artifacts the filters let through.
+func (t *Tab) shown() int {
+	n := 0
+	for _, a := range t.items {
+		if t.filt.match(a) {
+			n++
+		}
+	}
+	return n
+}
+
+// rebuild groups the visible items into rows: with every project shown,
+// one header per project, projects ordered by their newest artifact;
+// pinned items come first in their group, then newest first.
 func (t *Tab) rebuild() {
 	t.rows = t.rows[:0]
+	vis := t.visible()
 	if !t.all() {
-		for i := range t.items {
+		for _, i := range vis {
 			t.rows = append(t.rows, row{item: i})
 		}
 	} else {
 		var order []string
 		groups := map[string][]int{}
-		for i, a := range t.items { // newest first, so groups are too
-			p := a.Project
-			if p == "" {
-				p = otherProject
+		// Projects keep their place under a filter: each is ranked by its
+		// newest artifact, shown or not.
+		newest := map[string]time.Time{}
+		for _, a := range t.items {
+			p := groupOf(a)
+			if a.ModifiedAt.After(newest[p]) {
+				newest[p] = a.ModifiedAt
 			}
+		}
+		for _, i := range vis {
+			p := groupOf(t.items[i])
 			if _, ok := groups[p]; !ok {
 				order = append(order, p)
 			}
 			groups[p] = append(groups[p], i)
 		}
+		sort.SliceStable(order, func(x, y int) bool { return newest[order[x]].After(newest[order[y]]) })
 		for _, p := range order {
 			t.rows = append(t.rows, row{header: true, project: p, count: len(groups[p]), item: -1})
 			for _, i := range groups[p] {
@@ -76,6 +112,14 @@ func (t *Tab) rebuild() {
 		idx = min(t.cursor, len(t.rows)-1)
 	}
 	t.setCursor(max(idx, 0), 1)
+}
+
+// groupOf is the project header an artifact sits under.
+func groupOf(a store.Artifact) string {
+	if a.Project == "" {
+		return otherProject
+	}
+	return a.Project
 }
 
 func (t *Tab) indexOf(path string) int {
@@ -159,6 +203,9 @@ func (t *Tab) clampTop() {
 
 // View implements tabs.Tab.
 func (t *Tab) View() string {
+	if t.dialog != nil {
+		return t.dialogView()
+	}
 	lw, lh := t.split.LeftSize()
 	rw, rh := t.split.RightSize()
 	return t.split.View(t.listView(lw, lh), t.detailView(rw, rh), true)
@@ -204,6 +251,10 @@ func (t *Tab) listView(w, h int) string {
 		return ""
 	}
 	if len(t.rows) == 0 {
+		if len(t.items) > 0 && t.filt.any() {
+			msg := "No artifacts match " + t.filterLabel() + " (" + t.keys.Artifacts.ClearFilters.Help().Key + " clears)."
+			return t.theme.TableEmpty.Render(ansi.Wrap(msg, w, " "))
+		}
 		return t.emptyView(w)
 	}
 	end := min(t.top+h, len(t.rows))
@@ -228,7 +279,11 @@ func (t *Tab) rowView(r row, selected bool, w int) string {
 		indent = "  "
 	}
 	glyph := icon(a.Type)
-	name := filepath.Base(a.Path)
+	star := "  "
+	if a.Pinned {
+		star = "★ "
+	}
+	name := displayName(a)
 	src := t.source(a)
 	age := ui.ShortAge(t.now().Sub(a.ModifiedAt))
 
@@ -237,7 +292,7 @@ func (t *Tab) rowView(r row, selected bool, w int) string {
 	srcW := min(ansi.StringWidth(src), 18)
 	typW := 4
 	ageW := 4
-	fixed := ansi.StringWidth(indent) + 2 // glyph and a space
+	fixed := ansi.StringWidth(indent) + 4 // star, glyph and spaces
 	showSrc, showTyp := true, true
 	if w-fixed-ageW-typW-srcW-3 < 10 {
 		showSrc = false
@@ -266,7 +321,7 @@ func (t *Tab) rowView(r row, selected bool, w int) string {
 	ageCell := " " + padLeft(age, ageW)
 
 	if selected {
-		line := indent + glyph + " " + name + namePad + srcCell + typCell + ageCell
+		line := indent + star + glyph + " " + name + namePad + srcCell + typCell + ageCell
 		return th.TableSelected.Render(padRight(line, w))
 	}
 	srcStyle := th.ArtifactSession
@@ -276,7 +331,7 @@ func (t *Tab) rowView(r row, selected bool, w int) string {
 	case "repo":
 		srcStyle = th.Hint
 	}
-	return indent + th.ArtifactIcon.Render(glyph) + " " + th.TableRow.Render(name+namePad) +
+	return indent + th.ArtifactPin.Render(star) + th.ArtifactIcon.Render(glyph) + " " + th.TableRow.Render(name+namePad) +
 		srcStyle.Render(srcCell) + th.Hint.Render(typCell+ageCell)
 }
 
@@ -336,8 +391,16 @@ func (t *Tab) detailView(w, h int) string {
 		project = "—"
 	}
 	now := t.now()
-	lines := []string{
-		th.ArtifactIcon.Render(icon(a.Type)) + " " + th.DetailTitle.Render(ansi.Truncate(filepath.Base(a.Path), max(w-2, 1), "…")),
+	heading := th.ArtifactIcon.Render(icon(a.Type)) + " "
+	if a.Pinned {
+		heading = th.ArtifactPin.Render("★ ") + heading
+	}
+	headW := max(w-ansi.StringWidth(ansi.Strip(heading)), 1)
+	lines := []string{heading + th.DetailTitle.Render(ansi.Truncate(displayName(a), headW, "…"))}
+	if a.Title != "" {
+		lines = append(lines, th.Body.Render(ansi.Truncate(filepath.Base(a.Path), w, "…")))
+	}
+	lines = append(lines,
 		th.Hint.Render(truncateLeft(filepath.Dir(a.Path), w)),
 		"",
 		field("Project", project),
@@ -346,10 +409,35 @@ func (t *Tab) detailView(w, h int) string {
 		field("Size", humanSize(a.Size)),
 		field("Modified", a.ModifiedAt.Format("2006-01-02 15:04")+" ("+ago(now.Sub(a.ModifiedAt))+")"),
 		field("Created", a.CreatedAt.Format("2006-01-02 15:04")),
-		"",
+	)
+	if len(a.Tags) > 0 {
+		lines = append(lines, th.DetailLabel.Render(padRight("Tags", 9))+
+			th.ArtifactTag.Render(ansi.Truncate(hashTags(a.Tags), max(w-9, 1), "…")))
 	}
+	if a.Pinned {
+		lines = append(lines, th.DetailLabel.Render(padRight("Pinned", 9))+th.ArtifactPin.Render("★"))
+	}
+	if l := a.Link; l != nil {
+		from := l.SessionName
+		if from == "" {
+			from = filepath.Dir(l.SourcePath)
+		}
+		if l.Active() {
+			lines = append(lines, field("Synced", "from "+from+" · "+ago(now.Sub(l.SyncedAt))))
+		} else {
+			lines = append(lines, field("Copied", "from "+from+" · final ("+l.DetachReason+")"))
+		}
+	}
+	lines = append(lines, "")
 	ak := t.keys.Artifacts
-	hints := []string{ak.Open.Help().Key + " open", ak.CopyPath.Help().Key + " copy path"}
+	pin := " pin"
+	if a.Pinned {
+		pin = " unpin"
+	}
+	hints := []string{
+		ak.Open.Help().Key + " open", ak.Pin.Help().Key + pin,
+		ak.Tags.Help().Key + " tags", ak.Rename.Help().Key + " rename", ak.CopyPath.Help().Key + " copy path",
+	}
 	if !artfs.IsKept(a.Path) {
 		hints = append(hints, ak.Keep.Help().Key+" keep a copy")
 	}

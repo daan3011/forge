@@ -217,6 +217,8 @@ type Theme struct {
 	ArtifactIcon    lipgloss.Style // the type glyph before an artifact's name
 	ArtifactSession lipgloss.Style // the source session's name
 	ArtifactKept    lipgloss.Style // "kept" for copies in .forge/artifacts
+	ArtifactPin     lipgloss.Style // the ★ before a pinned artifact (P4.6)
+	ArtifactTag     lipgloss.Style // an artifact tag, "#design"
 
 	// Decision log (P4.4).
 	DecisionNumber     lipgloss.Style // "0007" in the decisions view
@@ -366,6 +368,8 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		ArtifactIcon:       lipgloss.NewStyle().Foreground(p.Accent),
 		ArtifactSession:    lipgloss.NewStyle().Foreground(p.Highlight),
 		ArtifactKept:       lipgloss.NewStyle().Foreground(p.Accent).Italic(true),
+		ArtifactPin:        lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		ArtifactTag:        lipgloss.NewStyle().Foreground(p.Link),
 		DecisionSuperseded: lipgloss.NewStyle().Foreground(p.Muted).Strikethrough(true),
 		BoardScrollHint:    lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
 		BoardOverlay:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),

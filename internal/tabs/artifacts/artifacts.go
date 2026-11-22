@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 
 	artfs "github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
@@ -68,6 +70,11 @@ type Tab struct {
 	top    int
 	selKey string // path of the selected artifact, kept across rescans
 	want   string // a path to select once a scan shows it
+
+	filt    filters
+	allTags []string // every tag in use, for completion and the filter form
+	dialog  *huh.Form
+	onDone  func() tea.Cmd
 }
 
 var (
@@ -77,6 +84,7 @@ var (
 	_ tabs.Fetcher        = (*Tab)(nil)
 	_ tabs.EntityProvider = (*Tab)(nil)
 	_ tabs.StatusDetailer = (*Tab)(nil)
+	_ tabs.InputCapturer  = (*Tab)(nil)
 )
 
 // New returns the Artifacts tab.
@@ -115,6 +123,7 @@ type cachedMsg struct {
 type scannedMsg struct {
 	gen   int
 	items []store.Artifact
+	tags  []string // every tag in use
 	err   error
 	at    time.Time
 }
@@ -201,6 +210,7 @@ func (t *Tab) Refresh() tea.Cmd {
 		defer cancel()
 		var errs []error
 		var sess []store.Session
+		byID := map[int64]store.Session{}
 		if lister != nil {
 			for _, archived := range []bool{false, true} {
 				rows, err := lister.List(ctx, project, archived)
@@ -209,7 +219,17 @@ func (t *Tab) Refresh() tea.Cmd {
 				}
 				for _, r := range rows {
 					sess = append(sess, r.Session)
+					byID[r.ID] = r.Session
 				}
+			}
+		}
+		// Pinned copies sync before the scan so it sees them fresh: only
+		// copies in the shown checkouts, whose sessions were all listed,
+		// and only when listing worked (else every copy would look
+		// orphaned).
+		if idx != nil && lister != nil && len(errs) == 0 {
+			if err := syncLinks(ctx, idx, byID, checkouts(projects), now()); err != nil {
+				errs = append(errs, err)
 			}
 		}
 		targets := artfs.Targets(projects, sess, spec)
@@ -221,6 +241,7 @@ func (t *Tab) Refresh() tea.Cmd {
 			errs = append(errs, err)
 		}
 		items := toStore(found)
+		var tags []string
 		if idx != nil {
 			if err := idx.Sync(ctx, artfs.Roots(targets), items); err != nil {
 				errs = append(errs, err)
@@ -229,9 +250,23 @@ func (t *Tab) Refresh() tea.Cmd {
 			} else {
 				items = pruneMissing(ctx, idx, listed)
 			}
+			if tags, err = idx.AllTags(ctx); err != nil {
+				errs = append(errs, err)
+			}
 		}
-		return scannedMsg{gen: gen, items: items, err: errors.Join(errs...), at: now()}
+		return scannedMsg{gen: gen, items: items, tags: tags, err: errors.Join(errs...), at: now()}
 	}
+}
+
+// checkouts are the main checkouts of projects.
+func checkouts(projects []config.Project) []string {
+	var out []string
+	for _, p := range projects {
+		if p.Path != "" {
+			out = append(out, filepath.Clean(p.Path))
+		}
+	}
+	return out
 }
 
 func toStore(found []artfs.Artifact) []store.Artifact {
@@ -292,6 +327,7 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		t.scanning, t.scanned, t.updated, t.scanErr = false, true, msg.at, msg.err
+		t.allTags = msg.tags
 		t.setItems(msg.items)
 		return nil
 	case watchMsg:
@@ -301,8 +337,13 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return tea.Batch(t.waitWatch(), t.Refresh())
 	case keptMsg:
 		return t.kept(msg)
+	case metaDoneMsg:
+		return t.metaDone(msg)
 	case clipboardFallbackMsg:
 		return tea.Batch(tea.SetClipboard(msg.text), info("copied "+msg.text))
+	}
+	if t.dialog != nil {
+		return t.updateDialog(msg)
 	}
 	kp, ok := msg.(tea.KeyPressMsg)
 	if !ok {
@@ -316,6 +357,18 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.copyPath()
 	case key.Matches(kp, ak.Keep):
 		return t.keepSelected()
+	case key.Matches(kp, ak.Pin):
+		return t.togglePin()
+	case key.Matches(kp, ak.Tags):
+		return t.editTags()
+	case key.Matches(kp, ak.Rename):
+		return t.renameSelected()
+	case key.Matches(kp, ak.Filters):
+		return t.openFilters()
+	case key.Matches(kp, ak.PinnedOnly):
+		t.togglePinnedOnly()
+	case key.Matches(kp, ak.ClearFilters):
+		t.clearFilters()
 	case key.Matches(kp, l.Up):
 		t.move(-1)
 	case key.Matches(kp, l.Down):
@@ -348,6 +401,7 @@ func errCmd(err error) tea.Cmd { return func() tea.Msg { return ui.ErrMsg{Err: e
 func (t *Tab) SetSize(width, height int) {
 	t.width, t.height = width, height
 	t.split.SetSize(width, height)
+	t.sizeDialog()
 	t.clampTop()
 }
 
@@ -357,6 +411,7 @@ func (t *Tab) SetProject(p *config.Project) {
 	t.gen++
 	t.scanned, t.scanning, t.scanErr = false, false, nil
 	t.items, t.rows, t.cursor, t.top, t.selKey = nil, nil, 0, 0, ""
+	t.dialog, t.onDone = nil, nil
 }
 
 // Title implements tabs.Tab.
@@ -374,6 +429,9 @@ func (t *Tab) StatusDetail() string {
 		return ""
 	}
 	s := count(len(t.items), "artifact")
+	if t.filt.any() {
+		s = fmt.Sprintf("%d of %s · %s", t.shown(), s, t.filterLabel())
+	}
 	if t.scanErr != nil {
 		s += " · scan: " + t.scanErr.Error()
 	}
@@ -383,7 +441,7 @@ func (t *Tab) StatusDetail() string {
 // ShortHelp implements tabs.Tab.
 func (t *Tab) ShortHelp() []key.Binding {
 	ak := t.keys.Artifacts
-	return []key.Binding{t.keys.List.Down, ak.Keep, ak.CopyPath, ak.Open}
+	return []key.Binding{t.keys.List.Down, ak.Pin, ak.Tags, ak.Filters, ak.Open}
 }
 
 // FullHelp implements tabs.Tab.
@@ -392,6 +450,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{ak.Open, ak.CopyPath, ak.Keep, l.ShrinkPane, l.GrowPane},
+		{ak.Pin, ak.Tags, ak.Rename, ak.Filters, ak.PinnedOnly, ak.ClearFilters},
 	}
 }
 
@@ -403,6 +462,13 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "artifacts_open", Title: "Artifacts: open in default app / browser", Key: ak.Open, Run: t.openSelected},
 		{ID: "artifacts_copy_path", Title: "Artifacts: copy path", Key: ak.CopyPath, Run: t.copyPath},
 		{ID: "artifacts_keep", Title: "Artifacts: keep a copy in .forge/artifacts", Key: ak.Keep, Run: t.keepSelected},
+		{ID: "artifacts_pin", Title: "Artifacts: pin / unpin", Key: ak.Pin, Run: t.togglePin},
+		{ID: "artifacts_tags", Title: "Artifacts: edit tags", Key: ak.Tags, Run: t.editTags},
+		{ID: "artifacts_rename", Title: "Artifacts: rename (display title)", Key: ak.Rename, Run: t.renameSelected},
+		{ID: "artifacts_filters", Title: "Artifacts: filter by tag / pinned", Key: ak.Filters, Run: t.openFilters},
+		{ID: "artifacts_pinned_only", Title: "Artifacts: toggle pinned only", Key: ak.PinnedOnly, Run: do(t.togglePinnedOnly)},
+		{ID: "artifacts_clear_filters", Title: "Artifacts: clear filters", Key: ak.ClearFilters, Run: do(t.clearFilters)},
+		{ID: "artifacts_detach", Title: "Artifacts: detach from session (stop syncing the pinned copy)", Run: t.detachSelected},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(t.split.Grow)},
 		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(t.split.Shrink)},
 	}
@@ -416,9 +482,12 @@ func (t *Tab) Entities() []tabs.Entity {
 		if a.Project != "" {
 			detail = a.Project + " · " + detail
 		}
+		search := a.Path + " " + a.Type
+		if len(a.Tags) > 0 {
+			search += " " + hashTags(a.Tags)
+		}
 		out = append(out, tabs.Entity{
-			Kind: EntityKind, ID: a.Path, Title: filepath.Base(a.Path), Detail: detail,
-			Search: a.Path + " " + a.Type,
+			Kind: EntityKind, ID: a.Path, Title: displayName(a), Detail: detail, Search: search,
 		})
 	}
 	return out
@@ -427,6 +496,9 @@ func (t *Tab) Entities() []tabs.Entity {
 // Select implements tabs.EntityProvider.
 func (t *Tab) Select(id string) tea.Cmd {
 	t.want = id
+	if i := slices.IndexFunc(t.items, func(a store.Artifact) bool { return a.Path == id }); i >= 0 && !t.filt.match(t.items[i]) {
+		t.filt = filters{} // show what was asked for
+	}
 	t.rebuild()
 	return nil
 }

@@ -215,6 +215,12 @@ keybinds:
   # artifacts_open: ["o"]          # open in the default app (browser for HTML)
   # artifacts_copy_path: ["y"]     # copy the path
   # artifacts_keep: ["c"]          # copy into the project's .forge/artifacts
+  # artifacts_pin: ["p"]           # pin / unpin; pinned float to the top
+  # artifacts_tags: ["t"]          # edit tags (comma separated)
+  # artifacts_rename: ["m"]        # set the display title
+  # artifacts_filters: ["f"]       # filter by tag / pinned only
+  # artifacts_pinned_only: ["P"]   # toggle pinned only
+  # artifacts_clear_filters: ["x"] # drop the artifact filters
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
