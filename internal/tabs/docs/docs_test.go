@@ -324,7 +324,7 @@ func TestCommandsRegistered(t *testing.T) {
 	for _, c := range tab.Commands() {
 		ids = append(ids, c.ID)
 	}
-	for _, id := range []string{"docs_new", "docs_edit", "docs_rename", "docs_delete", "docs_open", "docs_back", "docs_detail_down", "docs_detail_up"} {
+	for _, id := range []string{"docs_new", "docs_edit", "docs_rename", "docs_delete", "docs_open", "docs_back", "docs_detail_down", "docs_detail_up", "filter"} {
 		if !slices.Contains(ids, id) {
 			t.Errorf("no palette command %s", id)
 		}
@@ -521,4 +521,256 @@ func TestWatcherShowsExternalEdits(t *testing.T) {
 		t.Fatalf("watcher roots = %q", sets)
 	}
 	sc.quit(t)
+}
+
+// --- search (P4.2) ---------------------------------------------------------------
+
+func typeText(tab *Tab, s string) {
+	for _, r := range s {
+		send(tab, string(r))
+	}
+}
+
+func hitRels(tab *Tab) []string {
+	out := make([]string, len(tab.hits))
+	for i, h := range tab.hits {
+		out[i] = h.Doc.Rel
+	}
+	return out
+}
+
+// longDoc has a Rollback section far below the first screen.
+func longDoc() string {
+	var b strings.Builder
+	b.WriteString("# Release\n\n")
+	for range 60 {
+		b.WriteString("filler text\n\n")
+	}
+	b.WriteString("## Rollback\n\nRun the zanzibar script to undo.\n\n")
+	for range 60 {
+		b.WriteString("more filler\n\n")
+	}
+	return b.String()
+}
+
+// TestSearchJumpsToHeading is the P4.2 done-when: typing a word finds the
+// doc and enter jumps to the matching heading.
+func TestSearchJumpsToHeading(t *testing.T) {
+	f := newFixture(t)
+	writeDoc(t, f.alpha, "runbooks/release.md", longDoc())
+	tab := f.tab(0, nil)
+	pump(tab, tab.Refresh())
+
+	send(tab, "/")
+	if !tab.CapturingInput() {
+		t.Fatal("search doesn't capture input")
+	}
+	typeText(tab, "zanzibar")
+	if got := hitRels(tab); !slices.Equal(got, []string{"runbooks/release.md"}) {
+		t.Fatalf("hits = %q", got)
+	}
+	v := view(tab)
+	if !strings.Contains(v, "Run the zanzibar script") || !strings.Contains(v, "/ zanzibar") {
+		t.Fatalf("results don't show the snippet and query:\n%s", v)
+	}
+	// The preview is already scrolled to the heading.
+	if !strings.Contains(v, "Rollback") {
+		t.Fatalf("preview not at the heading:\n%s", v)
+	}
+	send(tab, "enter") // stop typing
+	if tab.CapturingInput() || !tab.searching() {
+		t.Fatal("enter should keep the results and stop typing")
+	}
+	send(tab, "enter") // jump
+	if tab.searching() || !tab.focusDetail {
+		t.Fatalf("jump: searching %v focus %v", tab.searching(), tab.focusDetail)
+	}
+	r, _ := tab.selected()
+	if r.node.Rel != "runbooks/release.md" {
+		t.Fatalf("selected %q", r.node.Rel)
+	}
+	got, ok := tab.current()
+	h := headingLine(got.lines, "Rollback")
+	if !ok || h <= 0 || tab.det.offset != h {
+		t.Fatalf("detail offset %d, heading at line %d", tab.det.offset, h)
+	}
+	if v := view(tab); !strings.Contains(v, "zanzibar") || strings.Contains(v, "# Release") {
+		t.Fatalf("detail not scrolled:\n%s", v)
+	}
+}
+
+func TestSearchRanking(t *testing.T) {
+	f := newFixture(t)
+	writeDoc(t, f.alpha, "a-body.md", "# Notes\n\nwe deploy on fridays\n")
+	writeDoc(t, f.alpha, "b-heading.md", "# Ops\n\n## How to deploy\n\ntext\n")
+	tab := f.tab(0, nil)
+	pump(tab, tab.Refresh())
+	send(tab, "/")
+	typeText(tab, "deploy")
+	want := []string{"runbooks/deploy.md", "b-heading.md", "a-body.md"}
+	if got := hitRels(tab); !slices.Equal(got, want) {
+		t.Fatalf("hits = %q, want %q", got, want)
+	}
+	if tab.hits[1].Heading != "How to deploy" || tab.hits[2].Heading != "Notes" {
+		t.Fatalf("headings = %q / %q", tab.hits[1].Heading, tab.hits[2].Heading)
+	}
+	send(tab, "down")
+	if r, _ := tab.selected(); r.node.Rel != "b-heading.md" {
+		t.Fatalf("down didn't preview the next hit: %q", r.node.Rel)
+	}
+}
+
+func TestSearchScope(t *testing.T) {
+	f := newFixture(t)
+	writeDoc(t, f.bravo, "readme2.md", "# Other\n\nalpha mention\n")
+	for _, tc := range []struct {
+		project int
+		want    []string
+	}{
+		{-1, []string{"readme.md", "readme2.md"}},
+		{1, []string{"readme.md", "readme2.md"}},
+		{0, nil},
+	} {
+		tab := f.tab(tc.project, nil)
+		pump(tab, tab.Refresh())
+		send(tab, "/")
+		typeText(tab, "readme")
+		got := hitRels(tab)
+		if tc.project == 0 {
+			if len(got) != 0 {
+				t.Fatalf("alpha only: hits %q", got)
+			}
+			continue
+		}
+		if len(got) != 1 || got[0] != "readme.md" {
+			t.Fatalf("project %d: hits %q", tc.project, got)
+		}
+	}
+	// All projects shows the project next to the path.
+	tab := f.tab(-1, nil)
+	pump(tab, tab.Refresh())
+	send(tab, "/")
+	typeText(tab, "mention")
+	if v := view(tab); !strings.Contains(v, "bravo · readme2.md") {
+		t.Fatalf("no project in result:\n%s", v)
+	}
+}
+
+func TestSearchEscRestoresTree(t *testing.T) {
+	f := newFixture(t)
+	tab := f.tab(0, nil)
+	pump(tab, tab.Refresh())
+	send(tab, "/")
+	typeText(tab, "deploy")
+	send(tab, "esc")
+	if tab.searching() || tab.CapturingInput() || tab.search.Value() != "" {
+		t.Fatal("esc didn't clear the search")
+	}
+	if v := view(tab); !strings.Contains(v, "architecture.md") {
+		t.Fatalf("tree not back:\n%s", v)
+	}
+	// Esc from the results (not typing) also clears.
+	send(tab, "/")
+	typeText(tab, "x")
+	send(tab, "enter")
+	send(tab, "esc")
+	if tab.searching() {
+		t.Fatal("esc in results didn't clear")
+	}
+	// No matches.
+	send(tab, "/")
+	typeText(tab, "qqqq")
+	if v := view(tab); !strings.Contains(v, "No matches") {
+		t.Fatalf("no empty state:\n%s", v)
+	}
+}
+
+func TestSearchReindexesOnWatch(t *testing.T) {
+	f := newFixture(t)
+	w := newFakeWatcher()
+	tab := f.tab(0, w)
+	sc := newScreen(t, tab)
+	sc.wait(t, "architecture.md")
+	sc.tm.Send(press("/"))
+	for _, r := range "kumquat" {
+		sc.tm.Send(press(string(r)))
+	}
+	sc.wait(t, "No matches")
+	writeDoc(t, f.alpha, "fruit.md", "# Fruit\n\n## Citrus\n\nA kumquat is small.\n")
+	w.ch <- struct{}{}
+	sc.wait(t, "A kumquat is small", "fruit.md")
+	sc.quit(t)
+}
+
+func TestDocsEntities(t *testing.T) {
+	f := newFixture(t)
+	tab := f.tab(-1, nil)
+	pump(tab, tab.Refresh())
+	var titles []string
+	var deploy tabs.Entity
+	for _, e := range tab.Entities() {
+		if e.Kind != EntityKind {
+			t.Fatalf("kind %q", e.Kind)
+		}
+		titles = append(titles, e.Title)
+		if e.Title == "Deploy" {
+			deploy = e
+		}
+	}
+	if !slices.Equal(titles, []string{"Deploy", "Architecture", "Bravo readme"}) {
+		t.Fatalf("titles = %q", titles)
+	}
+	if deploy.Detail != "alpha · runbooks/deploy.md" || !strings.Contains(deploy.Search, "runbooks/deploy.md") {
+		t.Fatalf("deploy entity = %+v", deploy)
+	}
+	send(tab, "/")
+	typeText(tab, "x")
+	pump(tab, tab.Select(deploy.ID))
+	_, cmd := tab.Update(nil)
+	pump(tab, cmd)
+	if tab.searching() || !tab.focusDetail {
+		t.Fatal("select should drop the search and focus the doc")
+	}
+	if r, _ := tab.selected(); r.node.Path != deploy.ID {
+		t.Fatalf("selected %q", r.node.Path)
+	}
+}
+
+func TestHeadingLine(t *testing.T) {
+	lines := []string{"  \x1b[1m# Release\x1b[0m", "", "use rollback carefully", "  ## Rollback  ", "  Use **bold** code"}
+	tests := []struct {
+		heading string
+		want    int
+	}{
+		{"Release", 0},
+		{"Rollback", 3},
+		{"Use **bold** code", 4},
+		{"rollback carefully", 2},
+		{"missing", -1},
+		{"", -1},
+	}
+	for _, tt := range tests {
+		if got := headingLine(lines, tt.heading); got != tt.want {
+			t.Errorf("headingLine(%q) = %d, want %d", tt.heading, got, tt.want)
+		}
+	}
+}
+
+func TestSnippet(t *testing.T) {
+	tests := []struct {
+		s    string
+		at   int
+		w    int
+		want string
+	}{
+		{"short", 0, 10, "short"},
+		{"0123456789abcdefghij", 15, 10, "…cdefghij"},
+		{"0123456789abcdefghijklmnop", 15, 10, "…cdefghij…"},
+		{"0123456789abcdefghij", 1, 10, "012345678…"},
+	}
+	for _, tt := range tests {
+		if got := snippet(tt.s, tt.at, tt.w); got != tt.want {
+			t.Errorf("snippet(%q, %d, %d) = %q, want %q", tt.s, tt.at, tt.w, got, tt.want)
+		}
+	}
 }

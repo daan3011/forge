@@ -564,7 +564,12 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - Open / closed folders aren't saved between runs.
     - Folders can't be renamed or deleted from the tab.
     - The trash is never emptied by forge.
-- [ ] P4.2 Docs search
+- [x] P4.2 Docs search: `/` in the Docs tab searches titles, headings and content of the docs shown (every project, or the active one), shows ranked results with a highlighted one-line snippet, and jumps to the matching heading.
+  - **Index** (`internal/docs/index.go`, no TUI): `BuildIndex` reads every doc in the scanned trees (files over 1 MiB are indexed by title only). `ParseDoc` takes the title from the first H1, else the file name, and collects ATX headings, skipping fenced code. `Search` matches the query as one case-insensitive phrase and returns one hit per doc at its best match, ranked title > heading > body, then by occurrences, then project and path. A body hit carries the nearest heading above it as its jump target.
+  - **Rebuilt on fsnotify**: the index is built in the same `tea.Cmd` as the scan, so every watcher event, edit or file op re-indexes off `Update()`. Open results rerun on the new index and keep the cursor on the same doc.
+  - **UI**: results replace the tree while a query is set, as two-line rows (title + `project · path`, then the snippet cut so the match stays visible, highlighted with `theme.SearchMatch`; `§` marks a heading match). Up/down while typing (or j/k after enter) previews each hit in the detail pane, scrolled to its heading. enter stops typing; enter again jumps (search closes, the tree selects the doc, the detail has focus on the heading); esc clears. The heading is found in Glamour's output by stripping styling and `#` marks.
+  - **Palette**: the tab is a `tabs.EntityProvider`. Every doc is a "Doc" entity matched by title, path and headings, and picking one opens it. New palette commands: "Docs: search…", plus jump / clear while results are shown.
+  - `highlight` moved from the job log viewer to `ui.Highlight` so both use it. No new key bindings (`/` is `List.Filter`).
 - [ ] P4.3 Send docs to agent
 - [ ] P4.4 Decision log
 - [ ] P4.5 Artifact gallery

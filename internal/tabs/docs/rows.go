@@ -90,6 +90,19 @@ func (t *Tab) reveal(path string) {
 	}
 }
 
+// selectDoc selects the doc at path, opening its folders, and scrolls the
+// detail to heading once it is rendered (the top when heading is ""). A
+// path the tree doesn't show yet is selected after the next scan.
+func (t *Tab) selectDoc(path, heading string) {
+	t.reveal(path)
+	t.want = path
+	t.rebuild()
+	t.jump, t.jumpPath = heading, path
+	if t.det.path == path {
+		t.det.offset = 0
+	}
+}
+
 func (t *Tab) selected() (row, bool) {
 	if t.cursor < 0 || t.cursor >= len(t.rows) {
 		return row{}, false
