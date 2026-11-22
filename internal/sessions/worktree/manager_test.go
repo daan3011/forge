@@ -3,6 +3,7 @@ package worktree_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -393,43 +394,110 @@ func TestRemove(t *testing.T) {
 	}
 }
 
+// TestEnsureExcluded: forge's files in a worktree (hook settings, copied
+// docs) are ignored through the info/exclude every worktree shares, once,
+// without touching a tracked file such as .gitignore.
 func TestEnsureExcluded(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t, false)
 	wt := f.create(t, "hooks")
-	const rel = ".claude/settings.local.json"
-	write(t, filepath.Join(wt.Path, rel), "{}")
-	if st := git(t, f.g, wt.Path, "status", "--porcelain"); st == "" {
-		t.Fatal("precondition: the settings file should show as untracked")
+	gitignore := readFile(t, filepath.Join(wt.Path, ".gitignore"))
+	tests := []struct {
+		rel  string // what EnsureExcluded is given
+		file string // a file under it, written first
+	}{
+		{rel: ".claude/settings.local.json", file: ".claude/settings.local.json"},
+		{rel: ".forge/attached", file: ".forge/attached/docs/plan.md"},
 	}
-	for range 2 { // idempotent
-		if err := f.m.EnsureExcluded(ctx, wt.Path, rel); err != nil {
-			t.Fatal(err)
+	for _, tt := range tests {
+		write(t, filepath.Join(wt.Path, tt.file), "{}")
+		if st := git(t, f.g, wt.Path, "status", "--porcelain"); st == "" {
+			t.Fatalf("precondition: %s should show as untracked", tt.file)
 		}
-	}
-	if st := git(t, f.g, wt.Path, "status", "--porcelain"); st != "" {
-		t.Errorf("worktree not clean: %q", st)
-	}
-	if ok, err := f.g.CheckIgnore(ctx, wt.Path, rel); err != nil || !ok {
-		t.Errorf("CheckIgnore = %v, %v", ok, err)
+		for range 2 { // idempotent
+			if err := f.m.EnsureExcluded(ctx, wt.Path, tt.rel); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if st := git(t, f.g, wt.Path, "status", "--porcelain"); st != "" {
+			t.Errorf("%s: worktree not clean: %q", tt.rel, st)
+		}
+		if ok, err := f.g.CheckIgnore(ctx, wt.Path, tt.file); err != nil || !ok {
+			t.Errorf("%s: CheckIgnore = %v, %v", tt.file, ok, err)
+		}
 	}
 	exclude, err := f.g.GitPath(ctx, wt.Path, "info/exclude")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(exclude)
+	common := git(t, f.g, wt.Path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if want := filepath.Join(common, "info", "exclude"); exclude != want {
+		t.Errorf("exclude = %s, want the shared %s", exclude, want)
+	}
+	b := readFile(t, exclude)
+	for _, tt := range tests {
+		if n := strings.Count(b, "/"+tt.rel+"\n"); n != 1 {
+			t.Errorf("pattern /%s written %d times:\n%s", tt.rel, n, b)
+		}
+	}
+	if n := strings.Count(b, "# forge: files written into agent worktrees\n"); n != len(tests) {
+		t.Errorf("comment written %d times, want once per pattern:\n%s", n, b)
+	}
+	// Tracked files are untouched.
+	if got := readFile(t, filepath.Join(wt.Path, ".gitignore")); got != gitignore {
+		t.Errorf(".gitignore changed: %q -> %q", gitignore, got)
+	}
+	if st := git(t, f.g, f.project.Path, "status", "--porcelain"); st != "" {
+		t.Errorf("checkout not clean: %q", st)
+	}
+}
+
+func readFile(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(string(b), "/"+rel+"\n"); n != 1 {
-		t.Errorf("pattern written %d times:\n%s", n, b)
+	return string(b)
+}
+
+// TestChangedOnBranch: a file is changed when the branch committed to it
+// since it left main, edited it without committing, or added it.
+func TestChangedOnBranch(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, true)
+	commit(t, f.g, f.project.Path, "docs/plan.md", "v1")
+	git(t, f.g, f.project.Path, "push", "-q", "origin", "main")
+	tests := []struct {
+		name   string
+		branch func(wt string)
+		want   bool
+	}{
+		{"untouched", func(string) {}, false},
+		{"untouched while main moved on", func(string) {
+			commit(t, f.g, f.project.Path, "docs/plan.md", "v2 on main")
+		}, false},
+		{"committed on the branch", func(wt string) { commit(t, f.g, wt, "docs/plan.md", "agent") }, true},
+		{"uncommitted edit", func(wt string) { write(t, filepath.Join(wt, "docs/plan.md"), "draft") }, true},
+		{"added on the branch", func(wt string) { commit(t, f.g, wt, "docs/new.md", "new") }, true},
 	}
-	if checkout, _ := filepath.EvalSymlinks(f.project.Path); !strings.HasPrefix(exclude, checkout) {
-		t.Errorf("exclude %s is not the shared one under %s", exclude, f.project.Path)
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wt := f.create(t, fmt.Sprintf("s%d", i))
+			tt.branch(wt.Path)
+			rel := "docs/plan.md"
+			if strings.HasPrefix(tt.name, "added") {
+				rel = "docs/new.md"
+			}
+			got, err := f.m.ChangedOnBranch(ctx, wt.Path, "main", rel)
+			if err != nil || got != tt.want {
+				t.Errorf("ChangedOnBranch = %v, %v; want %v", got, err, tt.want)
+			}
+		})
 	}
-	// Tracked files are untouched.
-	if st := git(t, f.g, f.project.Path, "status", "--porcelain"); st != "" {
-		t.Errorf("checkout not clean: %q", st)
+	wt := f.create(t, "nobase")
+	if _, err := f.m.ChangedOnBranch(ctx, wt.Path, "no-such-base", "docs/plan.md"); err == nil {
+		t.Error("unknown base: want an error")
 	}
 }
 

@@ -190,6 +190,8 @@ type DocKeys struct {
 	Back       key.Binding // collapse a folder (or go to its parent); back to the tree
 	DetailDown key.Binding
 	DetailUp   key.Binding
+	Mark       key.Binding // mark / unmark the doc for sending to an agent (P4.3)
+	Send       key.Binding // send the marked docs (or the selected one) to an agent session
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -408,6 +410,8 @@ func DefaultKeyMap() *KeyMap {
 			Back:       bind("back / collapse", "h", "left"),
 			DetailDown: bind("scroll detail down", "J"),
 			DetailUp:   bind("scroll detail up", "K"),
+			Mark:       bind("mark for agent", "space"),
+			Send:       bind("send to agent", "s"),
 		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
@@ -615,6 +619,8 @@ func (k *KeyMap) actions() []action {
 		{"docs_back", scopeDocs, &dc.Back},
 		{"docs_detail_down", scopeDocs, &dc.DetailDown},
 		{"docs_detail_up", scopeDocs, &dc.DetailUp},
+		{"docs_mark", scopeDocs, &dc.Mark},
+		{"docs_send", scopeDocs, &dc.Send},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

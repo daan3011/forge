@@ -36,6 +36,10 @@ type Source struct {
 	// Fix makes this a "fix this" request from CI (P2.8); nil opens the
 	// pre-filled new-session form as usual.
 	Fix *FixRequest
+	// Docs are absolute doc paths to send to an agent (P4.3, the Docs
+	// tab): the Sessions tab asks for a new or a running session and
+	// mentions them there. Kind and ID are empty then.
+	Docs []string
 }
 
 // FixRequest says how a "fix this" source is handled (P2.8).

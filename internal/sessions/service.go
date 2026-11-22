@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daan3011/forge/internal/config"
+	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
@@ -261,6 +262,9 @@ type StartOpts struct {
 	// StartCommit starts a new branch at this commit instead of Base (P2.8
 	// fix branches); see worktree.CreateOpts.StartCommit.
 	StartCommit string
+	// Docs are put into the worktree before the agent starts (P4.3); the
+	// prompt mentions them by their Rel paths.
+	Docs []docfs.Attachment
 }
 
 // LinkSpec is a link a new session gets: To and what forge knows of it.
@@ -343,6 +347,15 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 			return Started{}, fmt.Errorf("git-ignore hook settings: %w", err)
 		}
 	}
+
+	// The worktree's removal (undo above) takes copied docs along. The
+	// prompt was rendered before the worktree existed; docs that had to go
+	// elsewhere (a differing version on the branch) are re-mentioned.
+	docs, err := s.materialize(ctx, wt.Path, o.Base, o.Docs)
+	if err != nil {
+		return Started{}, err
+	}
+	o.Prompt = docfs.Rewrite(o.Prompt, o.Docs, docs)
 
 	id, err := s.c.NewID()
 	if err != nil {
@@ -877,6 +890,39 @@ func (s *Service) SendPrompt(ctx context.Context, x store.Session, text string) 
 	return nil
 }
 
+// AttachDocs puts docs into x's worktree so a prompt can mention them
+// (P4.3) and returns them as they ended up (see docfs.Materialize). A
+// worktree that is gone gives *WorktreeMissingError.
+func (s *Service) AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) ([]docfs.Attachment, error) {
+	if !isDir(x.Worktree) {
+		return nil, &WorktreeMissingError{Path: x.Worktree, Branch: x.Branch}
+	}
+	base := x.BaseBranch
+	if base == "" {
+		base = DefaultBase
+	}
+	return s.materialize(ctx, x.Worktree, base, docs)
+}
+
+// materialize copies docs into the worktree at dir (on a branch made from
+// base) and git-ignores the copy folder when anything went there.
+func (s *Service) materialize(ctx context.Context, dir, base string, docs []docfs.Attachment) ([]docfs.Attachment, error) {
+	if len(docs) == 0 {
+		return docs, nil
+	}
+	changed := func(rel string) (bool, error) { return s.c.Worktrees.ChangedOnBranch(ctx, dir, base, rel) }
+	out, n, err := docfs.Materialize(dir, docs, changed)
+	if err != nil {
+		return nil, fmt.Errorf("attach docs: %w", err)
+	}
+	if n > 0 {
+		if err := s.c.Worktrees.EnsureExcluded(ctx, dir, docfs.CopyDir); err != nil {
+			return nil, fmt.Errorf("git-ignore copied docs: %w", err)
+		}
+	}
+	return out, nil
+}
+
 // KillOpts are the inputs to Kill.
 type KillOpts struct {
 	// RemoveWorktree also removes the worktree and archives the session.
@@ -1022,6 +1068,7 @@ type API interface {
 	List(ctx context.Context, project string, archived bool) ([]Row, error)
 	Preview(ctx context.Context, x store.Session, lines int) (string, error)
 	SendPrompt(ctx context.Context, x store.Session, text string) error
+	AttachDocs(ctx context.Context, x store.Session, docs []docfs.Attachment) ([]docfs.Attachment, error)
 	Kill(ctx context.Context, x store.Session, o KillOpts) (Killed, error)
 	Delete(ctx context.Context, x store.Session) error
 	ClearWaiting(ctx context.Context, x store.Session) (bool, error)

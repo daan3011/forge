@@ -419,6 +419,29 @@ func realPath(p string) string {
 	}
 }
 
+// ChangedOnBranch implements Manager.
+func (w *Worktrees) ChangedOnBranch(ctx context.Context, dir, base, rel string) (bool, error) {
+	ref := ""
+	for _, r := range []string{"refs/remotes/" + Remote + "/" + base, "refs/heads/" + base} {
+		ok, err := w.git.RefExists(ctx, dir, r)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			ref = r
+			break
+		}
+	}
+	if ref == "" {
+		return false, fmt.Errorf("worktree: base branch %q not found", base)
+	}
+	mb, err := w.git.MergeBase(ctx, dir, "HEAD", ref)
+	if err != nil {
+		return false, err
+	}
+	return w.git.ChangedSince(ctx, dir, mb, rel)
+}
+
 // EnsureExcluded implements Manager. The pattern is anchored ("/" + rel) in
 // the repo's info/exclude, which all its worktrees share.
 func (w *Worktrees) EnsureExcluded(ctx context.Context, dir, rel string) error {
@@ -447,7 +470,7 @@ func (w *Worktrees) EnsureExcluded(ctx context.Context, dir, rel string) error {
 	if err != nil {
 		return fmt.Errorf("worktree: %w", err)
 	}
-	line := "# forge: agent session hooks (P1.4)\n" + pattern + "\n"
+	line := "# forge: files written into agent worktrees\n" + pattern + "\n"
 	if len(b) > 0 && !strings.HasSuffix(string(b), "\n") {
 		line = "\n" + line
 	}

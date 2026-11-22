@@ -71,6 +71,10 @@ type Tab struct {
 	hitTop    int
 	jump      string // heading to scroll the detail to once rendered
 	jumpPath  string // the doc jump belongs to
+
+	// marks are the docs marked for sending to an agent (P4.3), in the
+	// order they were marked.
+	marks []string
 }
 
 var (
@@ -79,6 +83,7 @@ var (
 	_ tabs.Commander      = (*Tab)(nil)
 	_ tabs.Updater        = (*Tab)(nil)
 	_ tabs.EntityProvider = (*Tab)(nil)
+	_ tabs.StatusDetailer = (*Tab)(nil)
 )
 
 // New returns the Docs tab.
@@ -221,6 +226,7 @@ func (t *Tab) scannedIn(msg scannedMsg) {
 	}
 	t.scanned, t.updated = true, msg.at
 	t.index = msg.index
+	t.pruneMarks()
 	if t.want != "" {
 		t.reveal(t.want)
 	}
@@ -318,6 +324,10 @@ func (t *Tab) actionKey(kp tea.KeyPressMsg) (tea.Cmd, bool) {
 		return t.renameSelected(), true
 	case key.Matches(kp, dk.Delete):
 		return t.deleteSelected(), true
+	case key.Matches(kp, dk.Send):
+		return t.sendToAgent(), true
+	case key.Matches(kp, dk.Mark):
+		t.toggleMark()
 	case key.Matches(kp, dk.DetailDown):
 		t.scrollDetail(1)
 	case key.Matches(kp, dk.DetailUp):
@@ -351,6 +361,8 @@ func (t *Tab) treeKey(kp tea.KeyPressMsg) {
 		t.open()
 	case key.Matches(kp, dk.Back):
 		t.back()
+	case key.Matches(kp, t.keys.Input.Cancel):
+		t.clearMarks()
 	}
 }
 
@@ -475,6 +487,7 @@ func (t *Tab) SetProject(p *config.Project) {
 	t.focusDetail = false
 	t.index, t.jump, t.jumpPath = nil, "", ""
 	t.clearSearch()
+	t.clearMarks()
 }
 
 // Title implements tabs.Tab.
@@ -502,6 +515,9 @@ func (t *Tab) ShortHelp() []key.Binding {
 		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to tree"))
 		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back, dk.Edit}
 	}
+	if len(t.marks) > 0 {
+		return []key.Binding{dk.Mark, dk.Send, t.keys.Input.Cancel, dk.Open}
+	}
 	return []key.Binding{dk.New, t.keys.List.Filter, dk.Open, dk.Edit}
 }
 
@@ -512,6 +528,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{dk.Open, dk.Back, t.keys.Input.Cancel, dk.DetailDown, dk.DetailUp, l.ShrinkPane, l.GrowPane},
 		{l.Filter, dk.New, dk.Edit, dk.Rename, dk.Delete},
+		{dk.Mark, dk.Send},
 	}
 }
 
@@ -533,6 +550,8 @@ func (t *Tab) Commands() []tabs.Command {
 			}
 			t.back()
 		})},
+		{ID: "docs_mark", Title: "Docs: mark / unmark for agent", Key: dk.Mark, Run: do(t.toggleMark)},
+		{ID: "docs_send", Title: "Docs: send to agent (new or running session)…", Key: dk.Send, Run: t.sendToAgent},
 		{ID: "docs_detail_down", Title: "Docs: scroll doc down", Key: dk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
 		{ID: "docs_detail_up", Title: "Docs: scroll doc up", Key: dk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(t.split.Grow)},

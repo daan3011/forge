@@ -570,7 +570,23 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **UI**: results replace the tree while a query is set, as two-line rows (title + `project · path`, then the snippet cut so the match stays visible, highlighted with `theme.SearchMatch`; `§` marks a heading match). Up/down while typing (or j/k after enter) previews each hit in the detail pane, scrolled to its heading. enter stops typing; enter again jumps (search closes, the tree selects the doc, the detail has focus on the heading); esc clears. The heading is found in Glamour's output by stripping styling and `#` marks.
   - **Palette**: the tab is a `tabs.EntityProvider`. Every doc is a "Doc" entity matched by title, path and headings, and picking one opens it. New palette commands: "Docs: search…", plus jump / clear while results are shown.
   - `highlight` moved from the job log viewer to `ui.Highlight` so both use it. No new key bindings (`/` is `List.Filter`).
-- [ ] P4.3 Send docs to agent
+- [x] P4.3 Send docs to agent: in the Docs tab, space marks docs (`●`, also in search results) and `s` sends the marked docs, or the doc under the cursor, to an agent. The key is `s` rather than the spec's `>` because `>` is already "widen list"; SPEC P4.3 is updated to match.
+  - **Picker** (Sessions tab, `senddocs.go`): the Docs tab sends `tabs.Source{Docs, Repo}` through `StartSessionFrom`. The Sessions tab lists the project's running sessions and offers "New session…" plus each running one. With no running session it goes straight to the new-session form.
+  - **Paths** (`internal/docs/attach.go`, no TUI): `Plan` maps each doc to a path relative to the worktree. A doc inside the repo keeps its repo path. A doc outside it (an absolute `docs_dir`, another project's docs) gets `.forge/attached/<name>`, with `-2`, `-3` on clashes. `Materialize` does four things:
+    - always refreshes those copies;
+    - copies an in-repo doc to its own path only when the worktree lacks it (an uncommitted draft);
+    - leaves an identical one alone;
+    - never overwrites a file the branch has. If the branch's version differs, the source goes to `.forge/attached/<path>` instead, and its mention gets a note. `Manager.ChangedOnBranch` asks git (`merge-base HEAD origin/<base>` or `<base>`, then `cat-file -e` plus `diff --quiet <mb> -- <path>`, which also covers uncommitted edits) whether the branch changed the file. If it didn't, the note is "(newer version than on this branch)" (`Newer`). If it did, or git can't tell, the note is "(version from the main checkout; this branch has its own changes to this file)" (`Diverged`).
+
+    `Mentions` renders `@docs/a.md @"with space.md"` plus those notes. For a new session, `Service.Start` rewrites the already-rendered prompt with `docfs.Rewrite`, which swaps whole mention tokens only. For a running session, the message is built from what `AttachDocs` returns.
+  - **Ignores**: `.forge/attached` and `.claude/settings.local.json` both go through `Worktrees.EnsureExcluded`:
+    - It skips paths `check-ignore` already ignores.
+    - Otherwise it appends an anchored pattern once to the repo's shared exclude file, found with `rev-parse --git-path info/exclude`, which is `<git-common-dir>/info/exclude` in a linked worktree.
+    - `.gitignore` and other tracked files are never edited.
+    - Real-git tests check that it is idempotent, that both worktree and checkout stay clean, and that `.gitignore` is unchanged.
+  - **New session**: `{docs}` becomes the mentions for the chosen project (set in `resolveTemplate`, so changing the project in the form still works). A template without `{docs}` gets "Read these docs first: …" appended, so docs are never dropped. `StartOpts.Docs` makes `Service.Start` put the docs into the new worktree before claude starts, and git-ignore `.forge/attached` when anything was copied there.
+  - **Running session**: `Service.AttachDocs` puts the docs into its worktree, then `SendPrompt` pastes "Read these docs for context: @… and keep them in mind." The message ends in plain words, so the final Enter submits instead of landing in the `@` autocomplete.
+  - Marks are dropped on rescan when a doc is gone, on a project switch, after sending, and with esc. A status bar detail shows "N docs marked · s send to agent". New palette commands: `docs_mark` and `docs_send`. New keys: `docs_mark` (space) and `docs_send` (s), listed in the help overlay and default.yaml.
 - [ ] P4.4 Decision log
 - [ ] P4.5 Artifact gallery
 - [ ] P4.6 Pin & tag artifacts

@@ -145,7 +145,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | --- | --- | --- |
 | P4.1 | Docs browser | Tree of `.forge/docs/` per project, rendered with Glamour, `e` opens `$EDITOR`. |
 | P4.2 | Docs search | Full-text search across all projects' docs. |
-| P4.3 | Send docs to agent | Multi-select docs and attach them to a new or running session. |
+| P4.3 | Send docs to agent | Multi-select docs (space) and attach them to a new or running session (`s`). |
 | P4.4 | Decision log | Quick ADR form (context, decision, consequences) saved as numbered markdown. |
 | P4.5 | Artifact gallery | Watches configured folders for HTML/SVG/PNG/MD made by Claude; list by project and date. |
 | P4.6 | Pin & tag artifacts | Pin, tag, rename; pinned ones always on top; `o` opens in browser. |
@@ -875,7 +875,8 @@ Done when: typing a word finds the doc and jumps to the matching heading.
 ```text
 Add "send to agent" (spec P4.3).
 
-- space multi-selects docs; `>` opens a picker: new session or an existing one.
+- space multi-selects docs; `s` (like "start session" on PRs and Plane issues; `>` stays
+  "widen list") opens a picker: new session or an existing one.
 - New session: the {docs} template variable becomes `@path` references (Claude Code file
   mentions) for each selected doc, relative to the worktree; copy docs into the worktree if
   they live outside it.

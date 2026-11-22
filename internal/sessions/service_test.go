@@ -3,7 +3,9 @@ package sessions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daan3011/forge/internal/config"
+	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
@@ -34,8 +37,9 @@ type fakeWT struct {
 	createErr  error
 	created    []worktree.CreateOpts
 	removed    []worktree.RemoveOpts
-	deleted    []string // branches
-	excluded   []string // dir/rel passed to EnsureExcluded
+	deleted    []string        // branches
+	excluded   []string        // dir/rel passed to EnsureExcluded
+	changed    map[string]bool // rel -> ChangedOnBranch answer
 	excludeErr error
 }
 
@@ -96,6 +100,10 @@ func (f *fakeWT) Remove(_ context.Context, o worktree.RemoveOpts) (worktree.Remo
 func (f *fakeWT) EnsureExcluded(_ context.Context, dir, rel string) error {
 	f.excluded = append(f.excluded, filepath.Join(dir, rel))
 	return f.excludeErr
+}
+
+func (f *fakeWT) ChangedOnBranch(_ context.Context, _, _, rel string) (bool, error) {
+	return f.changed[rel], nil
 }
 
 func (f *fakeWT) DeleteBranch(_ context.Context, _ config.Project, branch string, _ bool) error {
@@ -652,3 +660,206 @@ func TestClearWaitingStaleView(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestStartAttachesDocs(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	notes := filepath.Join(t.TempDir(), "notes.md")
+	draft := filepath.Join(e.proj.Path, "docs", "draft.md")
+	for p, body := range map[string]string{notes: "outside", draft: "draft"} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	docs := docfs.Plan(e.proj.Path, []string{draft, notes})
+	res, err := e.svc.Start(ctx, StartOpts{Name: "read-docs", Project: "forge", Prompt: docfs.Mentions(docs), Docs: docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := res.Session.Worktree
+	for rel, want := range map[string]string{"docs/draft.md": "draft", ".forge/attached/notes.md": "outside"} {
+		if b, err := os.ReadFile(filepath.Join(wt, rel)); err != nil || string(b) != want {
+			t.Errorf("%s = %q, %v; want %q", rel, b, err, want)
+		}
+	}
+	if want := filepath.Join(wt, docfs.CopyDir); !slices.Equal(e.wt.excluded, []string{want}) {
+		t.Errorf("excluded %q, want %q", e.wt.excluded, want)
+	}
+}
+
+func TestAttachDocs(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	x := e.start(t, "running")
+	src := filepath.Join(t.TempDir(), "spec.md")
+	if err := os.WriteFile(src, []byte("spec"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	docs := docfs.Plan(e.proj.Path, []string{src})
+	got, err := e.svc.AttachDocs(ctx, x, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, docs) {
+		t.Errorf("AttachDocs = %+v, want %+v", got, docs)
+	}
+	if b, err := os.ReadFile(filepath.Join(x.Worktree, ".forge/attached/spec.md")); err != nil || string(b) != "spec" {
+		t.Errorf("copy = %q, %v", b, err)
+	}
+
+	gone := x
+	gone.Worktree = filepath.Join(t.TempDir(), "gone")
+	if _, err := e.svc.AttachDocs(ctx, gone, docs); !errors.Is(err, ErrWorktreeMissing) {
+		t.Errorf("gone worktree: err = %v, want ErrWorktreeMissing", err)
+	}
+}
+
+func TestStartRewritesDifferingDocs(t *testing.T) {
+	tests := []struct {
+		name    string
+		changed bool
+		note    string
+	}{
+		{"branch untouched", false, docfs.NewerNote},
+		{"branch changed it", true, docfs.DivergedNote},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.wt.changed = map[string]bool{"docs/plan.md": tt.changed}
+			src := filepath.Join(e.proj.Path, "docs", "plan.md")
+			writeTestFile(t, src, "main checkout")
+			// The branch already has its own docs/plan.md (worktree paths are
+			// deterministic; Create keeps what is there).
+			wt := worktree.Path(e.wt.root, e.proj, "plan")
+			writeTestFile(t, filepath.Join(wt, "docs", "plan.md"), "branch")
+
+			docs := docfs.Plan(e.proj.Path, []string{src})
+			prompt := "Read " + docfs.Mentions(docs) + " first.\n"
+			if _, err := e.svc.Start(context.Background(), StartOpts{Name: "plan", Project: "forge", Prompt: prompt, Docs: docs}); err != nil {
+				t.Fatal(err)
+			}
+			if b, _ := os.ReadFile(filepath.Join(wt, "docs", "plan.md")); string(b) != "branch" {
+				t.Errorf("branch file = %q", b)
+			}
+			if b, _ := os.ReadFile(filepath.Join(wt, ".forge/attached/docs/plan.md")); string(b) != "main checkout" {
+				t.Errorf("copy = %q", b)
+			}
+			b, err := os.ReadFile(filepath.Join(e.data, "sessions", "plan", "prompt.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := "Read @.forge/attached/docs/plan.md " + tt.note + " first.\n"; string(b) != want {
+				t.Errorf("prompt = %q, want %q", b, want)
+			}
+		})
+	}
+}
+
+func writeTestFile(t *testing.T, p, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAttachDocsRealGit runs AttachDocs on real git worktrees: a doc the
+// branch didn't touch but the main checkout edited is newer; one the agent
+// changed on the branch has diverged. The branch's file is never touched.
+func TestAttachDocsRealGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	g := worktree.NewExec(worktree.WithEnv(
+		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "XDG_CONFIG_HOME="+t.TempDir(),
+		"GIT_AUTHOR_NAME=forge", "GIT_AUTHOR_EMAIL=forge@example.invalid",
+		"GIT_COMMITTER_NAME=forge", "GIT_COMMITTER_EMAIL=forge@example.invalid",
+	))
+	ctx := context.Background()
+	run := func(dir string, args ...string) {
+		t.Helper()
+		if _, err := g.Run(ctx, dir, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	e := newEnv(t)
+	e.svc.c.Worktrees = worktree.New(e.wt.root, g)
+	ids := 0
+	e.svc.c.NewID = func() (string, error) { ids++; return fmt.Sprintf("%s%d", testID[:len(testID)-1], ids), nil } // one session per case
+	repo := e.proj.Path
+	writeTestFile(t, filepath.Join(repo, "docs", "plan.md"), "v1")
+	run(repo, "init", "-q", "-b", "main")
+	run(repo, "add", ".")
+	run(repo, "commit", "-q", "-m", "init")
+	src := filepath.Join(repo, "docs", "plan.md")
+
+	tests := []struct {
+		name   string
+		branch func(wt string) // what the agent did on its branch
+		want   func(docfs.Attachment) bool
+		note   string
+	}{
+		{
+			name:   "source newer",
+			branch: func(string) {},
+			want:   func(a docfs.Attachment) bool { return a.Newer && !a.Diverged },
+			note:   docfs.NewerNote,
+		},
+		{
+			name: "agent edited and committed",
+			branch: func(wt string) {
+				writeTestFile(t, filepath.Join(wt, "docs", "plan.md"), "agent's v1+")
+				run(wt, "commit", "-q", "-am", "agent edit")
+			},
+			want: func(a docfs.Attachment) bool { return a.Diverged && !a.Newer },
+			note: docfs.DivergedNote,
+		},
+		{
+			name: "agent edited, uncommitted",
+			branch: func(wt string) {
+				writeTestFile(t, filepath.Join(wt, "docs", "plan.md"), "agent's draft")
+			},
+			want: func(a docfs.Attachment) bool { return a.Diverged && !a.Newer },
+			note: docfs.DivergedNote,
+		},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writeTestFile(t, src, "v1") // the main checkout as committed
+			x := e.start(t, fmt.Sprintf("docs-%d", i))
+			tt.branch(x.Worktree)
+			branchFile := filepath.Join(x.Worktree, "docs", "plan.md")
+			before, _ := os.ReadFile(branchFile)
+			writeTestFile(t, src, "v2 from the main checkout") // uncommitted edit
+
+			got, err := e.svc.AttachDocs(ctx, x, docfs.Plan(repo, []string{src}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 1 || got[0].Rel != ".forge/attached/docs/plan.md" || !tt.want(got[0]) {
+				t.Fatalf("AttachDocs = %+v", got)
+			}
+			if m := docfs.Mentions(got); m != "@.forge/attached/docs/plan.md "+tt.note {
+				t.Errorf("mention = %q", m)
+			}
+			if after, _ := os.ReadFile(branchFile); string(after) != string(before) {
+				t.Errorf("branch file changed: %q -> %q", before, after)
+			}
+			if b, _ := os.ReadFile(filepath.Join(x.Worktree, ".forge/attached/docs/plan.md")); string(b) != "v2 from the main checkout" {
+				t.Errorf("copy = %q", b)
+			}
+			// The copy is git-ignored through the shared exclude file.
+			out, err := g.Run(ctx, x.Worktree, "status", "--porcelain", "--", ".forge")
+			if err != nil || strings.TrimSpace(out) != "" {
+				t.Errorf("status of .forge = %q, %v", out, err)
+			}
+		})
+	}
+}

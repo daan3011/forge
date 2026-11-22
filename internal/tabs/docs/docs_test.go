@@ -324,7 +324,7 @@ func TestCommandsRegistered(t *testing.T) {
 	for _, c := range tab.Commands() {
 		ids = append(ids, c.ID)
 	}
-	for _, id := range []string{"docs_new", "docs_edit", "docs_rename", "docs_delete", "docs_open", "docs_back", "docs_detail_down", "docs_detail_up", "filter"} {
+	for _, id := range []string{"docs_new", "docs_edit", "docs_rename", "docs_delete", "docs_open", "docs_back", "docs_detail_down", "docs_detail_up", "docs_mark", "docs_send", "filter"} {
 		if !slices.Contains(ids, id) {
 			t.Errorf("no palette command %s", id)
 		}

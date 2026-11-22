@@ -201,7 +201,11 @@ func (t *Tab) hitView(hit docfs.Hit, q string, selected bool, w int) []string {
 	if where == "" {
 		space = w
 	}
-	title := ansi.Truncate(d.Title, space, "…")
+	label, rowStyle := d.Title, th.TableRow
+	if t.isMarked(d.Path) {
+		label, rowStyle = "● "+d.Title, th.DocMarked
+	}
+	title := ansi.Truncate(label, space, "…")
 	pad := max(w-ansi.StringWidth(title)-ansi.StringWidth(where), 0)
 
 	prefix := "  "
@@ -218,7 +222,7 @@ func (t *Tab) hitView(hit docfs.Hit, q string, selected bool, w int) []string {
 		}
 	}
 	return []string{
-		th.TableRow.Render(title+strings.Repeat(" ", pad)) + th.Hint.Render(where),
+		rowStyle.Render(title+strings.Repeat(" ", pad)) + th.Hint.Render(where),
 		th.Hint.Render(prefix) + ui.Highlight(snip, q, th.Hint, th.SearchMatch),
 	}
 }
