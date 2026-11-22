@@ -203,10 +203,10 @@ func TestStartupProject(t *testing.T) {
 			if got := projectName(m.project); got != tt.want {
 				t.Fatalf("project = %s, want %s", got, tt.want)
 			}
-			// Placeholder tabs render the project they were given.
+			// The Context tab names the project it was given while it loads.
 			want := strings.ReplaceAll(tt.want, "<all>", "all projects")
-			m.tabs[7].SetSize(100, 30) // Context (the other tabs are no longer placeholders)
-			if view := ansi.Strip(m.tabs[7].View()); !strings.Contains(view, "project: "+want) {
+			m.tabs[7].SetSize(100, 30)
+			if view := ansi.Strip(m.tabs[7].View()); !strings.Contains(view, "Reading memory files for "+want) {
 				t.Fatalf("tab did not get %s:\n%s", want, view)
 			}
 		})

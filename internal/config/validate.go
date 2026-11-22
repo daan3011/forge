@@ -158,6 +158,10 @@ func (c *Config) Validate() error {
 		add("artifacts.preview", "must be one of %s; got %q", strings.Join(PreviewModes, ", "), c.Artifacts.Preview)
 	}
 
+	if c.Context.TokenBudget < 0 {
+		add("context.token_budget", "must be 0 (no warning) or more, got %d", c.Context.TokenBudget)
+	}
+
 	switch c.UI.Animations {
 	case AnimationsFull, AnimationsReduced, AnimationsOff:
 	default:

@@ -173,8 +173,11 @@ type Theme struct {
 	DiffDel         lipgloss.Style // -deletions
 	PRTime          lipgloss.Style // updated / created ages
 	PRStale         lipgloss.Style // updated age past github.stale_after_days (amber)
-	PRVeryStale     lipgloss.Style // updated age past twice that (red)
-	PRStaleIcon     lipgloss.Style // the dim clock under a stale PR's age
+	// ContextOverBudget is the Context tab's total once startup memory
+	// passes context.token_budget (amber, P5.1).
+	ContextOverBudget lipgloss.Style
+	PRVeryStale       lipgloss.Style // updated age past twice that (red)
+	PRStaleIcon       lipgloss.Style // the dim clock under a stale PR's age
 
 	// PR diff viewer (P2.4), when delta isn't installed.
 	DiffHunk       lipgloss.Style // @@ -1,4 +1,5 @@
@@ -322,20 +325,21 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		TranscriptNotice:  lipgloss.NewStyle().Foreground(p.Border).Italic(true),
 		TranscriptCursor:  lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 
-		SectionActive:   lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true).Padding(0, 1),
-		SectionInactive: lipgloss.NewStyle().Foreground(p.Muted).Padding(0, 1),
-		SectionSep:      lipgloss.NewStyle().Foreground(p.Border),
-		SearchBox:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
-		SearchIcon:      lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
-		SearchQuery:     lipgloss.NewStyle().Foreground(p.Muted),
-		PRRepo:          lipgloss.NewStyle().Foreground(Mix(p.Accent, p.Muted, 0.45)),
-		PRTitle:         base,
-		DiffAdd:         lipgloss.NewStyle().Foreground(p.Success),
-		DiffDel:         lipgloss.NewStyle().Foreground(p.Error),
-		PRTime:          base,
-		PRStale:         lipgloss.NewStyle().Foreground(Mix(p.Accent, p.Highlight, 0.5)),
-		PRVeryStale:     lipgloss.NewStyle().Foreground(p.Error),
-		PRStaleIcon:     lipgloss.NewStyle().Foreground(p.Muted),
+		SectionActive:     lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true).Padding(0, 1),
+		SectionInactive:   lipgloss.NewStyle().Foreground(p.Muted).Padding(0, 1),
+		SectionSep:        lipgloss.NewStyle().Foreground(p.Border),
+		SearchBox:         lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border).Padding(0, 1),
+		SearchIcon:        lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		SearchQuery:       lipgloss.NewStyle().Foreground(p.Muted),
+		PRRepo:            lipgloss.NewStyle().Foreground(Mix(p.Accent, p.Muted, 0.45)),
+		PRTitle:           base,
+		DiffAdd:           lipgloss.NewStyle().Foreground(p.Success),
+		DiffDel:           lipgloss.NewStyle().Foreground(p.Error),
+		PRTime:            base,
+		PRStale:           lipgloss.NewStyle().Foreground(Mix(p.Accent, p.Highlight, 0.5)),
+		ContextOverBudget: lipgloss.NewStyle().Foreground(Mix(p.Accent, p.Highlight, 0.5)).Bold(true),
+		PRVeryStale:       lipgloss.NewStyle().Foreground(p.Error),
+		PRStaleIcon:       lipgloss.NewStyle().Foreground(p.Muted),
 
 		DiffHunk:       lipgloss.NewStyle().Foreground(p.Accent),
 		DiffMeta:       lipgloss.NewStyle().Foreground(p.Muted),

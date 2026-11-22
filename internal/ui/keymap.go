@@ -29,6 +29,8 @@ type KeyMap struct {
 	Docs DocKeys
 	// Artifacts are the Artifacts tab's actions (P4.5).
 	Artifacts ArtifactKeys
+	// Context are the Context tab's actions (P5.1).
+	Context ContextKeys
 	// Transcript drives the transcript viewer (P1.6), which takes over
 	// the Sessions tab while open.
 	Transcript TranscriptKeys
@@ -197,6 +199,17 @@ type DocKeys struct {
 	Decision   key.Binding // log a decision (P4.4)
 	Decisions  key.Binding // toggle the decisions view
 	Supersede  key.Binding // mark the selected decision superseded by a newer one
+}
+
+// ContextKeys are the Context tab's actions (P5.1). While the detail pane
+// has focus, the List keys scroll it.
+type ContextKeys struct {
+	Edit       key.Binding // the memory file in $EDITOR (created if missing)
+	Worktrees  key.Binding // toggle the worktree inheritance matrix
+	Open       key.Binding // focus the rendered file
+	Back       key.Binding // back to the list
+	DetailDown key.Binding
+	DetailUp   key.Binding
 }
 
 // ArtifactKeys are the Artifacts tab's actions (P4.5, P4.6).
@@ -434,6 +447,14 @@ func DefaultKeyMap() *KeyMap {
 			Decisions:  bind("decisions view", "d"),
 			Supersede:  bind("mark superseded", "S"),
 		},
+		Context: ContextKeys{
+			Edit:       bind("edit in $EDITOR", "e"),
+			Worktrees:  bind("worktree inheritance", "i"),
+			Open:       bind("focus file", "enter", "l", "right"),
+			Back:       bind("back to list", "h", "left"),
+			DetailDown: bind("scroll detail down", "J"),
+			DetailUp:   bind("scroll detail up", "K"),
+		},
 		Artifacts: ArtifactKeys{
 			Open:         bind("open", "o"),
 			CopyPath:     bind("copy path", "y"),
@@ -541,6 +562,7 @@ const (
 	scopePlane    = "tab:plane"
 	scopeDocs     = "tab:docs"
 	scopeArts     = "tab:artifacts"
+	scopeContext  = "tab:context"
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
 	scopeTranscript = "transcript"
@@ -560,6 +582,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
 	pp, lg, pl, cp, dc, ar := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs, &k.Artifacts
+	cx := &k.Context
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -666,6 +689,12 @@ func (k *KeyMap) actions() []action {
 		{"artifacts_filters", scopeArts, &ar.Filters},
 		{"artifacts_pinned_only", scopeArts, &ar.PinnedOnly},
 		{"artifacts_clear_filters", scopeArts, &ar.ClearFilters},
+		{"context_edit", scopeContext, &cx.Edit},
+		{"context_worktrees", scopeContext, &cx.Worktrees},
+		{"context_open", scopeContext, &cx.Open},
+		{"context_back", scopeContext, &cx.Back},
+		{"context_detail_down", scopeContext, &cx.DetailDown},
+		{"context_detail_up", scopeContext, &cx.DetailUp},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},
