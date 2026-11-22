@@ -18,6 +18,7 @@ import (
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
+	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/refresh"
@@ -104,6 +105,7 @@ type Model struct {
 	projStore    ProjectStore        // from WithProjectStore
 	plane        plane.API           // from WithPlane
 	planeErr     error               // why plane is nil
+	docsWatcher  docfs.Watcher       // from WithDocsWatcher
 
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
@@ -140,7 +142,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		TemplatesDir: m.templatesDir, Providers: m.providers, Browser: m.browser,
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
-		ProjectLinks: linker(m.projStore),
+		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),

@@ -11,6 +11,7 @@ import (
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/delta"
+	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/templates"
@@ -27,6 +28,12 @@ func WithTemplates(dir string, providers *templates.Registry) Option {
 // WithBrowser gives tabs a way to open URLs (linked issues and PRs).
 func WithBrowser(b browser.Opener) Option {
 	return func(m *Model) { m.browser = b }
+}
+
+// WithDocsWatcher sets the watcher that reloads the Docs tab when files in
+// a docs folder change (P4.1). Without it the tab reloads on refresh only.
+func WithDocsWatcher(w docfs.Watcher) Option {
+	return func(m *Model) { m.docsWatcher = w }
 }
 
 // WithGitHub sets the client the PRs tab searches and fetches details with (P2.1, P2.2). Without it

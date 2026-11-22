@@ -533,7 +533,37 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 
 ## Phase 4 — Docs & design artifacts
 
-- [ ] P4.1 Docs browser
+- [x] P4.1 Docs browser: the Docs tab shows a tree of each project's markdown docs (`config.Project.DocsPath()`, default `<repo>/.forge/docs`) with a Glamour preview, $EDITOR editing, new from a template, rename / move, delete to trash, and live reload.
+  - **`internal/docs`** (no TUI):
+    - `Scan` builds the tree. It keeps `*.md` files (any case) and the folders that hold them, skips dotfiles and dot-folders (so `.trash` is hidden), and sorts folders first, then by name. A missing folder is an empty tree.
+    - `CleanRel` normalises a typed name: it adds `.md`, and refuses `..`, absolute paths, dot-names and a bare folder. `Create` and `Rename` make folders as needed, never overwrite (`ErrExists`), and refuse paths outside the root.
+    - `Trash` moves a doc to `<docs>/.trash/<same path>`. If that name is taken, a `-YYYYMMDD-HHMMSS` suffix is added.
+    - Templates (embedded): blank, spec, notes and runbook, with `{{title}}` (from the file name) and `{{date}}`.
+  - **Watcher**: `docs.FSWatcher` uses fsnotify (new dependency, on the stack list). fsnotify doesn't recurse, so every folder under a root is added, plus new folders as they appear.
+    - A root that doesn't exist yet is watched through its nearest existing parent, so `mkdir -p .forge/docs/…` by an agent is seen.
+    - Bursts are debounced (150 ms) into one signal. The tab waits on it in a Cmd and rescans.
+    - `app.WithDocsWatcher`, created in `cmd/forge/root.go`; without it the tab reloads on refresh only.
+  - **Tree**: with one project, its folder's contents. With "All projects", one top level per project (open by default) with a doc count. New folders start closed, and the selection is kept by path across rescans.
+  - **Detail**: the doc is rendered with `ui.RenderMarkdown` at the pane width in a Cmd. The result is cached by path, mtime and width, so an edit or a resize renders again. The header shows the name, path and age. If Glamour fails, the text is wrapped plain.
+  - **Keys** (`DocKeys`, scope `tab:docs`):
+    - `enter` / `l` / `→` opens a folder or focuses the doc. In the doc, `j` / `k` / `ctrl+d` / `ctrl+u` / `g` / `G` scroll, and `esc` / `h` goes back to the tree.
+    - `h` / `←` in the tree closes a folder, or moves to the parent folder.
+    - `J` / `K` scroll the doc from the tree.
+    - `n` new doc: project (with All projects), name (prefilled with the selected folder), template. The doc is then selected and opened in `$EDITOR`.
+    - `e` edits in `$EDITOR` (`tea.ExecProcess`) and rescans on return.
+    - `m` renames / moves. It isn't `r`, which is the global refresh key.
+    - `D` asks, then moves the doc to `.trash`.
+    - All of these are also palette commands.
+  - **Tests**:
+    - Table tests: `Scan`, `CleanRel`, `Create`, `Rename`, `Trash`, `Template` and `TitleFrom`. A real-fsnotify test covers a root created later, burst debouncing, new subfolders and ignored siblings.
+    - Tab tests: browse / expand / collapse, detail focus and scrolling (reset per doc), All projects, edit → re-render, empty state, a stale scan dropped after a project switch, and the palette commands.
+    - teatest flows: new from a template (created, selected, editor opened), rename into a new folder and delete to `.trash`, and a watcher event showing a file written from outside.
+  - **Verified live**: the empty state for this repo, a doc written from a shell appearing without a refresh (with `.forge` not existing beforehand), and `D` moving it to `.forge/docs/.trash/`.
+  - **Limits**:
+    - Only `.md` files are shown.
+    - Open / closed folders aren't saved between runs.
+    - Folders can't be renamed or deleted from the tab.
+    - The trash is never emptied by forge.
 - [ ] P4.2 Docs search
 - [ ] P4.3 Send docs to agent
 - [ ] P4.4 Decision log

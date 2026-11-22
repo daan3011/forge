@@ -1,25 +1,521 @@
 package docs
 
 import (
+	"context"
+	"fmt"
+	"time"
+
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+
+	"github.com/daan3011/forge/internal/config"
+	docfs "github.com/daan3011/forge/internal/docs"
+	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
 )
 
-// New returns the Docs tab. It is a placeholder until P4.1.
-func New(d tabkit.Deps) tabs.Tab {
-	return tabkit.NewPlaceholder(d, tabkit.PlaceholderSpec{
-		Title:      "Docs",
-		Feature:    "P4.1",
-		Blurb:      "Project docs and the decision log from .forge/docs.",
-		EntityKind: "Doc",
-		Columns: []ui.Column{
-			{Title: "Doc", Width: 0, Flex: true},
-			{Title: "Updated", Width: 10},
-		},
-		Rows: [][]string{
-			{"sample: architecture.md", "2d"},
-			{"sample: decisions/0001-sqlite.md", "1w"},
-		},
-	})
+// Title is the tab's title, which also routes its messages.
+const Title = "Docs"
+
+// root is one project's docs folder.
+type root struct {
+	name string // project name
+	path string // absolute docs folder
+	tree *docfs.Node
+	err  error
+}
+
+// Tab is the Docs tab (P4.1): a tree of each project's markdown docs with a
+// Glamour preview, $EDITOR editing, new / rename / trash and live reload.
+type Tab struct {
+	theme *ui.Theme
+	keys  *ui.KeyMap
+	cfg   *config.Config
+	now   func() time.Time
+	// edit opens path in $EDITOR and reports editedMsg (tests replace it).
+	edit    func(path string) tea.Cmd
+	watcher docfs.Watcher
+
+	split  ui.SplitPane
+	width  int
+	height int
+
+	project *config.Project
+	roots   []root
+	gen     int // bumped by SetProject; older scans are dropped
+	scanned bool
+	updated time.Time
+
+	rows     []row
+	cursor   int
+	top      int             // first visible row
+	expanded map[string]bool // folder paths shown open
+	known    map[string]bool // folder paths seen before (new ones start closed)
+	selPath  string          // path of the selected row, kept across rescans
+	want     string          // a path to select once a scan shows it
+
+	focusDetail bool
+	det         detailState
+
+	dialog *huh.Form
+	onDone func() tea.Cmd
+}
+
+var (
+	_ tabs.Tab           = (*Tab)(nil)
+	_ tabs.InputCapturer = (*Tab)(nil)
+	_ tabs.Commander     = (*Tab)(nil)
+	_ tabs.Updater       = (*Tab)(nil)
+)
+
+// New returns the Docs tab.
+func New(d tabkit.Deps) tabs.Tab { return newTab(d) }
+
+func newTab(d tabkit.Deps) *Tab {
+	cfg := d.Config
+	if cfg == nil {
+		cfg = config.Default()
+	}
+	t := &Tab{
+		theme: d.Theme, keys: d.Keys, cfg: cfg, now: time.Now,
+		watcher:  d.DocsWatcher,
+		split:    ui.NewSplitPane(d.Theme),
+		expanded: map[string]bool{},
+		known:    map[string]bool{},
+		det:      newDetailState(),
+	}
+	t.split.SetRatio(0.32)
+	t.edit = func(path string) tea.Cmd {
+		c := editor.Exec{}.Cmd(context.Background(), path)
+		return tea.ExecProcess(c, func(err error) tea.Msg { return editedMsg{path: path, err: err} })
+	}
+	t.setRoots()
+	return t
+}
+
+// --- messages --------------------------------------------------------------------
+
+type scannedMsg struct {
+	gen   int
+	trees []*docfs.Node
+	errs  []error
+	at    time.Time
+}
+
+type watchMsg struct{ ok bool }
+
+type editedMsg struct {
+	path string
+	err  error
+}
+
+// opDoneMsg reports a create / rename / trash. path is the doc to select
+// (the new path; "" after a trash).
+type opDoneMsg struct {
+	path    string
+	text    string // success toast
+	openEd  bool   // open path in $EDITOR next
+	err     error
+	reveal  bool // expand path's folders
+	trashed bool
+}
+
+// TargetTab implements tabs.TargetedMsg.
+func (scannedMsg) TargetTab() string { return Title }
+
+// TargetTab implements tabs.TargetedMsg.
+func (watchMsg) TargetTab() string { return Title }
+
+// TargetTab implements tabs.TargetedMsg.
+func (editedMsg) TargetTab() string { return Title }
+
+// TargetTab implements tabs.TargetedMsg.
+func (opDoneMsg) TargetTab() string { return Title }
+
+// --- loading ---------------------------------------------------------------------
+
+// setRoots picks the folders shown: the project's, or every project's.
+func (t *Tab) setRoots() {
+	var ps []config.Project
+	if t.project != nil {
+		ps = []config.Project{*t.project}
+	} else {
+		ps = t.cfg.Projects
+	}
+	t.roots = make([]root, len(ps))
+	for i, p := range ps {
+		t.roots[i] = root{name: p.Name, path: p.DocsPath()}
+	}
+}
+
+// all reports whether the tree has a top level per project.
+func (t *Tab) all() bool { return t.project == nil }
+
+// Init implements tabs.Tab.
+func (t *Tab) Init() tea.Cmd { return tea.Batch(t.Refresh(), t.waitWatch()) }
+
+// Refresh implements tabs.Tab: rescans every root and points the watcher at
+// them.
+func (t *Tab) Refresh() tea.Cmd {
+	gen, w := t.gen, t.watcher
+	paths := make([]string, len(t.roots))
+	for i, r := range t.roots {
+		paths[i] = r.path
+	}
+	now := t.now
+	return func() tea.Msg {
+		msg := scannedMsg{gen: gen, trees: make([]*docfs.Node, len(paths)), errs: make([]error, len(paths))}
+		if w != nil {
+			_ = w.Set(paths) // best effort: without it, r still reloads
+		}
+		for i, p := range paths {
+			msg.trees[i], msg.errs[i] = docfs.Scan(p)
+		}
+		msg.at = now()
+		return msg
+	}
+}
+
+// waitWatch waits for the next change under the roots, in its own
+// goroutine; every watchMsg re-arms it.
+func (t *Tab) waitWatch() tea.Cmd {
+	if t.watcher == nil {
+		return nil
+	}
+	ch := t.watcher.Events()
+	return func() tea.Msg {
+		_, ok := <-ch
+		return watchMsg{ok: ok}
+	}
+}
+
+func (t *Tab) scannedIn(msg scannedMsg) {
+	if msg.gen != t.gen || len(msg.trees) != len(t.roots) {
+		return
+	}
+	for i := range t.roots {
+		t.roots[i].tree, t.roots[i].err = msg.trees[i], msg.errs[i]
+		if t.all() && !t.known[t.roots[i].path] {
+			t.expanded[t.roots[i].path] = true // project levels start open
+		}
+		t.learn(msg.trees[i])
+	}
+	t.scanned, t.updated = true, msg.at
+	if t.want != "" {
+		t.reveal(t.want)
+	}
+	t.rebuild()
+}
+
+// learn records n's folders so later scans know which are new.
+func (t *Tab) learn(n *docfs.Node) {
+	if n == nil {
+		return
+	}
+	t.known[n.Path] = true
+	for _, c := range n.Children {
+		if c.IsDir {
+			t.learn(c)
+		}
+	}
+}
+
+// --- update ----------------------------------------------------------------------
+
+// Update implements tabs.Tab.
+func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
+	cmd := t.update(msg)
+	return t, tea.Batch(cmd, t.syncDetail())
+}
+
+func (t *Tab) update(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case scannedMsg:
+		t.scannedIn(msg)
+		return nil
+	case watchMsg:
+		if !msg.ok {
+			return nil // watcher closed: forge is exiting
+		}
+		return tea.Batch(t.waitWatch(), t.Refresh())
+	case renderedMsg:
+		t.rendered(msg)
+		return nil
+	case editedMsg:
+		if msg.err != nil {
+			return tea.Batch(errCmd(msg.err), t.Refresh())
+		}
+		return t.Refresh()
+	case opDoneMsg:
+		return t.opDone(msg)
+	}
+	if t.dialog != nil {
+		return t.updateDialog(msg)
+	}
+	kp, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return nil
+	}
+	if cmd, ok := t.actionKey(kp); ok {
+		return cmd
+	}
+	if t.focusDetail {
+		t.detailKey(kp)
+		return nil
+	}
+	t.treeKey(kp)
+	return nil
+}
+
+// actionKey handles the keys that work in both panes.
+func (t *Tab) actionKey(kp tea.KeyPressMsg) (tea.Cmd, bool) {
+	dk, l := t.keys.Docs, t.keys.List
+	switch {
+	case key.Matches(kp, dk.New):
+		return t.newDoc(), true
+	case key.Matches(kp, dk.Edit):
+		return t.editSelected(), true
+	case key.Matches(kp, dk.Rename):
+		return t.renameSelected(), true
+	case key.Matches(kp, dk.Delete):
+		return t.deleteSelected(), true
+	case key.Matches(kp, dk.DetailDown):
+		t.scrollDetail(1)
+	case key.Matches(kp, dk.DetailUp):
+		t.scrollDetail(-1)
+	case key.Matches(kp, l.GrowPane):
+		t.split.Grow()
+	case key.Matches(kp, l.ShrinkPane):
+		t.split.Shrink()
+	default:
+		return nil, false
+	}
+	return nil, true
+}
+
+func (t *Tab) treeKey(kp tea.KeyPressMsg) {
+	dk, l := t.keys.Docs, t.keys.List
+	switch {
+	case key.Matches(kp, l.Up):
+		t.move(-1)
+	case key.Matches(kp, l.Down):
+		t.move(1)
+	case key.Matches(kp, l.Top):
+		t.move(-len(t.rows))
+	case key.Matches(kp, l.Bottom):
+		t.move(len(t.rows))
+	case key.Matches(kp, l.PageDown):
+		t.move(max(t.treeHeight()/2, 1))
+	case key.Matches(kp, l.PageUp):
+		t.move(-max(t.treeHeight()/2, 1))
+	case key.Matches(kp, dk.Open):
+		t.open()
+	case key.Matches(kp, dk.Back):
+		t.back()
+	}
+}
+
+func (t *Tab) detailKey(kp tea.KeyPressMsg) {
+	dk, l := t.keys.Docs, t.keys.List
+	half := max(t.detailBodyHeight()/2, 1)
+	switch {
+	case key.Matches(kp, dk.Back), key.Matches(kp, t.keys.Input.Cancel):
+		t.focusDetail = false
+	case key.Matches(kp, l.Up):
+		t.scrollDetail(-1)
+	case key.Matches(kp, l.Down):
+		t.scrollDetail(1)
+	case key.Matches(kp, l.PageDown):
+		t.scrollDetail(half)
+	case key.Matches(kp, l.PageUp):
+		t.scrollDetail(-half)
+	case key.Matches(kp, l.Top):
+		t.det.offset = 0
+	case key.Matches(kp, l.Bottom):
+		t.scrollDetail(1 << 30)
+	}
+}
+
+// open expands or collapses a folder, or focuses the detail on a doc.
+func (t *Tab) open() {
+	r, ok := t.selected()
+	if !ok {
+		return
+	}
+	if r.node.IsDir {
+		t.expanded[r.node.Path] = !t.expanded[r.node.Path]
+		t.rebuild()
+		return
+	}
+	t.focusDetail = true
+}
+
+// back collapses an open folder, or moves to the parent folder.
+func (t *Tab) back() {
+	r, ok := t.selected()
+	if !ok {
+		return
+	}
+	if r.node.IsDir && t.expanded[r.node.Path] {
+		t.expanded[r.node.Path] = false
+		t.rebuild()
+		return
+	}
+	for i := t.cursor - 1; i >= 0; i-- {
+		if t.rows[i].depth < r.depth {
+			t.setCursor(i)
+			return
+		}
+	}
+}
+
+// --- dialogs ---------------------------------------------------------------------
+
+// openDialog shows form over the tab; done runs once it is completed.
+func (t *Tab) openDialog(form *huh.Form, done func() tea.Cmd) tea.Cmd {
+	t.dialog = form.WithTheme(t.theme.Huh()).WithKeyMap(t.keys.HuhKeyMap()).WithShowHelp(false)
+	t.onDone = done
+	init := t.dialog.Init()
+	t.sizeDialog()
+	return init
+}
+
+func (t *Tab) updateDialog(msg tea.Msg) tea.Cmd {
+	if _, ok := msg.(tea.WindowSizeMsg); ok {
+		return nil // the app owns the window size; SetSize resizes the form
+	}
+	_, cmd := t.dialog.Update(msg)
+	switch t.dialog.State {
+	case huh.StateCompleted:
+		done := t.onDone
+		t.dialog, t.onDone = nil, nil
+		if done == nil {
+			return nil
+		}
+		return done()
+	case huh.StateAborted:
+		t.dialog, t.onDone = nil, nil
+		return nil
+	}
+	return cmd
+}
+
+func (t *Tab) dialogSize() (w, h int) { return max(t.width-4, 10), max(t.height-2, 3) }
+
+func (t *Tab) sizeDialog() {
+	if t.dialog == nil {
+		return
+	}
+	w, h := t.dialogSize()
+	_, _ = t.dialog.Update(tea.WindowSizeMsg{Width: w, Height: h})
+}
+
+func errCmd(err error) tea.Cmd {
+	return func() tea.Msg { return ui.ErrMsg{Err: err} }
+}
+
+func success(s string) tea.Cmd { return func() tea.Msg { return ui.SuccessMsg{Text: s} } }
+
+// --- interfaces ------------------------------------------------------------------
+
+// SetSize implements tabs.Tab.
+func (t *Tab) SetSize(width, height int) {
+	t.width, t.height = width, height
+	t.split.SetSize(width, height)
+	t.sizeDialog()
+	t.clampTop()
+}
+
+// SetProject implements tabs.Tab.
+func (t *Tab) SetProject(p *config.Project) {
+	t.project = p
+	t.gen++
+	t.setRoots()
+	t.scanned = false
+	t.rows, t.cursor, t.top, t.selPath = nil, 0, 0, ""
+	t.focusDetail = false
+}
+
+// Title implements tabs.Tab.
+func (t *Tab) Title() string { return Title }
+
+// CapturingInput implements tabs.InputCapturer.
+func (t *Tab) CapturingInput() bool { return t.dialog != nil }
+
+// LastUpdated implements tabs.Updater.
+func (t *Tab) LastUpdated() time.Time { return t.updated }
+
+// ShortHelp implements tabs.Tab.
+func (t *Tab) ShortHelp() []key.Binding {
+	dk := t.keys.Docs
+	switch {
+	case t.dialog != nil:
+		return t.keys.FormHelp()
+	case t.focusDetail:
+		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to tree"))
+		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back, dk.Edit}
+	}
+	return []key.Binding{dk.Rename, dk.New, dk.Open, dk.Edit}
+}
+
+// FullHelp implements tabs.Tab.
+func (t *Tab) FullHelp() [][]key.Binding {
+	l, dk := t.keys.List, t.keys.Docs
+	return [][]key.Binding{
+		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
+		{dk.Open, dk.Back, t.keys.Input.Cancel, dk.DetailDown, dk.DetailUp, l.ShrinkPane, l.GrowPane},
+		{dk.New, dk.Edit, dk.Rename, dk.Delete},
+	}
+}
+
+// Commands implements tabs.Commander.
+func (t *Tab) Commands() []tabs.Command {
+	l, dk := t.keys.List, t.keys.Docs
+	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return nil } }
+	return []tabs.Command{
+		{ID: "docs_new", Title: "Docs: new doc…", Key: dk.New, Run: t.newDoc},
+		{ID: "docs_edit", Title: "Docs: edit in $EDITOR", Key: dk.Edit, Run: t.editSelected},
+		{ID: "docs_rename", Title: "Docs: rename / move…", Key: dk.Rename, Run: t.renameSelected},
+		{ID: "docs_delete", Title: "Docs: delete (move to .trash)…", Key: dk.Delete, Run: t.deleteSelected},
+		{ID: "docs_open", Title: "Docs: open doc / expand folder", Key: dk.Open, Run: do(t.open)},
+		{ID: "docs_back", Title: "Docs: back to tree / collapse folder", Key: dk.Back, Run: do(func() {
+			if t.focusDetail {
+				t.focusDetail = false
+				return
+			}
+			t.back()
+		})},
+		{ID: "docs_detail_down", Title: "Docs: scroll doc down", Key: dk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
+		{ID: "docs_detail_up", Title: "Docs: scroll doc up", Key: dk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
+		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(t.split.Grow)},
+		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(t.split.Shrink)},
+	}
+}
+
+// --- view ------------------------------------------------------------------------
+
+// View implements tabs.Tab.
+func (t *Tab) View() string {
+	if t.dialog != nil {
+		w, h := t.dialogSize()
+		return t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), w, h))
+	}
+	if t.split.Collapsed() && t.focusDetail {
+		w, h := t.split.LeftSize()
+		return t.split.View(t.detailView(w, h), "", true)
+	}
+	lw, lh := t.split.LeftSize()
+	rw, rh := t.split.RightSize()
+	return t.split.View(t.treeView(lw, lh), t.detailView(rw, rh), !t.focusDetail)
+}
+
+// docCount is "1 doc" / "3 docs".
+func docCount(n int) string {
+	if n == 1 {
+		return "1 doc"
+	}
+	return fmt.Sprintf("%d docs", n)
 }
