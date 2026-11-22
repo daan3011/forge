@@ -152,3 +152,35 @@ func TestArtifactMetaPersists(t *testing.T) {
 		t.Errorf("after reopen = %+v", x)
 	}
 }
+
+func TestArtifactForget(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestStore(t)
+	a := s.Artifacts()
+	noErr(t, a.Sync(ctx, nil, []Artifact{
+		{Path: "/r/.forge/artifacts/s/a.md", Project: "forge", Type: "md", ModifiedAt: t0},
+		{Path: "/r/.forge/artifacts/s/b.md", Project: "forge", Type: "md", ModifiedAt: t0},
+	}))
+	for _, p := range []string{"/r/.forge/artifacts/s/a.md", "/r/.forge/artifacts/s/b.md"} {
+		noErr(t, a.Link(ctx, ArtifactLink{CopyPath: p, SourcePath: "/wt/x", SessionName: "s"}))
+		noErr(t, a.SetTitle(ctx, p, "T"))
+		noErr(t, a.SetTags(ctx, p, []string{"t"}))
+	}
+	noErr(t, a.Forget(ctx, []string{"/r/.forge/artifacts/s/a.md"}))
+	noErr(t, a.Forget(ctx, nil))
+	list, err := a.List(ctx, "")
+	noErr(t, err)
+	if len(list) != 1 || list[0].Path != "/r/.forge/artifacts/s/b.md" || list[0].Link == nil || list[0].Title != "T" {
+		t.Fatalf("left = %+v", list)
+	}
+	links, err := a.ActiveLinks(ctx)
+	noErr(t, err)
+	if len(links) != 1 {
+		t.Errorf("links = %+v", links)
+	}
+	var n int
+	noErr(t, s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM titles WHERE ref = ?`, "/r/.forge/artifacts/s/a.md").Scan(&n))
+	if n != 0 {
+		t.Error("title kept")
+	}
+}

@@ -196,9 +196,9 @@ func TestCacheIncremental(t *testing.T) {
 		return strings.Join(out, ",")
 	}
 
-	c := NewCache()
+	c := NewCache(nil)
 	write(os.O_TRUNC, prompt("a")+"\n"+prompt("b")[:10])
-	tr, err := c.Load(path)
+	tr, err := c.Load(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestCacheIncremental(t *testing.T) {
 
 	// Completing the partial line and appending more is picked up.
 	write(os.O_APPEND, prompt("b")[10:]+"\n"+prompt("c")+"\n")
-	if tr, _ = c.Load(path); texts(tr) != "a,b,c" {
+	if tr, _ = c.Load(path, ""); texts(tr) != "a,b,c" {
 		t.Fatalf("second load = %q, want a,b,c", texts(tr))
 	}
 	if st := c.state(path); st.offset != st.info.Size() {
@@ -217,7 +217,7 @@ func TestCacheIncremental(t *testing.T) {
 
 	// A truncated file starts over.
 	write(os.O_TRUNC, prompt("z")+"\n")
-	if tr, _ = c.Load(path); texts(tr) != "z" {
+	if tr, _ = c.Load(path, ""); texts(tr) != "z" {
 		t.Fatalf("after truncate = %q, want z", texts(tr))
 	}
 
@@ -229,11 +229,11 @@ func TestCacheIncremental(t *testing.T) {
 	if err := os.Rename(repl, path); err != nil {
 		t.Fatal(err)
 	}
-	if tr, _ = c.Load(path); texts(tr) != "x,y" {
+	if tr, _ = c.Load(path, ""); texts(tr) != "x,y" {
 		t.Fatalf("after replace = %q, want x,y", texts(tr))
 	}
 
-	if _, err := c.Load(filepath.Join(t.TempDir(), "missing.jsonl")); !errors.Is(err, ErrNoTranscript) {
+	if _, err := c.Load(filepath.Join(t.TempDir(), "missing.jsonl"), ""); !errors.Is(err, ErrNoTranscript) {
 		t.Fatalf("missing file err = %v, want ErrNoTranscript", err)
 	}
 }
@@ -287,10 +287,10 @@ func TestRealFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := NewCache()
+	c := NewCache(nil)
 	var total, withMessages int
 	for _, f := range files {
-		tr, err := c.Load(f)
+		tr, err := c.Load(f, "")
 		if err != nil {
 			t.Errorf("%s: %v", f, err)
 			continue

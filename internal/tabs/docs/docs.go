@@ -297,6 +297,8 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.Refresh()
 	case opDoneMsg:
 		return t.opDone(msg)
+	case tabs.ReindexDocsMsg:
+		return t.Refresh()
 	case LogDecisionMsg:
 		if t.dialog != nil {
 			return nil // finish the open dialog first

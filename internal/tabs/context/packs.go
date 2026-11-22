@@ -40,7 +40,6 @@ type packEntry struct {
 }
 
 type packState struct {
-	on      bool // the Packs view is showing
 	loaded  bool
 	entries []packEntry
 	errs    []error
@@ -163,11 +162,16 @@ func (t *Tab) packListHeight() int {
 
 // --- update ----------------------------------------------------------------------
 
-// togglePacks switches between memory files and packs.
+// togglePacks switches between memory files and packs (from the cache
+// view it goes to packs).
 func (t *Tab) togglePacks() tea.Cmd {
-	t.pk.on = !t.pk.on
+	if t.view == viewPacks {
+		t.view = viewMemory
+	} else {
+		t.view = viewPacks
+	}
 	t.focusDetail, t.matrix = false, false
-	if t.pk.on && !t.pk.loaded {
+	if t.view == viewPacks && !t.pk.loaded {
 		return t.loadPacks()
 	}
 	return nil

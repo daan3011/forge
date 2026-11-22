@@ -16,7 +16,7 @@ import (
 // fixtureTranscript parses the transcript parser's own fixture.
 func fixtureTranscript(t *testing.T) transcript.Transcript {
 	t.Helper()
-	tr, err := transcript.NewCache().Load("../../sessions/transcript/testdata/session.jsonl")
+	tr, err := transcript.NewCache(nil).Load("../../sessions/transcript/testdata/session.jsonl", "")
 	if err != nil {
 		t.Fatal(err)
 	}

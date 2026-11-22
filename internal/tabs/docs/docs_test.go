@@ -774,3 +774,18 @@ func TestSnippet(t *testing.T) {
 		}
 	}
 }
+
+// The Cache view's "clear docs index" (P5.3) rebuilds the index.
+func TestReindexDocsMsg(t *testing.T) {
+	if got := (tabs.ReindexDocsMsg{}).TargetTab(); got != Title {
+		t.Fatalf("ReindexDocsMsg targets %q, want %q", got, Title)
+	}
+	f := newFixture(t)
+	tab := f.tab(0, nil)
+	pump(tab, tab.Refresh())
+	writeDoc(t, f.alpha, "added.md", "# Added later\n")
+	pump(tab, func() tea.Msg { return tabs.ReindexDocsMsg{} })
+	if !strings.Contains(tab.View(), "added") {
+		t.Errorf("reindex did not rescan:\n%s", tab.View())
+	}
+}

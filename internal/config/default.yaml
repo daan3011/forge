@@ -246,6 +246,11 @@ keybinds:
   # context_add_files: ["a"]      # pick the pack's files with the fuzzy picker
   # context_delete_pack: ["D"]
   # context_send_pack: ["s"]      # give the pack to a new or running session
+  # context_cache: ["c"]          # switch between memory files and the cache view (P5.3)
+  # context_cache_clear: ["x"]    # clear the selected cache type (or project); asks first
+  # context_cache_prune: ["P"]    # remove entries older than N days; asks first
+  # context_cache_orphans: ["o"]  # remove orphaned worktrees; asks first
+  # context_cache_vacuum: ["V"]   # vacuum forge.db; asks first
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

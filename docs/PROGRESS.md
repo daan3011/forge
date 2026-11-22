@@ -61,7 +61,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - `j/k` move entry by entry; `ctrl+d/u`, `g/G` jump; `f` follows new entries (on when opened); `esc`/`q` closes.
     - The viewer keys have their own modal scope (`transcript`), so `enter` inside the viewer never reaches Attach. Toggle, expand-all, follow and close are palette commands while the viewer is open.
   - **Tests**: table-driven parser tests on a fixture (split blocks, usage dedup, unknown/malformed lines, result pairing, wrappers, chars/4), cache tests (partial line, append, truncate, replace) and `Locate` tests. There are teatest flows for open → expand → expand all → close → enter attaches, live refresh, missing transcript, and the palette commands. `go test ./internal/sessions/transcript -run TestRealFiles -real ~/.claude/projects` parses every local transcript (63 files here, no errors).
-  - **Limits**: subagent transcripts are not shown. The offset cache lives in memory per forge process; `transcript_offset` is left for the persistent cache in P5.3. A resize re-renders the markdown on the next 2 s poll (plain text until then).
+  - **Limits**: subagent transcripts are not shown. Since P5.3 the parsed state persists across restarts in kv_cache (kind `transcript`), not in `sessions.transcript_offset`, which stays unused. A resize re-renders the markdown on the next 2 s poll (plain text until then).
 - [x] P1.7 Session templates — markdown files in `~/.config/forge/templates/` (`$XDG_CONFIG_HOME` respected). The logic is in `internal/templates`; the form steps are in `internal/tabs/sessions/templateflow.go`.
   - **Format**: optional YAML front matter with `name` (default: file name), `description` and `variables`. Each variable is a bare name or `{name, description, default}`. The body is the prompt. `{name}` placeholders use lower-case letters, digits and `_`; `\{` gives a literal brace. Any `{var}` in the body counts, declared or not; declaring one only adds a description and a default.
   - **Defaults**: implement-issue, fix-ci, review-pr, refactor, write-tests and explore are embedded. `EnsureDefaults` writes them only when the folder doesn't exist yet, so edits are kept and deleted defaults stay deleted. Broken files are skipped with an error toast (a warning in `forge new`).
@@ -657,7 +657,39 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Tests**: table tests for parse, names, save / load / delete, `Expand` (literal, `*`, `**`, folders, skipped dirs, dedupe, docs, missing), `matchSegs`, tokens, `WithFiles` and `Prompt`; `LsFiles` against a real repo; the picker (filter, toggle, toggle all, preselect, cancel, scroll). Context tab: list and detail, empty state, edit + reload, send, delete with confirm, add files keeping globs, ls-files error, palette commands, and a teatest flow that creates a pack through the form and picker. Sessions: the form with a pack (exact first prompt and `Docs`, including a copied doc), with a template, without packs, an unknown pack, attaching to a running session, sending from the Context tab to a new or running session, `ResolvePacks`, `SplitPlan` (no copy collisions). CLI: `forge new --pack` and an unknown pack.
   - **Verified live** in a scratch tmux server with scratch config/data dirs on this repo: the Packs view lists a pack with its expanded files and ≈9.2k tokens; the new-session form shows the multi-select under Project; `n` → form → picker over the repo's 480 files, filtering on "keymap", marking one and saving writes `live.yaml` and shows ≈8.8k tokens. A real Claude session with a pack was not started; the exact first prompt is covered by the tests.
   - **Limits**: tokens are bytes/4. Pack files are matched in the main checkout, so a file that only exists on the session's branch isn't picked up. Docs resolve only against the docs folder (`.forge/docs` by default), not the repo root. The picker only edits literal file entries; globs, docs and the preamble are edited in $EDITOR. No default packs per project.
-- [ ] P5.3 Cache controls
+- [x] P5.3 Cache controls: a "Cache" view in the Context tab (`Memory │ Packs │ Cache`, `c` switches). It shows what forge stores, per type and per project, and reclaims it safely. The logic is in `internal/cachectl` (no UI dependencies); the view is in `internal/tabs/context/cache.go`.
+  - **Types**: one row per type with entries, size and oldest entry. `enter` breaks a type down by project; `h`/esc goes back.
+    - GitHub API: kv_cache kind `tab` under `tab:prs:` / `tab:pipelines:` / `pr-detail:`, plus `ci_errors`. A PR detail without a project is mapped through its repo slug.
+    - Plane API: kind `plane`. The Plane project id is mapped to the linked forge project; workspace lists show as "(workspace)".
+    - Transcript index: kind `transcript` (new, see below).
+    - Docs index: in memory, so the size shows as "mem". The count and bytes come from scanning each docs folder with the index's 1 MiB cap.
+    - Artifact copies: kept copies in `.forge/artifacts`.
+    - Worktrees: every project's agent worktrees, with an orphan count from `worktree.Reconcile`.
+    - Archived sessions: events, data dir and any worktree still on disk.
+    - The footer shows forge.db's size, its WAL and its free pages. The status bar shows the total.
+  - **Persistent transcript index**: `transcript.Cache` takes an optional `Persister`. It saves a gzip+JSON snapshot of the parser state with the offset and a hash of the file's first bytes. A restart resumes from the snapshot unless the file was replaced or truncated.
+  - **Actions**: `x` clears the selected type, or the selected project while drilled in. `P` prunes entries older than N days (a form, default 30). `o` removes orphaned worktrees in every project. `V` vacuums the DB, then truncates the WAL. Clearing the docs index only rebuilds it (`tabs.ReindexDocsMsg`); nothing on disk is touched, so it doesn't ask.
+  - **Safety**: every action first plans in a command, then asks with the exact count, size, the affected items and what is kept ("Kept: 3 pinned, 5 linked"). Keep is the default. Apply removes only planned items that still qualify; anything that changed meanwhile is reported as kept. The safety rules:
+    - Artifact copies: only detached ones (worktree gone) that aren't pinned are deleted. Linked, pinned and copies with no source session stay; deleting one on purpose is still `D` in the Artifacts tab.
+    - Worktrees: only orphans under `sessions.worktree_root` are removed, never forced. Dirty ones are skipped (checked up front and again by git); branches are kept.
+    - Archived sessions: purged through the new `Service.Purge`, which removes a clean worktree first. A dirty worktree means the session is skipped. Branches are kept.
+  - **Store**: `Cache.Rows` (filtered by kinds and key prefixes, without loading values), `Cache.DeleteKeys`, `Store.DBStats`, `Events.BytesBySession`, `Artifacts.Forget` (index row, link, title, tags). No migration was needed.
+  - **Keys / palette**: `context_cache` (c), `context_cache_clear` (x), `context_cache_prune` (P), `context_cache_orphans` (o) and `context_cache_vacuum` (V), in the keymap, help, default.yaml and palette. The palette commands switch to the Cache view first. `ui.HumanBytes` replaces the Artifacts tab's private formatter.
+  - **Tests**:
+    - Store: rows/filters, delete keys, DB stats and vacuum, event bytes, Forget.
+    - Transcript: snapshot restore (proven with a marked snapshot), replaced, truncated and corrupt files, Reset.
+    - `Service.Purge`: kept worktree, dirty (nothing deleted, never forced), already removed.
+    - cachectl: project mapping per type, clear per project, prune cut-off, plan vs apply after changes, artifact skip reasons, worktree orphans (dirty, outside the root, dirty only at apply time), archived prune and dirty skip, vacuum, SkipSummary. A tabkit test keeps `CacheKind` and `cachectl.TabKind` in sync.
+    - Context tab: list, drill and back, confirm where Keep does nothing and Clear applies and remeasures, clear per project, prune form and the docs index exception, an empty plan (info, no dialog), docs rebuild, vacuum, palette, no database. A teatest flow clears a type and sees the new numbers.
+    - Docs tab: the reindex message.
+  - **Verified live**:
+    - `cachectl` on a copy of the real forge.db matched sqlite: Plane 8 entries / 3823 B; GitHub 15 entries (8 PR details + 7 list/run rows) / 40.7 KB. Clear and vacuum on the copy freed 3.8 KB and shrank 264 KB to 192 KB.
+    - forge in tmux showed the Cache view with the same numbers, the per-project breakdown, the prune form and the clear confirmation. Both were cancelled; the real DB was not changed.
+  - **Limits**:
+    - Worktree sizes are a full directory walk on each measure, so a big `node_modules` slows the view (it is off the UI loop).
+    - The worktrees of archived sessions count under both Worktrees and Archived sessions, so the status bar total can double count them.
+    - About 1 KB of placeholder rows from early tabs (`tab:home:` …) and app state (palette, notices) aren't listed under any type.
+    - Orphans outside the worktree root are listed but never removed.
 - [ ] P5.4 Usage view
 
 ## Phase 6 — Workflow glue

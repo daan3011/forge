@@ -179,6 +179,9 @@ type Config struct {
 	// Recent remembers the repo a session ran in, so it stays in the
 	// project list (zero-config projects); nil remembers nothing.
 	Recent ProjectRecorder
+	// Transcripts persists the transcript index between runs (P5.3); nil
+	// keeps it in memory only.
+	Transcripts transcript.Persister
 }
 
 // ProjectRecorder remembers that a repo was used at a checkout.
@@ -214,7 +217,7 @@ func New(c Config) *Service {
 	if c.StartupCheck == 0 {
 		c.StartupCheck = DefaultStartupCheck
 	}
-	return &Service{c: c, transcripts: transcript.NewCache()}
+	return &Service{c: c, transcripts: transcript.NewCache(c.Transcripts)}
 }
 
 // Transcript parses the transcript of x (P1.6). Files are parsed
@@ -225,8 +228,12 @@ func (s *Service) Transcript(_ context.Context, x store.Session) (transcript.Tra
 	if err != nil {
 		return transcript.Transcript{}, err
 	}
-	return s.transcripts.Load(path)
+	return s.transcripts.Load(path, x.Project)
 }
+
+// ResetTranscripts drops the in-memory transcript index, after its
+// persisted snapshots were cleared (P5.3).
+func (s *Service) ResetTranscripts() { s.transcripts.Reset() }
 
 // Project returns the configured project called name.
 func (s *Service) Project(name string) (config.Project, bool) {
@@ -1038,6 +1045,38 @@ func (s *Service) Delete(ctx context.Context, x store.Session) error {
 		return nil
 	}
 	return os.RemoveAll(s.SessionDir(x.Name))
+}
+
+// Purge deletes an archived session for good (P5.3): a worktree still on
+// disk is removed first (never forced, so a dirty one returns
+// *worktree.DirtyError and nothing is deleted), then the row, events, links
+// and data dir go. External worktrees are left alone; branches are kept.
+func (s *Service) Purge(ctx context.Context, x store.Session) error {
+	if !x.Archived() {
+		return fmt.Errorf("%w: %s is %s", ErrNotArchived, x.Name, x.Status)
+	}
+	if x.Status != store.StatusArchived {
+		if t, err := Target(x); err == nil {
+			if err := s.c.Tmux.KillWindow(ctx, t); err != nil {
+				return err
+			}
+		}
+		if x.Worktree != "" && !x.WorktreeExternal {
+			p, ok := s.Project(x.Project)
+			if !ok {
+				return fmt.Errorf("%w: %q", ErrUnknownProject, x.Project)
+			}
+			_, err := s.c.Worktrees.Remove(ctx, worktree.RemoveOpts{Project: p, Session: x.Name, Base: x.BaseBranch})
+			if err != nil && !errors.Is(err, worktree.ErrNotFound) {
+				return err
+			}
+		}
+		if err := s.c.Store.ArchiveRemoved(ctx, x.ID, s.c.Now()); err != nil {
+			return err
+		}
+		x.Status = store.StatusArchived
+	}
+	return s.Delete(ctx, x)
 }
 
 // TmuxWindows lists every agent window on forge's tmux server; none when

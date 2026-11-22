@@ -335,7 +335,7 @@ func (t *Tab) compactHeader(a store.Artifact, w int) []string {
 	}
 	lines = append(lines, th.Hint.Render(truncateLeft(filepath.Dir(a.Path), w)))
 
-	parts := []string{a.Type, humanSize(a.Size)}
+	parts := []string{a.Type, ui.HumanBytes(a.Size)}
 	if r := t.pv.res; r != nil && r.Width > 0 && t.pv.key.path == a.Path {
 		parts = append(parts, fmt.Sprintf("%d×%d", r.Width, r.Height))
 	}

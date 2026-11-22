@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -111,4 +112,96 @@ func (r *Cache) Stats(ctx context.Context) ([]CacheStat, error) {
 		out = append(out, c)
 	}
 	return out, wrap("cache stats", rows.Err())
+}
+
+// CacheRow describes one cached entry without its value (P5.3).
+type CacheRow struct {
+	Key       string
+	Kind      string
+	Project   string
+	Bytes     int64
+	FetchedAt time.Time
+}
+
+// CacheFilter selects cache rows: a row matches when its kind is in Kinds
+// and, if KeyPrefixes is set, its key starts with one of them. An empty
+// filter matches every row.
+type CacheFilter struct {
+	Kinds       []string
+	KeyPrefixes []string
+}
+
+// Rows lists the entries matching f, oldest first, without loading values.
+func (r *Cache) Rows(ctx context.Context, f CacheFilter) ([]CacheRow, error) {
+	q := `SELECT key, kind, project, length(value), fetched_at FROM kv_cache`
+	var (
+		where []string
+		args  []any
+	)
+	if len(f.Kinds) > 0 {
+		where = append(where, `kind IN (`+placeholders(len(f.Kinds))+`)`)
+		for _, k := range f.Kinds {
+			args = append(args, k)
+		}
+	}
+	if len(f.KeyPrefixes) > 0 {
+		var ors []string
+		for _, p := range f.KeyPrefixes {
+			ors = append(ors, `substr(key, 1, ?) = ?`)
+			args = append(args, len(p), p)
+		}
+		where = append(where, `(`+strings.Join(ors, ` OR `)+`)`)
+	}
+	if len(where) > 0 {
+		q += ` WHERE ` + strings.Join(where, ` AND `)
+	}
+	q += ` ORDER BY fetched_at, key`
+	rows, err := r.s.r.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, wrap("cache rows", err)
+	}
+	defer rows.Close()
+	var out []CacheRow
+	for rows.Next() {
+		var (
+			c       CacheRow
+			fetched int64
+		)
+		if err := rows.Scan(&c.Key, &c.Kind, &c.Project, &c.Bytes, &fetched); err != nil {
+			return nil, wrap("cache rows", err)
+		}
+		c.FetchedAt = time.UnixMilli(fetched)
+		out = append(out, c)
+	}
+	return out, wrap("cache rows", rows.Err())
+}
+
+// DeleteKeys removes the given keys in one transaction and returns how many
+// existed.
+func (r *Cache) DeleteKeys(ctx context.Context, keys []string) (int64, error) {
+	if len(keys) == 0 {
+		return 0, nil
+	}
+	tx, err := r.s.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, wrap("cache delete keys", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var n int64
+	for _, k := range keys {
+		res, err := tx.ExecContext(ctx, `DELETE FROM kv_cache WHERE key = ?`, k)
+		if err != nil {
+			return 0, wrap("cache delete keys", err)
+		}
+		m, err := res.RowsAffected()
+		if err != nil {
+			return 0, wrap("cache delete keys", err)
+		}
+		n += m
+	}
+	return n, wrap("cache delete keys", tx.Commit())
+}
+
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }

@@ -34,9 +34,10 @@ var (
 // `forge hook`) hit the busy timeout. Reads use a separate pool (r), which WAL
 // lets run alongside the writer.
 type Store struct {
-	w   *sql.DB
-	r   *sql.DB
-	now func() time.Time
+	w    *sql.DB
+	r    *sql.DB
+	now  func() time.Time
+	path string
 }
 
 // Option configures Open.
@@ -64,7 +65,7 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 		return nil, err
 	}
 	w.SetMaxOpenConns(1)
-	s := &Store{w: w, now: time.Now}
+	s := &Store{w: w, now: time.Now, path: path}
 	for _, o := range opts {
 		o(s)
 	}
@@ -110,12 +111,45 @@ func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
 	return currentVersion(ctx, s.r)
 }
 
-// Vacuum rebuilds the database file, reclaiming free pages.
+// Vacuum rebuilds the database file, reclaiming free pages, then truncates
+// the WAL the rebuild went through.
 func (s *Store) Vacuum(ctx context.Context) error {
 	if _, err := s.w.ExecContext(ctx, "VACUUM"); err != nil {
 		return fmt.Errorf("store: vacuum: %w", err)
 	}
+	if _, err := s.w.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return fmt.Errorf("store: vacuum checkpoint: %w", err)
+	}
 	return nil
+}
+
+// DBStats describes the database file (P5.3).
+type DBStats struct {
+	Path string
+	// Bytes is page_count * page_size; Free is the part held by free pages,
+	// which VACUUM gives back.
+	Bytes int64
+	Free  int64
+	// WAL is the size of the -wal file (0 when absent).
+	WAL int64
+}
+
+// DBStats returns the database size, its free pages and the WAL size.
+func (s *Store) DBStats(ctx context.Context) (DBStats, error) {
+	var pages, size, free int64
+	for _, p := range []struct {
+		q string
+		v *int64
+	}{{"PRAGMA page_count", &pages}, {"PRAGMA page_size", &size}, {"PRAGMA freelist_count", &free}} {
+		if err := s.r.QueryRowContext(ctx, p.q).Scan(p.v); err != nil {
+			return DBStats{}, fmt.Errorf("store: db stats: %w", err)
+		}
+	}
+	st := DBStats{Path: s.path, Bytes: pages * size, Free: free * size}
+	if fi, err := os.Stat(s.path + "-wal"); err == nil {
+		st.WAL = fi.Size()
+	}
+	return st, nil
 }
 
 // Sessions returns the sessions repository.

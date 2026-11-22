@@ -80,7 +80,7 @@ func showPacks(t *testing.T, tab *Tab) {
 	t.Helper()
 	pumpAll(tab, tab.Refresh())
 	send(tab, "p")
-	if !tab.pk.on || !tab.pk.loaded {
+	if tab.view != viewPacks || !tab.pk.loaded {
 		t.Fatal("packs view not showing")
 	}
 }
@@ -210,8 +210,8 @@ func TestPackCommandsShowPacksView(t *testing.T) {
 		t.Fatal("no context_new_pack command")
 	}
 	pumpAll(tab, run())
-	if !tab.pk.on || !tab.CapturingInput() {
-		t.Errorf("on=%v capturing=%v", tab.pk.on, tab.CapturingInput())
+	if tab.view != viewPacks || !tab.CapturingInput() {
+		t.Errorf("on=%v capturing=%v", tab.view == viewPacks, tab.CapturingInput())
 	}
 }
 
