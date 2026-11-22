@@ -14,6 +14,7 @@ import (
 
 	"github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
+	"github.com/daan3011/forge/internal/chafa"
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
@@ -22,6 +23,7 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/refresh"
+	"github.com/daan3011/forge/internal/rsvg"
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/tabs"
@@ -93,6 +95,11 @@ type Deps struct {
 	ArtifactWatcher artifacts.Watcher
 	// Files opens local files (artifacts) in their default app; nil can't.
 	Files browser.FileOpener
+	// Chafa draws image previews as text art when the terminal has no
+	// graphics (P4.7); nil means none.
+	Chafa chafa.Renderer
+	// Rsvg rasterises SVGs for previews (P4.7); nil shows SVGs as text.
+	Rsvg rsvg.Rasterizer
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

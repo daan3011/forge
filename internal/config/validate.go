@@ -154,6 +154,10 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if c.Artifacts.Preview != "" && !slices.Contains(PreviewModes, c.Artifacts.Preview) {
+		add("artifacts.preview", "must be one of %s; got %q", strings.Join(PreviewModes, ", "), c.Artifacts.Preview)
+	}
+
 	switch c.UI.Animations {
 	case AnimationsFull, AnimationsReduced, AnimationsOff:
 	default:

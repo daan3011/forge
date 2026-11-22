@@ -16,12 +16,12 @@ import (
 
 // ConfigVersion is the version of the embedded default config, written in
 // its first line as "# forge-tmux-config v<N>". v2 added M-c (quick
-// capture, P3.5).
-const ConfigVersion = 2
+// capture, P3.5), v3 allow-passthrough (image previews, P4.7).
+const ConfigVersion = 3
 
 // ConfigNews is what ConfigVersion added, for the "your config is old"
 // notice.
-const ConfigNews = "Alt+c capture"
+const ConfigNews = "image previews (allow-passthrough)"
 
 // ConfigVersionOf reads the version header of the config at path; ok is
 // false when the file is missing, unreadable or has no header.

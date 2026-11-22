@@ -658,3 +658,25 @@ func TestTableColumnRender(t *testing.T) {
 		t.Errorf("filter matched %d rows", n)
 	}
 }
+
+// TestSplitPaneRightOrigin checks RightOrigin against the rendered view:
+// the right pane's first content cell is where it says (P4.7 places sixel
+// images there).
+func TestSplitPaneRightOrigin(t *testing.T) {
+	s := NewSplitPane(NewTheme(true, nil))
+	s.SetSize(100, 10)
+	x, y, ok := s.RightOrigin()
+	if !ok {
+		t.Fatal("not collapsed at 100 columns")
+	}
+	rw, _ := s.RightSize()
+	view := s.View("", "R"+strings.Repeat(" ", rw-1), true)
+	line := ansi.Strip(strings.Split(view, "\n")[y])
+	if got := ansi.Cut(line, x, x+1); got != "R" {
+		t.Fatalf("cell (%d,%d) = %q in %q", x, y, got, line)
+	}
+	s.SetSize(40, 10)
+	if _, _, ok := s.RightOrigin(); ok {
+		t.Fatal("collapsed pane has no origin")
+	}
+}

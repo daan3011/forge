@@ -491,7 +491,11 @@ type host struct {
 
 	mu    sync.Mutex
 	frame string
+	raw   string // the last frame with its escape codes
 }
+
+// visibleMsg makes the host show the tab (the root model's SetVisible).
+type visibleMsg struct{}
 
 func (h *host) Init() tea.Cmd { return h.tab.Init() }
 
@@ -503,6 +507,8 @@ func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return h, tea.Quit
 		}
+	case visibleMsg:
+		return h, h.tab.SetVisible(true)
 	}
 	_, cmd := h.tab.Update(msg)
 	return h, cmd
@@ -511,7 +517,7 @@ func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (h *host) View() tea.View {
 	v := h.tab.View()
 	h.mu.Lock()
-	h.frame = ansi.Strip(v)
+	h.frame, h.raw = ansi.Strip(v), v
 	h.mu.Unlock()
 	return tea.NewView(v)
 }
@@ -528,6 +534,35 @@ func (h *host) wait(t *testing.T, want string) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %q\nframe:\n%s", want, frame)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitRaw waits for a frame whose escape-coded text contains want.
+func (h *host) waitRaw(t *testing.T, want string) {
+	t.Helper()
+	h.waitFor(t, "raw "+want, func(_, raw string) bool { return strings.Contains(raw, want) })
+}
+
+// waitNoRaw waits for a frame without want.
+func (h *host) waitNoRaw(t *testing.T, want string) {
+	t.Helper()
+	h.waitFor(t, "no "+want, func(_, raw string) bool { return !strings.Contains(raw, want) })
+}
+
+func (h *host) waitFor(t *testing.T, what string, ok func(frame, raw string) bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		h.mu.Lock()
+		frame, raw := h.frame, h.raw
+		h.mu.Unlock()
+		if ok(frame, raw) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s\nframe:\n%s", what, frame)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
