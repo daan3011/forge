@@ -29,6 +29,7 @@ type Config struct {
 	Plane          Plane               `yaml:"plane"`
 	Sessions       Sessions            `yaml:"sessions"`
 	Artifacts      Artifacts           `yaml:"artifacts"`
+	Context        Context             `yaml:"context"`
 	UI             UI                  `yaml:"ui"`
 	Keybinds       map[string][]string `yaml:"keybinds"`
 	CustomCommands []CustomCommand     `yaml:"custom_commands"`
@@ -196,6 +197,16 @@ type Artifacts struct {
 	Preview string `yaml:"preview"`
 }
 
+// Context holds the Context tab settings (P5.1).
+type Context struct {
+	// TokenBudget is the rough token count (chars/4) of startup memory
+	// files above which the Context tab warns; 0 turns the warning off.
+	TokenBudget int `yaml:"token_budget"`
+}
+
+// DefaultTokenBudget is context.token_budget's default.
+const DefaultTokenBudget = 8000
+
 // PreviewModes are the valid artifacts.preview values.
 var PreviewModes = []string{"auto", "kitty", "sixel", "chafa", "text", "off"}
 
@@ -272,6 +283,7 @@ func Default() *Config {
 			ArchiveCleanup:     CleanupAsk,
 		},
 		Artifacts: Artifacts{Preview: "auto"},
+		Context:   Context{TokenBudget: DefaultTokenBudget},
 		UI:        UI{Animations: AnimationsFull},
 	}
 }

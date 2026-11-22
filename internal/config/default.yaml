@@ -103,6 +103,12 @@ artifacts:
   # `set -g allow-passthrough on`.
   preview: auto
 
+context:
+  # Rough token budget (characters / 4) for the memory files Claude Code
+  # loads at session start (CLAUDE.md, rules, imports, MEMORY.md). The
+  # Context tab turns the total amber above it; 0 turns the warning off.
+  token_budget: 8000
+
 ui:
   # full | reduced | off
   animations: full
@@ -227,6 +233,13 @@ keybinds:
   # artifacts_filters: ["f"]       # filter by tag / pinned only
   # artifacts_pinned_only: ["P"]   # toggle pinned only
   # artifacts_clear_filters: ["x"] # drop the artifact filters
+  # Context tab (P5.1)
+  # context_edit: ["e"]            # open (or create) the memory file in $EDITOR
+  # context_worktrees: ["i"]       # toggle which worktrees inherit which files
+  # context_open: ["enter", "l", "right"]  # focus the rendered file
+  # context_back: ["h", "left"]    # back to the list (esc too)
+  # context_detail_down: ["J"]
+  # context_detail_up: ["K"]
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
