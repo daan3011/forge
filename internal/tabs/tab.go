@@ -106,6 +106,14 @@ type KVStore interface {
 	Put(ctx context.Context, key, kind, project string, value []byte, ttl time.Duration) error
 }
 
+// ArtifactIndex is the artifact gallery's index (P4.5). *store.Artifacts
+// satisfies it.
+type ArtifactIndex interface {
+	Sync(ctx context.Context, roots []string, found []store.Artifact) error
+	List(ctx context.Context, project string) ([]store.Artifact, error)
+	Delete(ctx context.Context, paths []string) error
+}
+
 // InputCapturer is implemented by tabs that can take text input (a filter,
 // a form). While CapturingInput is true the root model only handles
 // force-quit and forwards every other key to the tab.

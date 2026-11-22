@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/daan3011/forge/internal/app"
+	"github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/clipboard"
 	"github.com/daan3011/forge/internal/config"
@@ -124,6 +125,7 @@ func newRootCmd(d deps) *cobra.Command {
 				app.WithPulls(githubPulls),
 				app.WithClipboard(clipboard.Exec{}), app.WithCheckout(newCheckout(cfg)),
 				app.WithDelta(delta.Exec{Dark: true}),
+				app.WithArtifacts(st.Artifacts()), app.WithFiles(browser.Exec{}),
 				app.WithAlerts(alert.Checker{
 					Store: st.Sessions(), Notifier: d.notifications(), Watcher: d.tmuxWatcher(),
 					Policy: alert.PolicyFrom(cfg.Sessions),
@@ -155,6 +157,12 @@ func newRootCmd(d deps) *cobra.Command {
 			} else {
 				defer func() { _ = w.Close() }()
 				opts = append(opts, app.WithDocsWatcher(w))
+			}
+			if w, err := artifacts.NewWatcher(0); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: artifacts won't appear live:", err)
+			} else {
+				defer func() { _ = w.Close() }()
+				opts = append(opts, app.WithArtifactWatcher(w))
 			}
 			if n, ok := tmuxNotice(); ok {
 				opts = append(opts, n)

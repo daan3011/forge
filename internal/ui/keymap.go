@@ -27,6 +27,8 @@ type KeyMap struct {
 	Plane PlaneKeys
 	// Docs are the Docs tab's actions (P4.1).
 	Docs DocKeys
+	// Artifacts are the Artifacts tab's actions (P4.5).
+	Artifacts ArtifactKeys
 	// Transcript drives the transcript viewer (P1.6), which takes over
 	// the Sessions tab while open.
 	Transcript TranscriptKeys
@@ -195,6 +197,13 @@ type DocKeys struct {
 	Decision   key.Binding // log a decision (P4.4)
 	Decisions  key.Binding // toggle the decisions view
 	Supersede  key.Binding // mark the selected decision superseded by a newer one
+}
+
+// ArtifactKeys are the Artifacts tab's actions (P4.5).
+type ArtifactKeys struct {
+	Open     key.Binding // open in the default app (browser for HTML)
+	CopyPath key.Binding // copy the artifact's path
+	Keep     key.Binding // copy it into the project's .forge/artifacts
 }
 
 // LogKeys are active while the job log viewer is open; nothing else (not
@@ -419,6 +428,11 @@ func DefaultKeyMap() *KeyMap {
 			Decisions:  bind("decisions view", "d"),
 			Supersede:  bind("mark superseded", "S"),
 		},
+		Artifacts: ArtifactKeys{
+			Open:     bind("open", "o"),
+			CopyPath: bind("copy path", "y"),
+			Keep:     bind("keep a copy", "c"),
+		},
 		Transcript: TranscriptKeys{
 			Up:        bind("prev entry", "k", "up"),
 			Down:      bind("next entry", "j", "down"),
@@ -514,6 +528,7 @@ const (
 	scopePipes    = "tab:pipelines"
 	scopePlane    = "tab:plane"
 	scopeDocs     = "tab:docs"
+	scopeArts     = "tab:artifacts"
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
 	scopeTranscript = "transcript"
@@ -532,7 +547,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
-	pp, lg, pl, cp, dc := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs
+	pp, lg, pl, cp, dc, ar := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs, &k.Artifacts
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -630,6 +645,9 @@ func (k *KeyMap) actions() []action {
 		{"docs_decision", scopeDocs, &dc.Decision},
 		{"docs_decisions", scopeDocs, &dc.Decisions},
 		{"docs_supersede", scopeDocs, &dc.Supersede},
+		{"artifacts_open", scopeArts, &ar.Open},
+		{"artifacts_copy_path", scopeArts, &ar.CopyPath},
+		{"artifacts_keep", scopeArts, &ar.Keep},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

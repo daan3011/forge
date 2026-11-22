@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	artfs "github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
@@ -107,6 +108,10 @@ type Model struct {
 	planeErr     error               // why plane is nil
 	docsWatcher  docfs.Watcher       // from WithDocsWatcher
 
+	artifactIdx   tabs.ArtifactIndex // from WithArtifacts
+	artifactWatch artfs.Watcher      // from WithArtifactWatcher
+	files         browser.FileOpener // from WithFiles
+
 	alerts        *alert.Checker // from WithAlerts; nil: no notifications
 	waiting       int            // sessions waiting for input, every project
 	alertsFailing bool           // the last waiting check failed
@@ -143,6 +148,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
 		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,
+		Artifacts: m.artifactIdx, ArtifactWatcher: m.artifactWatch, Files: m.files,
 	}
 	m.tabs = []tabs.Tab{
 		home.New(d),

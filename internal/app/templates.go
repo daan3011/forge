@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	artfs "github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
@@ -14,6 +15,7 @@ import (
 	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/plane"
+	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 )
@@ -34,6 +36,22 @@ func WithBrowser(b browser.Opener) Option {
 // a docs folder change (P4.1). Without it the tab reloads on refresh only.
 func WithDocsWatcher(w docfs.Watcher) Option {
 	return func(m *Model) { m.docsWatcher = w }
+}
+
+// WithArtifacts sets the artifact index the Artifacts tab keeps (P4.5).
+func WithArtifacts(idx tabs.ArtifactIndex) Option {
+	return func(m *Model) { m.artifactIdx = idx }
+}
+
+// WithArtifactWatcher makes the Artifacts tab rescan when an artifact
+// changes (P4.5).
+func WithArtifactWatcher(w artfs.Watcher) Option {
+	return func(m *Model) { m.artifactWatch = w }
+}
+
+// WithFiles sets how local files (artifacts) are opened.
+func WithFiles(f browser.FileOpener) Option {
+	return func(m *Model) { m.files = f }
 }
 
 // WithGitHub sets the client the PRs tab searches and fetches details with (P2.1, P2.2). Without it
