@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/ui/termcaps"
+	"github.com/daan3011/forge/internal/usage"
 )
 
 // SessionPingMsg tells the root model that `forge hook` recorded an event,
@@ -148,6 +149,17 @@ type CacheControl interface {
 	Stats(ctx context.Context) (cachectl.Report, error)
 	Plan(ctx context.Context, op cachectl.Op) (cachectl.Plan, error)
 	Apply(ctx context.Context, p cachectl.Plan) (cachectl.Result, error)
+}
+
+// UsageSource scans Claude Code transcripts for token usage and reports it
+// (P5.4). *usage.Service satisfies it.
+type UsageSource interface {
+	Scan(ctx context.Context) (usage.ScanResult, error)
+	// Report covers the configured days; project filters the chart and the
+	// top sessions ("" means every project).
+	Report(ctx context.Context, project string) (usage.Report, error)
+	// Session is one Claude Code session's all-time totals.
+	Session(ctx context.Context, claudeSessionID string) (usage.Totals, error)
 }
 
 // ReindexDocsMsg asks the Docs tab to rebuild its in-memory index (the

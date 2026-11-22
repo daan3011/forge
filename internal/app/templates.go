@@ -54,6 +54,12 @@ func WithCaches(c tabs.CacheControl) Option {
 	return func(m *Model) { m.caches = c }
 }
 
+// WithUsage gives the Context tab's Usage view and the Sessions tab's
+// totals their token usage source (P5.4).
+func WithUsage(u tabs.UsageSource) Option {
+	return func(m *Model) { m.usage = u }
+}
+
 // WithArtifactWatcher makes the Artifacts tab rescan when an artifact
 // changes (P4.5).
 func WithArtifactWatcher(w artfs.Watcher) Option {

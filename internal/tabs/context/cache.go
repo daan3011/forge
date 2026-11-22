@@ -29,6 +29,7 @@ const (
 	viewMemory section = iota
 	viewPacks
 	viewCache
+	viewUsage
 )
 
 // cacheTimeout bounds measuring (it walks worktrees) and each action.

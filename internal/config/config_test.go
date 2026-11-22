@@ -200,3 +200,19 @@ func TestPlaneBlockedFromYAML(t *testing.T) {
 		t.Fatalf("defaults = %v / %v", d.BlockedLabels, d.BlockedStates)
 	}
 }
+
+// TestUsagePricesMerge: prices from the file are added to the shipped
+// placeholders.
+func TestUsagePricesMerge(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "usage:\n  prices:\n    claude-opus-5-5: {input: 1.5, output: 7}\n    mine: {cache_read: 0.1}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Usage.Prices
+	if p["claude-opus-5-5"] != (Price{Input: 1.5, Output: 7}) || p["mine"] != (Price{CacheRead: 0.1}) || !p["claude-haiku-5-5"].IsZero() {
+		t.Errorf("prices = %+v", p)
+	}
+	if cfg.Usage.Days != DefaultUsageDays || cfg.Usage.TopSessions != DefaultUsageTopSessions {
+		t.Errorf("usage = %+v", cfg.Usage)
+	}
+}

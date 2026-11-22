@@ -31,3 +31,17 @@ func HumanBytes(n int64) string {
 	}
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
 }
+
+// USD formats an estimated cost: "$0.42", "$12.30", "$1234"; amounts under
+// a cent show as "<$0.01".
+func USD(v float64) string {
+	switch {
+	case v <= 0:
+		return "$0"
+	case v < 0.01:
+		return "<$0.01"
+	case v < 1000:
+		return fmt.Sprintf("$%.2f", v)
+	}
+	return fmt.Sprintf("$%.0f", v)
+}

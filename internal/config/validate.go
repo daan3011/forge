@@ -162,6 +162,19 @@ func (c *Config) Validate() error {
 		add("context.token_budget", "must be 0 (no warning) or more, got %d", c.Context.TokenBudget)
 	}
 
+	if c.Usage.Days < 1 || c.Usage.Days > MaxUsageDays {
+		add("usage.days", "must be between 1 and %d, got %d", MaxUsageDays, c.Usage.Days)
+	}
+	if c.Usage.TopSessions < 1 {
+		add("usage.top_sessions", "must be 1 or more, got %d", c.Usage.TopSessions)
+	}
+	for _, model := range sortedKeys(c.Usage.Prices) {
+		p := c.Usage.Prices[model]
+		if p.Input < 0 || p.Output < 0 || p.CacheRead < 0 || p.CacheWrite < 0 {
+			add("usage.prices."+model, "prices must be 0 (unpriced) or more")
+		}
+	}
+
 	switch c.UI.Animations {
 	case AnimationsFull, AnimationsReduced, AnimationsOff:
 	default:

@@ -132,6 +132,7 @@ func newRootCmd(d deps) *cobra.Command {
 				app.WithDelta(delta.Exec{Dark: true}),
 				app.WithArtifacts(st.Artifacts()), app.WithFiles(browser.Exec{}),
 				app.WithCaches(newCaches(cfg, st, svc)),
+				app.WithUsage(newUsage(cfg, st)),
 				app.WithPreviewTools(chafa.Exec{}, rsvg.Exec{}),
 				app.WithCapsDetector(previewDetector(cfg)),
 				app.WithAlerts(alert.Checker{

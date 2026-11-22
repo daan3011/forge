@@ -114,6 +114,7 @@ type Model struct {
 
 	artifactIdx   tabs.ArtifactIndex // from WithArtifacts
 	caches        tabs.CacheControl  // from WithCaches
+	usage         tabs.UsageSource   // from WithUsage
 	artifactWatch artfs.Watcher      // from WithArtifactWatcher
 	files         browser.FileOpener // from WithFiles
 
@@ -159,6 +160,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
 		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,
 		Artifacts: m.artifactIdx, ArtifactWatcher: m.artifactWatch, Files: m.files, Caches: m.caches,
+		Usage: m.usage,
 		Chafa: m.chafa, Rsvg: m.rsvg,
 	}
 	m.tabs = []tabs.Tab{
