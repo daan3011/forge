@@ -164,6 +164,7 @@ func newRootCmd(d deps) *cobra.Command {
 			if dir, err := packs.Dir(); err == nil {
 				opts = append(opts, app.WithPacks(dir))
 			}
+			opts = append(opts, app.WithNotes(config.NotesDir()))
 			if w, err := docs.NewWatcher(0); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: docs won't reload live:", err)
 			} else {

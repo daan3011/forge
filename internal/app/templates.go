@@ -33,6 +33,11 @@ func WithPacks(dir string) Option {
 	return func(m *Model) { m.packsDir = dir }
 }
 
+// WithNotes sets the daily notes folder (P6.2); Home shows today's note.
+func WithNotes(dir string) Option {
+	return func(m *Model) { m.notesDir = dir }
+}
+
 // WithBrowser gives tabs a way to open URLs (linked issues and PRs).
 func WithBrowser(b browser.Opener) Option {
 	return func(m *Model) { m.browser = b }

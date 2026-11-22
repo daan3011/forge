@@ -156,6 +156,7 @@ func TestCtrlPInPaletteMovesSelection(t *testing.T) {
 func TestCtrlPWhileFiltering(t *testing.T) {
 	var model tea.Model = mustNew(t, twoProjects())
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	model, _ = model.Update(press("2")) // PRs: Home has no filter
 	model, _ = model.Update(press("/"))
 	if !model.(Model).capturingInput() {
 		t.Fatal("/ should start the filter")

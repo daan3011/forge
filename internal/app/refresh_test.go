@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -231,12 +232,16 @@ func TestSpinnerFollowsActiveFetch(t *testing.T) {
 
 // TestRestartShowsCacheThenRefreshes is the P0.8 "done when": a restart
 // shows the cached rows at once with their age, then the fresh fetch lands.
+// Home (P6.1) loads its PR searches this way.
 func TestRestartShowsCacheThenRefreshes(t *testing.T) {
-	cached, _ := json.Marshal([][]string{{"review", "cached: from last run", "1h"}})
-	fs := newFakeStore(map[string]string{"tab:home:all": string(cached)})
-	fs.at["tab:home:all"] = time.Now().Add(-3 * time.Minute)
+	const key = "tab:home:all:reviews"
+	cached, _ := json.Marshal(github.SearchResult{PRs: []github.PR{
+		{Repo: "daan/forge", Number: 7, Title: "cached: from last run", State: github.StateOpen},
+	}})
+	fs := newFakeStore(map[string]string{key: string(cached)})
+	fs.at[key] = time.Now().Add(-3 * time.Minute)
 
-	m, err := New(config.Default(), WithStore(fs), withFetchDelay(400*time.Millisecond))
+	m, err := New(config.Default(), WithStore(fs), WithGitHub(slowGitHub{d: 400 * time.Millisecond}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +250,7 @@ func TestRestartShowsCacheThenRefreshes(t *testing.T) {
 		return bytes.Contains(out, []byte("cached: from last run"))
 	}, teatest.WithDuration(2*time.Second))
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
-		return bytes.Contains(out, []byte("sample: main failing on lint"))
+		return bytes.Contains(out, []byte("Add retry to webhook"))
 	}, teatest.WithDuration(3*time.Second))
 	tm.Send(press("q"))
 
@@ -254,7 +259,19 @@ func TestRestartShowsCacheThenRefreshes(t *testing.T) {
 	if !strings.Contains(view, "just now") || strings.Contains(view, "cached: from last run") {
 		t.Fatalf("fresh data should replace the cache:\n%s", view)
 	}
-	if fs.putCount("tab:home:all") == 0 {
+	if fs.putCount(key) == 0 {
 		t.Fatal("fresh rows were not written back to the cache")
 	}
+}
+
+// slowGitHub is fakeGitHub with slow searches, so the cached copy shows
+// first.
+type slowGitHub struct {
+	fakeGitHub
+	d time.Duration
+}
+
+func (g slowGitHub) SearchPRs(ctx context.Context, q string, n int) (github.SearchResult, error) {
+	time.Sleep(g.d)
+	return g.fakeGitHub.SearchPRs(ctx, q, n)
 }

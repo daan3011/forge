@@ -99,6 +99,7 @@ type Model struct {
 	live         <-chan live.Ping
 	templatesDir string              // from WithTemplates
 	packsDir     string              // from WithPacks
+	notesDir     string              // from WithNotes
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
 	github       github.PRClient     // from WithGitHub
@@ -155,7 +156,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 	d := tabkit.Deps{
 		Theme: theme, Keys: keys, Store: m.store, FetchDelay: m.fetchDelay, Anim: m.anim,
 		Config: cfg, Sessions: m.sessions, Live: m.live,
-		TemplatesDir: m.templatesDir, PacksDir: m.packsDir, Providers: m.providers, Browser: m.browser,
+		TemplatesDir: m.templatesDir, PacksDir: m.packsDir, NotesDir: m.notesDir, Providers: m.providers, Browser: m.browser,
 		GitHub: m.github, Checkout: m.checkout, Clipboard: m.clipboard, Delta: m.delta,
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
 		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,
@@ -392,6 +393,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tabs.ShowRunsMsg:
 		return m.handleShowRuns(msg)
+
+	case tabs.AttachSessionMsg:
+		return m.handleAttachSession(msg)
+
+	case tabs.PRActionMsg:
+		return m.handlePRAction(msg)
+
+	case tabs.SelectEntityMsg:
+		return m.handleSelectEntity(msg)
 
 	case captureCatalogMsg:
 		return m.handleCaptureCatalog(msg)
@@ -746,6 +756,52 @@ func (m Model) handleShowRuns(msg tabs.ShowRunsMsg) (Model, tea.Cmd) {
 		return m, tea.Batch(switchCmd, show)
 	}
 	return m, func() tea.Msg { return ui.ErrMsg{Err: errors.New("pipelines are unavailable")} }
+}
+
+// handleAttachSession switches to the tab that owns sessions and attaches
+// to the named one (tabs.AttachSession, P6.1).
+func (m Model) handleAttachSession(msg tabs.AttachSessionMsg) (Model, tea.Cmd) {
+	for i, t := range m.tabs {
+		if sg, ok := t.(tabs.SessionGoer); ok {
+			return m.attachIn(i, sg, msg.Name)
+		}
+	}
+	return m, func() tea.Msg { return ui.ErrMsg{Err: errors.New("sessions are unavailable")} }
+}
+
+// attachIn switches to tab i and attaches to the session name there; the
+// session picker and Home share it.
+func (m Model) attachIn(i int, sg tabs.SessionGoer, name string) (Model, tea.Cmd) {
+	m, switchCmd := m.switchTo(i)
+	return m, tea.Batch(switchCmd, sg.AttachSession(name))
+}
+
+// handlePRAction switches to the tab that lists PRs and runs the action
+// there (tabs.RunPRAction, P6.1).
+func (m Model) handlePRAction(msg tabs.PRActionMsg) (Model, tea.Cmd) {
+	for i, t := range m.tabs {
+		pa, ok := t.(tabs.PRActioner)
+		if !ok {
+			continue
+		}
+		m, switchCmd := m.switchTo(i)
+		return m, tea.Batch(switchCmd, pa.PRAction(msg.PR, msg.Action))
+	}
+	return m, func() tea.Msg { return ui.ErrMsg{Err: errors.New("PRs are unavailable")} }
+}
+
+// handleSelectEntity switches to the tab titled msg.Tab and selects the
+// entity there, like a palette result (tabs.SelectEntity, P6.1).
+func (m Model) handleSelectEntity(msg tabs.SelectEntityMsg) (Model, tea.Cmd) {
+	i := m.tabIndex(msg.Tab)
+	if i < 0 {
+		return m, nil
+	}
+	m, switchCmd := m.switchTo(i)
+	if ep, ok := m.tabs[i].(tabs.EntityProvider); ok {
+		return m, tea.Batch(switchCmd, ep.Select(msg.ID))
+	}
+	return m, switchCmd
 }
 
 // handleRateLimit records the GitHub rate limit and backs the GitHub

@@ -75,14 +75,21 @@ func (m Model) handleWaiting(msg waitingMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleSessionPing recounts the waiting sessions at once and, while forge
-// isn't focused, notifies about errors and finished turns. Waiting itself is
-// notified by checkWaiting once it lasts notify_after_minutes.
+// handleSessionPing tells the session watchers (Home), recounts the waiting
+// sessions at once and, while forge isn't focused, notifies about errors and
+// finished turns. Waiting itself is notified by checkWaiting once it lasts
+// notify_after_minutes.
 func (m Model) handleSessionPing(msg tabs.SessionPingMsg) (Model, tea.Cmd) {
-	if m.alerts == nil {
-		return m, nil
+	var cmds []tea.Cmd
+	for _, t := range m.tabs { // tabs showing sessions they don't own (Home)
+		if w, ok := t.(tabs.SessionWatcher); ok {
+			cmds = append(cmds, w.SessionsChanged())
+		}
 	}
-	cmds := []tea.Cmd{m.checkWaiting()}
+	if m.alerts == nil {
+		return m, tea.Batch(cmds...)
+	}
+	cmds = append(cmds, m.checkWaiting())
 	p := msg.Ping
 	kind, ok := alert.ForEvent(p.Event, store.Status(p.Status), p.Changed)
 	if ok && kind != alert.KindWaiting && !m.focused && p.Session != "" {

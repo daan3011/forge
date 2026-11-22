@@ -444,6 +444,26 @@ func (t *Theme) LinkState(state string) lipgloss.Style {
 	return s.Foreground(t.Muted)
 }
 
+// SourceIcon is the icon and style of where a Home row comes from
+// ("agent", "pr", "plane", "artifact", "note"), using the palette's group
+// glyphs so the two read alike.
+func (t *Theme) SourceIcon(kind string) (string, lipgloss.Style) {
+	s := lipgloss.NewStyle()
+	switch kind {
+	case "agent":
+		return PaletteIcon("Sessions"), s.Foreground(t.Highlight).Bold(true)
+	case "pr":
+		return PaletteIcon("PRs"), s.Foreground(t.Accent).Bold(true)
+	case "plane":
+		return PaletteIcon("Issues"), s.Foreground(t.Link).Bold(true)
+	case "artifact":
+		return PaletteIcon("Artifacts"), s.Foreground(t.Link)
+	case "note":
+		return PaletteIcon("Docs"), s.Foreground(t.Muted)
+	}
+	return "•", s.Foreground(t.Muted)
+}
+
 // PRIcon is a PR's state icon and its style: open, draft, merged or closed
 // (the github.State* values).
 func (t *Theme) PRIcon(state string) (string, lipgloss.Style) {

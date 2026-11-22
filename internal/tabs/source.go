@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/store"
 )
@@ -115,4 +116,76 @@ type PlaneLinkedMsg struct{ Links []PlaneLink }
 // *store.Projects satisfies it.
 type ProjectLinker interface {
 	SetPlane(ctx context.Context, repo, id string) error
+}
+
+// AttachSessionMsg asks the tab that owns sessions to attach to the named
+// session (resuming it if needed), as the "Go to session…" picker does. The
+// root model switches to that tab first (Home's enter on an agent, P6.1).
+type AttachSessionMsg struct{ Name string }
+
+// AttachSession attaches to the named session.
+func AttachSession(name string) tea.Cmd {
+	return func() tea.Msg { return AttachSessionMsg{Name: name} }
+}
+
+// PRAction is what PRActionMsg does with its PR.
+type PRAction int
+
+// PR actions another tab can ask the PRs tab for.
+const (
+	PRSelect PRAction = iota // select it
+	PRDiff                   // open its diff
+	PRFix                    // start the CI fix flow (P2.8)
+	PRMerge                  // open the merge dialog, which asks first
+)
+
+func (a PRAction) String() string {
+	switch a {
+	case PRDiff:
+		return "diff"
+	case PRFix:
+		return "fix"
+	case PRMerge:
+		return "merge"
+	}
+	return "select"
+}
+
+// PRActionMsg asks the PRs tab to select PR and run Action on it, so other
+// tabs reuse its diff viewer, fix flow and merge dialog (Home, P6.1). The
+// root model switches to that tab first.
+type PRActionMsg struct {
+	PR     github.PR
+	Action PRAction
+}
+
+// RunPRAction asks the PRs tab to run a on p.
+func RunPRAction(p github.PR, a PRAction) tea.Cmd {
+	return func() tea.Msg { return PRActionMsg{PR: p, Action: a} }
+}
+
+// PRActioner is implemented by the tab that lists PRs. When p isn't loaded
+// yet it may run the action once its data arrives.
+type PRActioner interface {
+	PRAction(p github.PR, a PRAction) tea.Cmd
+}
+
+// SelectEntityMsg asks the root model to switch to the tab titled Tab and
+// select the entity ID there (EntityProvider.Select), as picking a palette
+// result does.
+type SelectEntityMsg struct {
+	Tab string
+	ID  string
+}
+
+// SelectEntity jumps to an entity of another tab.
+func SelectEntity(tab, id string) tea.Cmd {
+	return func() tea.Msg { return SelectEntityMsg{Tab: tab, ID: id} }
+}
+
+// SessionWatcher is implemented by tabs that show sessions without owning
+// them (Home). The root model calls SessionsChanged on every `forge hook`
+// ping, whether or not the tab is visible.
+type SessionWatcher interface {
+	SessionsChanged() tea.Cmd
 }

@@ -57,6 +57,12 @@ func (f *fakePlane) createCalls() []plane.WorkItemCreate {
 	return slices.Clone(f.creates)
 }
 
+// CurrentCycle has no cycle, so Home lists nothing (and never adds to
+// lists).
+func (*fakePlane) CurrentCycle(context.Context, string) (plane.Cycle, bool, error) {
+	return plane.Cycle{}, false, nil
+}
+
 func (f *fakePlane) Me(context.Context) (plane.User, error) {
 	return plane.User{ID: "u-me", DisplayName: "daan"}, nil
 }

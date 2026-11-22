@@ -191,10 +191,7 @@ func (m Model) sessionItems() []item {
 			items = append(items, item{
 				id: "session:" + e.ID, title: e.Title, detail: e.Detail, group: groupSessions,
 				search: strings.TrimSpace(e.Title + " " + e.Search),
-				run: func(m Model) (Model, tea.Cmd) {
-					m, switchCmd := m.switchTo(i)
-					return m, tea.Batch(switchCmd, sg.AttachSession(e.ID))
-				},
+				run:    func(m Model) (Model, tea.Cmd) { return m.attachIn(i, sg, e.ID) },
 			})
 		}
 		return items

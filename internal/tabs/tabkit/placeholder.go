@@ -58,6 +58,9 @@ type Deps struct {
 	TemplatesDir string
 	// PacksDir is the context packs folder (P5.2); "" offers none.
 	PacksDir string
+	// NotesDir holds the daily notes (P6.2); Home shows today's. "" shows
+	// none.
+	NotesDir string
 	// Providers resolve {issue_*} / {pr_*} template variables; nil has
 	// none, so those are asked for in the form.
 	Providers *templates.Registry
