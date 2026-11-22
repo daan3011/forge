@@ -112,6 +112,10 @@ type Tab struct {
 	// links nothing.
 	plane plane.API
 	bl    backlinkState
+
+	// wanted is an action another tab asked for (tabs.PRActionMsg, P6.1)
+	// on a PR no section has loaded yet; nil when none.
+	wanted *pendingAction
 }
 
 var (
@@ -125,6 +129,7 @@ var (
 	_ tabs.Animator       = (*Tab)(nil)
 	_ tabs.StatusDetailer = (*Tab)(nil)
 	_ tabs.Busier         = (*Tab)(nil)
+	_ tabs.PRActioner     = (*Tab)(nil)
 )
 
 // New returns the PRs tab. Init loads every section cache-first.
@@ -266,9 +271,10 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tabkit.CacheLoadedMsg:
 		t.cacheLoaded(msg)
-		return nil
+		return t.runPending()
 	case tabkit.FetchedMsg:
-		return t.fetched(msg)
+		cmd := t.fetched(msg)
+		return tea.Batch(cmd, t.runPending())
 	case backlinkedMsg:
 		return t.backlinked(msg)
 	}

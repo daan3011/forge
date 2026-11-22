@@ -188,7 +188,7 @@ func TestQuickCaptureCompletes(t *testing.T) {
 func TestQuickCaptureKey(t *testing.T) {
 	t.Run("not while a tab takes text input", func(t *testing.T) {
 		m := mustNew(t, planeConfig(), WithPlane(&capturePlane{}, nil))
-		m, _ = sendKeys(m, press("/"), ctrlN())
+		m, _ = sendKeys(m, press("2"), press("/"), ctrlN()) // PRs: Home has no filter
 		if m.overlay != overlayNone {
 			t.Fatal("ctrl+n opened capture while filtering")
 		}

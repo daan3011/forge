@@ -239,6 +239,11 @@ keybinds:
   # docs_decision: ["a"]           # log a decision (ADR)
   # docs_decisions: ["d"]          # toggle the decisions view
   # docs_supersede: ["S"]          # mark a decision superseded by a newer one
+  # Home tab (P6.1); each acts on the selected "needs me" row
+  # home_open: ["enter"]           # attach / open the diff / jump to the item
+  # home_fix: ["F"]                # start the CI fix flow (PR with failing checks)
+  # home_merge: ["m"]              # merge an approved, green PR (asks first)
+  # home_browse: ["o"]             # open the PR or issue in the browser
   # Artifacts tab (P4.5)
   # artifacts_open: ["o"]          # open in the default app (browser for HTML)
   # artifacts_copy_path: ["y"]     # copy the path

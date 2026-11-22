@@ -721,8 +721,32 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
 
 ## Phase 6 — Workflow glue
 
-- [ ] P6.1 Home screen
-  - Note (from P2.4): the "Review requested" badge = the PR count of the section whose query has `review-requested:@me`. The PRs tab caches it in kv_cache under `prs.sectionKey(project, section)` (a `github.SearchResult`), so Home can read the count without a call.
+- [x] P6.1 Home screen: `internal/tabs/home`, the first (default) tab. One prioritised "needs me" list on the left, a side panel on the right.
+  - **List order** (`rank`, a pure function): agents waiting for input, agents errored, review requests, my PRs with failing checks (CI failure or error), my PRs approved and green (approved, CI success, not a draft, not conflicting), then my open Plane items in each project's current cycle. Within a group the oldest comes first. Plane items go in progress first, then by priority, then most recently updated. A PR that matches two searches shows once.
+  - **Rows**: a source icon (`ui.Theme.SourceIcon`, the palette's glyphs), the item, a coloured status ("waiting 3m", "CI failing", the Plane state) and the row's one-key action ("enter attach", "F fix", "m merge"), so the next step is always on screen.
+  - **Sources**: each loads in its own command, and a failing source shows one dim line under the list while the others still render.
+    - Agents: `sessions.API.List`.
+    - PRs: two searches of Home's own (`is:open review-requested:@me`, `is:open author:@me`) through `tabkit.LoadCached`/`FetchAndCache`, under `tab:home:<project>:reviews|mine`, so a restart shows them at once.
+    - Plane: me (cached first), then `CurrentCycle` and `WorkItems{CycleID, AssigneeIDs: [me], open groups}` for the active project, or for every linked project under All projects.
+  - **Side panel**: running agents with their flame and status, pinned artifacts (`ArtifactIndex.List`, pinned only), and the first lines of today's note (`config.NotesDir()/YYYY-MM-DD.md`, new `tabkit.Deps.NotesDir`, `app.WithNotes`; P6.2 adds the editor).
+  - **Empty state**: `anim.EmptyForgeCaption` ("nothing needs you · the forge is cold") once every source has loaded. While a source fails the caption says so, and the status bar never claims "all clear". The status bar shows "N need you".
+  - **Refresh**: GitHub, Plane and Sessions ticks, even while hidden; `SourceRefresher` reloads only the source that ticked. A `forge hook` ping reloads the agents at once through the new `tabs.SessionWatcher` (the root calls `SessionsChanged` on every ping).
+  - **Actions** reuse the other tabs through new root-routed messages in `internal/tabs/source.go`, so nothing is duplicated:
+    - `tabs.AttachSessionMsg` → the Sessions tab's `AttachSession` (shared with the session picker, `Model.attachIn`).
+    - `tabs.PRActionMsg{PR, Action: PRSelect|PRDiff|PRFix|PRMerge}` → the new `tabs.PRActioner`, which the PRs tab implements (`prs/praction.go`). It selects the PR, then opens its diff, runs its fix flow or opens its merge dialog (which still asks first). If the PR isn't loaded yet, the action waits until the sections' fetch brings it in. When no section has it, a notice says so.
+    - `tabs.SelectEntityMsg{Tab, ID}` → switch tab + `EntityProvider.Select` (Plane items by UUID).
+  - **Keys / palette**: `home_open` (enter: attach / diff / show), `home_fix` (F), `home_merge` (m), `home_browse` (o), all palette commands. A key that doesn't fit the row shows a notice.
+  - **Tests**:
+    - Ranking table: every group's order, the failing vs approved+green rules, closed PRs, dedupe, Plane order.
+    - Tab: full list and side panel, cold forge, one source failing, empty list with a failing source, no cycle, a stale project's loads dropped, cursor kept across reranks, every key's message, and a teatest flow (enter attaches, F fixes).
+    - PRs tab: `PRAction` on loaded PRs, waiting for data, an unknown PR.
+    - App: routing of the three messages and ping forwarding.
+    - App tests that relied on the old placeholder now use the PRs tab's filter, and the P0.8 cache-then-refresh test uses Home's PR cache.
+  - **Verified live**: forge in tmux on a copy of forge.db. Home is the first screen, the GitHub searches ran against the project's repo, and today's note showed in the side panel.
+  - **Limits**:
+    - Enter on an agent attaches through the Sessions tab, which lists the active project's sessions only. Home follows the same project filter, so this matches.
+    - Enter on a review jumps to the PRs tab; the PR has to be in one of its configured sections. The default sections cover both searches.
+    - Plane items show only when the project has a current cycle. The live instance's `states`/`cycles` listing used to fail with a cursor-pagination 400; #47 fixed it (`order_by=created_at`).
 - [ ] P6.2 Scratchpad & daily note
   - Note (from P1.10): finished sessions = `archived_at` in the day with their `summary` (first line: the PR and its state).
 - [ ] P6.3 Custom commands

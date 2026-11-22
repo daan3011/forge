@@ -270,7 +270,7 @@ func TestPaletteOverlay(t *testing.T) {
 	view := m.render()
 	assertScreen(t, view, 100, 34)
 	plain := ansi.Strip(view)
-	for _, want := range []string{"⚒ Commands", "Quit forge", "▤ Tabs", "esc cancel"} {
+	for _, want := range []string{"⚒ Commands", "Quit forge", "esc cancel"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("overlay missing %q:\n%s", want, plain)
 		}
@@ -280,6 +280,14 @@ func TestPaletteOverlay(t *testing.T) {
 	}
 	if plain := ansi.Strip(model.(Model).render()); !strings.Contains(plain, "◆ Projects") || !strings.Contains(plain, "daan3011/beta") {
 		t.Fatalf("project result missing:\n%s", plain)
+	}
+	model, _ = model.Update(esc)
+	model, _ = model.Update(ctrlK())
+	for _, k := range typeText("pipelines") {
+		model, _ = model.Update(k)
+	}
+	if plain := ansi.Strip(model.(Model).render()); !strings.Contains(plain, "▤ Tabs") {
+		t.Fatalf("tab result missing:\n%s", plain)
 	}
 	model, _ = model.Update(esc)
 	model, _ = model.Update(ctrlK())

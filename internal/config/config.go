@@ -336,6 +336,10 @@ func DataHome() string {
 	return filepath.Join(homeDir(), ".local", "share")
 }
 
+// NotesDir is where the daily notes live (P6.2): DataHome()/forge/notes,
+// one YYYY-MM-DD.md per day.
+func NotesDir() string { return filepath.Join(DataHome(), "forge", "notes") }
+
 func homeDir() string {
 	if h, err := os.UserHomeDir(); err == nil {
 		return h

@@ -21,6 +21,8 @@ type KeyMap struct {
 	Input    InputKeys
 	Sessions SessionKeys
 	PRs      PRKeys
+	// Home are the Home tab's actions (P6.1).
+	Home HomeKeys
 	// Pipelines are the Pipelines tab's actions (P2.6).
 	Pipelines PipelineKeys
 	// Plane are the Plane tab's actions (P3.2).
@@ -235,6 +237,15 @@ type ContextKeys struct {
 type FilePickerKeys struct {
 	Toggle    key.Binding // mark / unmark the file under the cursor
 	ToggleAll key.Binding // mark / unmark every visible match
+}
+
+// HomeKeys are the Home tab's actions (P6.1). Each acts on the selected
+// "needs me" row; a key that doesn't fit the row says so.
+type HomeKeys struct {
+	Open   key.Binding // attach (agent), open the diff (review), jump to the item
+	Fix    key.Binding // start the CI fix flow for a PR with failing checks
+	Merge  key.Binding // merge an approved, green PR (asks first)
+	Browse key.Binding // open the PR or issue in the browser
 }
 
 // ArtifactKeys are the Artifacts tab's actions (P4.5, P4.6).
@@ -498,6 +509,12 @@ func DefaultKeyMap() *KeyMap {
 			Toggle:    bind("mark file", "tab"),
 			ToggleAll: bind("mark all shown", "ctrl+a"),
 		},
+		Home: HomeKeys{
+			Open:   bind("do it", "enter"),
+			Fix:    bind("fix CI", "F"),
+			Merge:  bind("merge", "m"),
+			Browse: bind("open in browser", "o"),
+		},
 		Artifacts: ArtifactKeys{
 			Open:         bind("open", "o"),
 			CopyPath:     bind("copy path", "y"),
@@ -605,6 +622,7 @@ const (
 	scopePlane    = "tab:plane"
 	scopeDocs     = "tab:docs"
 	scopeArts     = "tab:artifacts"
+	scopeHome     = "tab:home"
 	scopeContext  = "tab:context"
 	// scopeTranscript is modal: while the viewer is open only its keys
 	// (and force quit) are live, so it is checked on its own.
@@ -628,7 +646,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
 	pp, lg, pl, cp, dc, ar := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs, &k.Artifacts
-	cx, fp := &k.Context, &k.FilePicker
+	cx, fp, hm := &k.Context, &k.FilePicker, &k.Home
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -682,6 +700,10 @@ func (k *KeyMap) actions() []action {
 		{"pr_runs", scopePRs, &pr.Runs},
 		{"pr_fix", scopePRs, &pr.Fix},
 		{"pr_fix_edit", scopePRs, &pr.FixEdit},
+		{"home_open", scopeHome, &hm.Open},
+		{"home_fix", scopeHome, &hm.Fix},
+		{"home_merge", scopeHome, &hm.Merge},
+		{"home_browse", scopeHome, &hm.Browse},
 		{"pipeline_filters", scopePipes, &pp.Filters},
 		{"pipeline_mine", scopePipes, &pp.Mine},
 		{"pipeline_clear_filters", scopePipes, &pp.ClearFilters},
