@@ -746,7 +746,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Limits**:
     - Enter on an agent attaches through the Sessions tab, which lists the active project's sessions only. Home follows the same project filter, so this matches.
     - Enter on a review jumps to the PRs tab; the PR has to be in one of its configured sections. The default sections cover both searches.
-    - On the live instance Plane rejects the client's `states`/`cycles` listing (`400 This ordering can't be used with cursor pagination`), so no Plane rows show there. This bug was already there (the Plane tab hits it too). The fix belongs in `internal/plane` (offset paging, like `labelsQuery`).
+    - Plane items show only when the project has a current cycle. The live instance's `states`/`cycles` listing used to fail with a cursor-pagination 400; #47 fixed it (`order_by=created_at`).
 - [ ] P6.2 Scratchpad & daily note
   - Note (from P1.10): finished sessions = `archived_at` in the day with their `summary` (first line: the PR and its state).
 - [ ] P6.3 Custom commands
