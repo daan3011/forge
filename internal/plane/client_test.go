@@ -155,10 +155,13 @@ func TestClientRequests(t *testing.T) {
 			wantReqs: []seen{{method: "GET", path: wsBase + "projects/p-forge/"}},
 		},
 		{
-			name:     "states",
-			replies:  []reply{ok("states.json")},
-			call:     func(c *Client) (any, error) { return c.States(ctx, "p-forge") },
-			wantReqs: []seen{{method: "GET", path: wsBase + "projects/p-forge/states/"}},
+			name:    "states",
+			replies: []reply{ok("states.json")},
+			call:    func(c *Client) (any, error) { return c.States(ctx, "p-forge") },
+			// Plane can't cursor-page its default state ordering.
+			wantReqs: []seen{{method: "GET", path: wsBase + "projects/p-forge/states/", query: url.Values{
+				"order_by": {"created_at"}, "paginate": {"cursor"},
+			}}},
 			check: func(t *testing.T, got any) {
 				ss := got.([]State)
 				if len(ss) != 4 || ss[2].Group != GroupStarted || !ss[0].IsDefault {
@@ -178,10 +181,13 @@ func TestClientRequests(t *testing.T) {
 			},
 		},
 		{
-			name:     "current cycle",
-			replies:  []reply{ok("cycles.json")},
-			call:     func(c *Client) (any, error) { cy, _, err := c.CurrentCycle(ctx, "p-forge"); return cy, err },
-			wantReqs: []seen{{method: "GET", path: wsBase + "projects/p-forge/cycles/"}},
+			name:    "current cycle",
+			replies: []reply{ok("cycles.json")},
+			call:    func(c *Client) (any, error) { cy, _, err := c.CurrentCycle(ctx, "p-forge"); return cy, err },
+			// Nor its default cycle ordering.
+			wantReqs: []seen{{method: "GET", path: wsBase + "projects/p-forge/cycles/", query: url.Values{
+				"order_by": {"created_at"}, "paginate": {"cursor"},
+			}}},
 			check: func(t *testing.T, got any) {
 				if cy := got.(Cycle); cy.ID != "c-now" {
 					t.Errorf("current cycle = %+v", cy)
