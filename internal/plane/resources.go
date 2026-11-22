@@ -106,9 +106,16 @@ func (c *Client) Project(ctx context.Context, id string) (Project, error) {
 	return p, c.do(ctx, http.MethodGet, c.wsPath("projects", id), nil, nil, &p)
 }
 
+// cursorSafe asks for a cursor-safe ordering. Plane's default ordering of
+// states and cycles can't be paged with a cursor (400 "This ordering can't
+// be used with cursor pagination"), but created_at can. Callers order
+// states (by sequence) and pick cycles (by date) themselves, so the order
+// doesn't matter.
+func cursorSafe() url.Values { return url.Values{"order_by": {"created_at"}} }
+
 // States lists a project's states.
 func (c *Client) States(ctx context.Context, projectID string) ([]State, error) {
-	return cachedList[State](ctx, c, "states", projectID, c.wsPath("projects", projectID, "states"), nil, 0)
+	return cachedList[State](ctx, c, "states", projectID, c.wsPath("projects", projectID, "states"), cursorSafe(), 0)
 }
 
 // labelsQuery orders labels as Plane does by default (sort_order), which
@@ -128,7 +135,7 @@ func (c *Client) CachedLabels(ctx context.Context, projectID string) (Cached[Lab
 
 // Cycles lists a project's cycles.
 func (c *Client) Cycles(ctx context.Context, projectID string) ([]Cycle, error) {
-	return cachedList[Cycle](ctx, c, "cycles", projectID, c.wsPath("projects", projectID, "cycles"), nil, 0)
+	return cachedList[Cycle](ctx, c, "cycles", projectID, c.wsPath("projects", projectID, "cycles"), cursorSafe(), 0)
 }
 
 // CurrentCycle returns the cycle running now; ok is false if none is. v2
