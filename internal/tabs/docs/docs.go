@@ -24,8 +24,11 @@ const Title = "Docs"
 type root struct {
 	name string // project name
 	path string // absolute docs folder
+	repo string // the project's checkout, whose CLAUDE.md points at decisions
 	tree *docfs.Node
 	err  error
+
+	decisions []docfs.Decision // newest first (P4.4)
 }
 
 // Tab is the Docs tab (P4.1): a tree of each project's markdown docs with a
@@ -75,6 +78,9 @@ type Tab struct {
 	// marks are the docs marked for sending to an agent (P4.3), in the
 	// order they were marked.
 	marks []string
+
+	// decisionsView shows the decision log instead of the tree (P4.4).
+	decisionsView bool
 }
 
 var (
@@ -118,6 +124,7 @@ type scannedMsg struct {
 	gen   int
 	trees []*docfs.Node
 	errs  []error
+	decs  [][]docfs.Decision
 	index *docfs.Index
 	at    time.Time
 }
@@ -164,7 +171,7 @@ func (t *Tab) setRoots() {
 	}
 	t.roots = make([]root, len(ps))
 	for i, p := range ps {
-		t.roots[i] = root{name: p.Name, path: p.DocsPath()}
+		t.roots[i] = root{name: p.Name, path: p.DocsPath(), repo: p.Path}
 	}
 }
 
@@ -185,13 +192,17 @@ func (t *Tab) Refresh() tea.Cmd {
 	}
 	now := t.now
 	return func() tea.Msg {
-		msg := scannedMsg{gen: gen, trees: make([]*docfs.Node, len(paths)), errs: make([]error, len(paths))}
+		msg := scannedMsg{
+			gen: gen, trees: make([]*docfs.Node, len(paths)), errs: make([]error, len(paths)),
+			decs: make([][]docfs.Decision, len(paths)),
+		}
 		if w != nil {
 			_ = w.Set(paths) // best effort: without it, r still reloads
 		}
 		roots := make([]docfs.IndexRoot, len(paths))
 		for i, p := range paths {
 			msg.trees[i], msg.errs[i] = docfs.Scan(p)
+			msg.decs[i], _ = docfs.ListDecisions(p) // unreadable: the tree shows the error
 			roots[i] = docfs.IndexRoot{Name: names[i], Tree: msg.trees[i]}
 		}
 		msg.index = docfs.BuildIndex(roots)
@@ -219,6 +230,9 @@ func (t *Tab) scannedIn(msg scannedMsg) {
 	}
 	for i := range t.roots {
 		t.roots[i].tree, t.roots[i].err = msg.trees[i], msg.errs[i]
+		if i < len(msg.decs) {
+			t.roots[i].decisions = msg.decs[i]
+		}
 		if t.all() && !t.known[t.roots[i].path] {
 			t.expanded[t.roots[i].path] = true // project levels start open
 		}
@@ -283,6 +297,12 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.Refresh()
 	case opDoneMsg:
 		return t.opDone(msg)
+	case LogDecisionMsg:
+		if t.dialog != nil {
+			return nil // finish the open dialog first
+		}
+		t.clearSearch()
+		return t.logDecision()
 	}
 	if t.dialog != nil {
 		return t.updateDialog(msg)
@@ -326,6 +346,15 @@ func (t *Tab) actionKey(kp tea.KeyPressMsg) (tea.Cmd, bool) {
 		return t.deleteSelected(), true
 	case key.Matches(kp, dk.Send):
 		return t.sendToAgent(), true
+	case key.Matches(kp, dk.Decision):
+		return t.logDecision(), true
+	case key.Matches(kp, dk.Supersede):
+		return t.supersedeSelected(), true
+	case key.Matches(kp, dk.Decisions):
+		if t.searching() {
+			t.clearSearch()
+		}
+		t.toggleDecisions()
 	case key.Matches(kp, dk.Mark):
 		t.toggleMark()
 	case key.Matches(kp, dk.DetailDown):
@@ -518,6 +547,10 @@ func (t *Tab) ShortHelp() []key.Binding {
 	if len(t.marks) > 0 {
 		return []key.Binding{dk.Mark, dk.Send, t.keys.Input.Cancel, dk.Open}
 	}
+	if t.decisionsView {
+		tree := key.NewBinding(key.WithKeys(), key.WithHelp(dk.Decisions.Help().Key, "tree view"))
+		return []key.Binding{dk.Decision, dk.Supersede, dk.Open, tree}
+	}
 	return []key.Binding{dk.New, t.keys.List.Filter, dk.Open, dk.Edit}
 }
 
@@ -529,6 +562,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 		{dk.Open, dk.Back, t.keys.Input.Cancel, dk.DetailDown, dk.DetailUp, l.ShrinkPane, l.GrowPane},
 		{l.Filter, dk.New, dk.Edit, dk.Rename, dk.Delete},
 		{dk.Mark, dk.Send},
+		{dk.Decision, dk.Decisions, dk.Supersede},
 	}
 }
 
@@ -552,6 +586,12 @@ func (t *Tab) Commands() []tabs.Command {
 		})},
 		{ID: "docs_mark", Title: "Docs: mark / unmark for agent", Key: dk.Mark, Run: do(t.toggleMark)},
 		{ID: "docs_send", Title: "Docs: send to agent (new or running session)…", Key: dk.Send, Run: t.sendToAgent},
+		{ID: "docs_decision", Title: "Docs: log a decision (ADR)…", Key: dk.Decision, Run: t.logDecision},
+		{ID: "docs_decisions", Title: "Docs: toggle decisions view", Key: dk.Decisions, Run: do(func() {
+			t.clearSearch()
+			t.toggleDecisions()
+		})},
+		{ID: "docs_supersede", Title: "Docs: mark decision superseded…", Key: dk.Supersede, Run: t.supersedeSelected},
 		{ID: "docs_detail_down", Title: "Docs: scroll doc down", Key: dk.DetailDown, Run: do(func() { t.scrollDetail(1) })},
 		{ID: "docs_detail_up", Title: "Docs: scroll doc up", Key: dk.DetailUp, Run: do(func() { t.scrollDetail(-1) })},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(t.split.Grow)},

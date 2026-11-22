@@ -146,7 +146,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | P4.1 | Docs browser | Tree of `.forge/docs/` per project, rendered with Glamour, `e` opens `$EDITOR`. |
 | P4.2 | Docs search | Full-text search across all projects' docs. |
 | P4.3 | Send docs to agent | Multi-select docs (space) and attach them to a new or running session (`s`). |
-| P4.4 | Decision log | Quick ADR form (context, decision, consequences) saved as numbered markdown. |
+| P4.4 | Decision log | Quick ADR form (`forge adr`, `a`, palette: title, context, decision, alternatives, consequences) saved as numbered markdown in `decisions/` with front matter; a Decisions view (`d`) lists them newest first and `S` marks one superseded with a link to the newer one; the project's CLAUDE.md points agents at the log. |
 | P4.5 | Artifact gallery | Watches configured folders for HTML/SVG/PNG/MD made by Claude; list by project and date. |
 | P4.6 | Pin & tag artifacts | Pin, tag, rename; pinned ones always on top; `o` opens in browser. |
 | P4.7 | Inline previews | Image previews via kitty/sixel when supported, `chafa` fallback, text otherwise. |

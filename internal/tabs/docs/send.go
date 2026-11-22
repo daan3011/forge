@@ -122,8 +122,18 @@ func (t *Tab) repoOf(i int) string {
 
 // StatusDetail implements tabs.StatusDetailer: the marked docs, if any.
 func (t *Tab) StatusDetail() string {
-	if len(t.marks) == 0 {
-		return ""
+	if len(t.marks) > 0 {
+		return fmt.Sprintf("%s marked · %s send to agent", docCount(len(t.marks)), t.keys.Docs.Send.Help().Key)
 	}
-	return fmt.Sprintf("%s marked · %s send to agent", docCount(len(t.marks)), t.keys.Docs.Send.Help().Key)
+	if t.decisionsView {
+		n := 0
+		for _, r := range t.roots {
+			n += len(r.decisions)
+		}
+		if n == 1 {
+			return "decisions · 1 logged"
+		}
+		return fmt.Sprintf("decisions · %d logged", n)
+	}
+	return ""
 }

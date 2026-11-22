@@ -10,6 +10,7 @@ import (
 	glamouransi "charm.land/glamour/v2/ansi"
 	"github.com/charmbracelet/x/ansi"
 
+	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/ui"
 )
 
@@ -116,6 +117,14 @@ func (t *Tab) syncDetail() tea.Cmd {
 // renderDoc renders text, falling back to wrapped plain text when Glamour
 // fails, and returns its lines (none for a blank doc).
 func renderDoc(style glamouransi.StyleConfig, w int, text string) []string {
+	if meta, body := docfs.SplitFrontMatter([]byte(text)); meta != nil {
+		// Front matter would render as a rule and a heading; show it as
+		// one emphasised line instead.
+		text = string(body)
+		if line := docfs.FormatMeta(meta); line != "" {
+			text = "*" + line + "*\n\n" + text
+		}
+	}
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}

@@ -180,6 +180,7 @@ func newRootCmd(d deps) *cobra.Command {
 		newHookCmd(d),
 		newCaptureCmd(d),
 		newNewCmd(d),
+		newADRCmd(d),
 		newConfigCmd(d),
 		newTmuxCmd(d),
 		newPlaneCmd(d),

@@ -199,6 +199,9 @@ keybinds:
   # docs_detail_up: ["K"]
   # docs_mark: ["space"]           # mark docs to send to an agent
   # docs_send: ["s"]               # send marked docs to a new or running session
+  # docs_decision: ["a"]           # log a decision (ADR)
+  # docs_decisions: ["d"]          # toggle the decisions view
+  # docs_supersede: ["S"]          # mark a decision superseded by a newer one
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

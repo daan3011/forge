@@ -103,6 +103,11 @@ func ParseDoc(root, path, rel, text string) Doc {
 	if text != "" {
 		d.Lines = strings.Split(text, "\n")
 	}
+	// Front matter isn't searched; its lines stay (blank) so line numbers
+	// still match the file.
+	for i := range min(FrontMatterLines(text), len(d.Lines)) {
+		d.Lines[i] = ""
+	}
 	fence := ""
 	for i, l := range d.Lines {
 		t := strings.TrimSpace(l)

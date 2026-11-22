@@ -15,12 +15,23 @@ type row struct {
 	node  *docfs.Node
 	root  int // index into Tab.roots
 	depth int
-	top   bool // a project's top level (all projects)
+	top   bool            // a project's top level (all projects)
+	dec   *docfs.Decision // set in the decisions view
 }
 
 // rebuild flattens the open folders into rows, keeping the selection.
 func (t *Tab) rebuild() {
 	t.rows = t.rows[:0]
+	if t.decisionsView {
+		t.rebuildDecisions()
+	} else {
+		t.rebuildTree()
+	}
+	t.restoreCursor()
+}
+
+// rebuildTree fills rows with the open folders of every root.
+func (t *Tab) rebuildTree() {
 	for i, r := range t.roots {
 		if r.tree == nil {
 			continue
@@ -34,6 +45,11 @@ func (t *Tab) rebuild() {
 		}
 		t.addChildren(r.tree, i, 0)
 	}
+}
+
+// restoreCursor selects the wanted path, else the previous selection,
+// else the same position.
+func (t *Tab) restoreCursor() {
 	idx := -1
 	for _, p := range []string{t.want, t.selPath} {
 		if p == "" {
@@ -94,6 +110,9 @@ func (t *Tab) reveal(path string) {
 // detail to heading once it is rendered (the top when heading is ""). A
 // path the tree doesn't show yet is selected after the next scan.
 func (t *Tab) selectDoc(path, heading string) {
+	if t.decisionsView && !t.isDecision(path) {
+		t.decisionsView = false // only the tree shows it
+	}
 	t.reveal(path)
 	t.want = path
 	t.rebuild()
@@ -145,6 +164,9 @@ func (t *Tab) treeView(w, h int) string {
 		return ""
 	}
 	if len(t.rows) == 0 {
+		if t.decisionsView && t.scanned && len(t.roots) > 0 {
+			return t.decisionsEmptyView(w)
+		}
 		return t.emptyView(w)
 	}
 	end := min(t.top+h, len(t.rows))
@@ -156,6 +178,9 @@ func (t *Tab) treeView(w, h int) string {
 }
 
 func (t *Tab) rowView(r row, selected bool, w int) string {
+	if r.dec != nil {
+		return t.decisionRowView(r, selected, w)
+	}
 	th := t.theme
 	n := r.node
 	indent := strings.Repeat("  ", r.depth)

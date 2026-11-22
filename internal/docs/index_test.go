@@ -116,3 +116,14 @@ func TestBuildIndex(t *testing.T) {
 		t.Fatal("nil index should be empty")
 	}
 }
+
+func TestParseDocSkipsFrontMatter(t *testing.T) {
+	d := ParseDoc("p", "/x/0001-a.md", "decisions/0001-a.md", "---\nstatus: superseded\n---\n# 0001. A\n\n## Decision\n")
+	if d.Title != "0001. A" || len(d.Headings) != 2 || d.Headings[0].Line != 3 {
+		t.Fatalf("doc = %+v", d)
+	}
+	ix := &Index{docs: []Doc{d}}
+	if hits := ix.Search("superseded", 10); len(hits) != 0 {
+		t.Errorf("front matter matched: %+v", hits)
+	}
+}
