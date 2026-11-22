@@ -186,3 +186,30 @@ func (r *Artifacts) Detach(ctx context.Context, copyPath, reason string, at time
 		WHERE copy_path = ? AND detached_at IS NULL`, at.UnixMilli(), nullStr(reason), copyPath)
 	return wrap("detach artifact", err)
 }
+
+// Forget removes everything forge knows about the artifacts at paths
+// except their pins: index rows, links, titles and tags (P5.3). Callers
+// skip pinned artifacts.
+func (r *Artifacts) Forget(ctx context.Context, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	tx, err := r.s.w.BeginTx(ctx, nil)
+	if err != nil {
+		return wrap("forget artifacts", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, p := range paths {
+		for _, q := range []string{
+			`DELETE FROM artifacts WHERE path = ?1`,
+			`DELETE FROM artifact_links WHERE copy_path = ?1`,
+			`DELETE FROM titles WHERE kind = 'artifact' AND ref = ?1`,
+			`DELETE FROM tags WHERE kind = 'artifact' AND ref = ?1`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, p); err != nil {
+				return wrap("forget artifacts", err)
+			}
+		}
+	}
+	return wrap("forget artifacts", tx.Commit())
+}

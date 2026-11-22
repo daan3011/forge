@@ -220,6 +220,12 @@ type ContextKeys struct {
 	AddFiles   key.Binding // pick the pack's files with the fuzzy picker
 	DeletePack key.Binding
 	SendPack   key.Binding // give the pack to a new or running session
+	// Cache view (P5.3). Every action asks for confirmation first.
+	Cache         key.Binding // switch between memory files and the cache view
+	ClearCache    key.Binding // clear the selected type (or project)
+	PruneCache    key.Binding // remove entries older than N days
+	RemoveOrphans key.Binding // remove orphaned worktrees
+	Vacuum        key.Binding // vacuum the database
 }
 
 // FilePickerKeys drive the fuzzy file picker (P5.2). Next / Prev, Accept
@@ -477,6 +483,12 @@ func DefaultKeyMap() *KeyMap {
 			AddFiles:   bind("pick files", "a"),
 			DeletePack: bind("delete pack", "D"),
 			SendPack:   bind("send pack to session", "s"),
+
+			Cache:         bind("memory / cache", "c"),
+			ClearCache:    bind("clear", "x"),
+			PruneCache:    bind("prune older than…", "P"),
+			RemoveOrphans: bind("remove orphaned worktrees", "o"),
+			Vacuum:        bind("vacuum database", "V"),
 		},
 		FilePicker: FilePickerKeys{
 			Toggle:    bind("mark file", "tab"),
@@ -731,6 +743,11 @@ func (k *KeyMap) actions() []action {
 		{"context_add_files", scopeContext, &cx.AddFiles},
 		{"context_delete_pack", scopeContext, &cx.DeletePack},
 		{"context_send_pack", scopeContext, &cx.SendPack},
+		{"context_cache", scopeContext, &cx.Cache},
+		{"context_cache_clear", scopeContext, &cx.ClearCache},
+		{"context_cache_prune", scopeContext, &cx.PruneCache},
+		{"context_cache_orphans", scopeContext, &cx.RemoveOrphans},
+		{"context_cache_vacuum", scopeContext, &cx.Vacuum},
 		{"file_picker_toggle", scopeFilePicker, &fp.Toggle},
 		{"file_picker_toggle_all", scopeFilePicker, &fp.ToggleAll},
 		{"transcript_up", scopeTranscript, &tr.Up},

@@ -38,7 +38,7 @@ func TestNewKeyMapOverrides(t *testing.T) {
 		{"remapped quit", map[string][]string{"quit": {"Q"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "Q", true, "Q"},
 		{"old key gone", map[string][]string{"quit": {"Q"}}, func(k *KeyMap) key.Binding { return k.Global.Quit }, "q", false, "Q"},
 		{"arrows prettified", map[string][]string{"up": {"up", "w"}}, func(k *KeyMap) key.Binding { return k.List.Up }, "w", true, "↑/w"},
-		{"long run collapsed", map[string][]string{"goto_tab": {"U", "V", "W", "Y"}}, func(k *KeyMap) key.Binding { return k.Global.GotoTab }, "W", true, "U-Y"},
+		{"long run collapsed", map[string][]string{"goto_tab": {"T", "U", "W", "Y"}}, func(k *KeyMap) key.Binding { return k.Global.GotoTab }, "W", true, "T-Y"},
 		{"session key remapped", map[string][]string{"session_new": {"N"}}, func(k *KeyMap) key.Binding { return k.Sessions.New }, "N", true, "N"},
 		{"desc kept", map[string][]string{"refresh": {"f5"}}, func(k *KeyMap) key.Binding { return k.Global.Refresh }, "f5", true, "f5"},
 		{"default attach", nil, func(k *KeyMap) key.Binding { return k.Sessions.Attach }, "enter", true, "enter"},

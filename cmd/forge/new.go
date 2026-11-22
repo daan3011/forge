@@ -13,12 +13,14 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/spf13/cobra"
 
+	"github.com/daan3011/forge/internal/cachectl"
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/packs"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/sessions/transcript"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
 	sessionstab "github.com/daan3011/forge/internal/tabs/sessions"
@@ -49,6 +51,23 @@ func newCheckout(cfg *config.Config) *checkout.Checkout {
 	return checkout.New(g, worktree.New(cfg.Sessions.WorktreeRoot, g))
 }
 
+// newCaches builds the Cache view's controller (P5.3) over the database,
+// git worktrees and the session service (for purging archived sessions and
+// resetting the transcript index).
+func newCaches(cfg *config.Config, st *store.Store, svc agent.API) *cachectl.Controller {
+	g := worktree.NewExec()
+	sessions, _ := svc.(cachectl.Sessions)
+	return cachectl.New(cachectl.Config{
+		Store:        cachectl.StoreFrom(st),
+		Worktrees:    worktree.New(cfg.Sessions.WorktreeRoot, g),
+		Sessions:     sessions,
+		Projects:     cfg.Projects,
+		WorktreeRoot: cfg.Sessions.WorktreeRoot,
+		DataDir:      filepath.Join(config.DataHome(), "forge"),
+		Dirty:        cachectl.DirtyFromGit(g),
+	})
+}
+
 // newSessionService builds the real session service over forge's tmux
 // server, git worktrees and database.
 func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -57,16 +76,17 @@ func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
 		return nil, err
 	}
 	return agent.New(agent.Config{
-		Tmux:       drv,
-		TmuxConf:   conf,
-		TmuxColors: tmuxColors(),
-		Worktrees:  worktree.New(cfg.Sessions.WorktreeRoot, worktree.NewExec()),
-		Store:      agent.StoreFrom(st),
-		Projects:   cfg.Projects,
-		Recent:     st.Projects(),
-		DataDir:    filepath.Join(config.DataHome(), "forge"),
-		ForgeBin:   forgeBin(),
-		Pulls:      githubPulls,
+		Tmux:        drv,
+		TmuxConf:    conf,
+		TmuxColors:  tmuxColors(),
+		Worktrees:   worktree.New(cfg.Sessions.WorktreeRoot, worktree.NewExec()),
+		Store:       agent.StoreFrom(st),
+		Projects:    cfg.Projects,
+		Recent:      st.Projects(),
+		Transcripts: transcript.StorePersister(st.Cache()),
+		DataDir:     filepath.Join(config.DataHome(), "forge"),
+		ForgeBin:    forgeBin(),
+		Pulls:       githubPulls,
 	}), nil
 }
 

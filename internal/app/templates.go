@@ -49,6 +49,11 @@ func WithArtifacts(idx tabs.ArtifactIndex) Option {
 	return func(m *Model) { m.artifactIdx = idx }
 }
 
+// WithCaches gives the Context tab's Cache view its controller (P5.3).
+func WithCaches(c tabs.CacheControl) Option {
+	return func(m *Model) { m.caches = c }
+}
+
 // WithArtifactWatcher makes the Artifacts tab rescan when an artifact
 // changes (P4.5).
 func WithArtifactWatcher(w artfs.Watcher) Option {

@@ -513,6 +513,70 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+func TestPurge(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ids := 0
+	e.svc.c.NewID = func() (string, error) { ids++; return fmt.Sprintf("%s%d", testID[:len(testID)-1], ids), nil }
+	get := func(x store.Session) store.Session {
+		t.Helper()
+		x, err := e.st.Sessions().Get(ctx, x.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return x
+	}
+	gone := func(x store.Session) bool {
+		_, err := e.st.Sessions().Get(ctx, x.ID)
+		return errors.Is(err, store.ErrNotFound)
+	}
+
+	live := e.start(t, "live")
+	if err := e.svc.Purge(ctx, live); !errors.Is(err, ErrNotArchived) {
+		t.Fatalf("purge live err = %v", err)
+	}
+
+	// Archived with its worktree kept: the worktree goes, then the row.
+	kept, err := e.svc.Archive(ctx, e.start(t, "kept"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.Purge(ctx, kept); err != nil {
+		t.Fatal(err)
+	}
+	if !gone(kept) || e.wt.trees["kept"] || !e.wt.branches["agent/kept"] {
+		t.Errorf("kept: gone=%v tree=%v branch=%v", gone(kept), e.wt.trees["kept"], e.wt.branches["agent/kept"])
+	}
+
+	// A dirty worktree is never forced: nothing is deleted.
+	dirty, err := e.svc.Archive(ctx, e.start(t, "dirty"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.wt.dirty["dirty"] = true
+	var de *worktree.DirtyError
+	if err := e.svc.Purge(ctx, dirty); !errors.As(err, &de) {
+		t.Fatalf("purge dirty err = %v", err)
+	}
+	if gone(dirty) || !e.wt.trees["dirty"] || get(dirty).Worktree == "" {
+		t.Error("dirty session or worktree touched")
+	}
+	for _, o := range e.wt.removed {
+		if o.Force {
+			t.Error("Remove was forced")
+		}
+	}
+
+	// Already removed: same as Delete.
+	rm := e.start(t, "rm")
+	if _, err := e.svc.Kill(ctx, rm, KillOpts{RemoveWorktree: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.Purge(ctx, get(rm)); err != nil || !gone(rm) {
+		t.Errorf("purge removed: %v, gone=%v", err, gone(rm))
+	}
+}
+
 func TestTmuxControl(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

@@ -82,3 +82,29 @@ func TestVacuum(t *testing.T) {
 	s, _ := newTestStore(t)
 	noErr(t, s.Vacuum(context.Background()))
 }
+
+func TestDBStatsAndVacuum(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	for i := range 40 {
+		noErr(t, s.Cache().Put(ctx, fmt.Sprint("k", i), "x", "", make([]byte, 8<<10), 0))
+	}
+	before, err := s.DBStats(ctx)
+	noErr(t, err)
+	if before.Bytes == 0 || before.Path == "" {
+		t.Fatalf("stats = %+v", before)
+	}
+	_, err = s.Cache().Clear(ctx, "x", "")
+	noErr(t, err)
+	mid, err := s.DBStats(ctx)
+	noErr(t, err)
+	if mid.Free == 0 {
+		t.Errorf("no free pages after clear: %+v", mid)
+	}
+	noErr(t, s.Vacuum(ctx))
+	after, err := s.DBStats(ctx)
+	noErr(t, err)
+	if after.Bytes >= before.Bytes || after.Free != 0 || after.WAL != 0 {
+		t.Errorf("after vacuum = %+v (before %+v)", after, before)
+	}
+}

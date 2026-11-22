@@ -95,3 +95,22 @@ func (r *Events) PruneBefore(ctx context.Context, t time.Time) (int64, error) {
 	n, err := res.RowsAffected()
 	return n, wrap("prune events", err)
 }
+
+// BytesBySession returns the summed payload size of each session's events.
+func (r *Events) BytesBySession(ctx context.Context) (map[int64]int64, error) {
+	rows, err := r.s.r.QueryContext(ctx, `SELECT session_id, COALESCE(SUM(length(payload)), 0)
+		FROM session_events WHERE session_id IS NOT NULL GROUP BY session_id`)
+	if err != nil {
+		return nil, wrap("event bytes", err)
+	}
+	defer rows.Close()
+	out := map[int64]int64{}
+	for rows.Next() {
+		var id, n int64
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, wrap("event bytes", err)
+		}
+		out[id] = n
+	}
+	return out, wrap("event bytes", rows.Err())
+}

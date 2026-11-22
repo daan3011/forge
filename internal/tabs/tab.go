@@ -6,6 +6,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/daan3011/forge/internal/cachectl"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
@@ -139,6 +141,21 @@ type ArtifactIndex interface {
 	MarkSynced(ctx context.Context, copyPath string, at time.Time) error
 	Detach(ctx context.Context, copyPath, reason string, at time.Time) error
 }
+
+// CacheControl measures and clears what forge stores (P5.3).
+// *cachectl.Controller satisfies it.
+type CacheControl interface {
+	Stats(ctx context.Context) (cachectl.Report, error)
+	Plan(ctx context.Context, op cachectl.Op) (cachectl.Plan, error)
+	Apply(ctx context.Context, p cachectl.Plan) (cachectl.Result, error)
+}
+
+// ReindexDocsMsg asks the Docs tab to rebuild its in-memory index (the
+// Cache view's "clear" of the docs index).
+type ReindexDocsMsg struct{}
+
+// TargetTab implements TargetedMsg; it is the Docs tab's title.
+func (ReindexDocsMsg) TargetTab() string { return "Docs" }
 
 // InputCapturer is implemented by tabs that can take text input (a filter,
 // a form). While CapturingInput is true the root model only handles

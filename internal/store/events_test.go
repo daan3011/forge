@@ -73,3 +73,23 @@ func TestEventsListAndPrune(t *testing.T) {
 	_, err = s.Events().Latest(ctx, "nobody")
 	wantErr(t, err, ErrNotFound)
 }
+
+func TestEventsBytesBySession(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	a, b := mustSession(t, s, "a"), mustSession(t, s, "b")
+	for _, e := range []Event{
+		{SessionID: a.ID, Event: "Stop", Payload: "12345"},
+		{SessionID: a.ID, Event: "Stop", Payload: "123"},
+		{SessionID: b.ID, Event: "Stop"},
+		{ClaudeSessionID: "stranger", Event: "Stop", Payload: "xx"},
+	} {
+		_, err := s.Events().Append(ctx, e)
+		noErr(t, err)
+	}
+	got, err := s.Events().BytesBySession(ctx)
+	noErr(t, err)
+	if len(got) != 2 || got[a.ID] != 8 || got[b.ID] != 0 {
+		t.Errorf("BytesBySession = %v", got)
+	}
+}

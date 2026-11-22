@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/daan3011/forge/internal/cachectl"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/store"
@@ -349,5 +350,12 @@ func TestPlaceholderAutoRefresh(t *testing.T) {
 	}
 	if none := NewPlaceholder(testDeps(nil), sampleSpec); len(none.Sources()) != 0 || none.RefreshWhenHidden() {
 		t.Fatal("no sources by default")
+	}
+}
+
+// The Cache view (P5.3) finds tab caches by kind without importing tabkit.
+func TestCacheKindMatchesCachectl(t *testing.T) {
+	if CacheKind != cachectl.TabKind {
+		t.Fatalf("CacheKind %q != cachectl.TabKind %q", CacheKind, cachectl.TabKind)
 	}
 }

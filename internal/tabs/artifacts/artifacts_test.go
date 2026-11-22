@@ -474,15 +474,6 @@ func TestAgo(t *testing.T) {
 	}
 }
 
-func TestHumanSize(t *testing.T) {
-	tests := map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KB", 1536: "1.5 KB", 5 << 20: "5.0 MB"}
-	for n, want := range tests {
-		if got := humanSize(n); got != want {
-			t.Errorf("humanSize(%d) = %q, want %q", n, got, want)
-		}
-	}
-}
-
 // --- teatest flow ----------------------------------------------------------------
 
 // host runs the tab as a program, standing in for the root model.

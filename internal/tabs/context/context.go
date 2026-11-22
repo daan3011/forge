@@ -71,7 +71,13 @@ type Tab struct {
 	det         detailState
 	matrix      bool // the right pane shows worktree inheritance
 
-	pk packState // the Packs view (P5.2)
+	view section
+	pk   packState // the Packs view (P5.2)
+
+	// caches measures and clears what forge stores (P5.3); nil when there
+	// is no database.
+	caches tabs.CacheControl
+	cs     cacheState // the Cache view
 }
 
 var (
@@ -98,6 +104,7 @@ func newTab(d tabkit.Deps) *Tab {
 		git:      git,
 		lister:   git,
 		packsDir: d.PacksDir,
+		caches:   d.Caches,
 		home:     home,
 		managed:  memory.DefaultManaged(),
 		split:    ui.NewSplitPane(d.Theme),
@@ -163,14 +170,19 @@ func (t *Tab) overBudget() bool {
 func (t *Tab) Init() tea.Cmd { return nil }
 
 // Refresh implements tabs.Tab: resolves the memory files of the checkout
-// and of each of its worktrees, and reloads the context packs.
+// and of each of its worktrees, and reloads the context packs (and, while
+// it shows, the cache view).
 func (t *Tab) Refresh() tea.Cmd {
 	gen, root, home, managed, git, now := t.gen, t.root(), t.home, t.managed, t.git, t.now
+	var cache tea.Cmd
+	if t.view == viewCache {
+		cache = t.loadCache()
+	}
 	return tea.Batch(func() tea.Msg {
 		msg := scanned(root, home, managed, git)
 		msg.gen, msg.at = gen, now()
 		return msg
-	}, t.loadPacks())
+	}, t.loadPacks(), cache)
 }
 
 // scanned does the work of Refresh, off the update loop.
@@ -251,6 +263,17 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.filesListed(msg)
 	case packSavedMsg:
 		return t.packSaved(msg)
+	case cacheLoadedMsg:
+		t.cacheLoaded(msg)
+		return nil
+	case cachePlanMsg:
+		if t.pk.dialog != nil {
+			t.cs.busy = false
+			return nil // another dialog is open; the action is dropped
+		}
+		return t.planned(msg)
+	case cacheDoneMsg:
+		return t.applied(msg)
 	}
 	if t.pk.dialog != nil {
 		return t.updatePackDialog(msg)
@@ -278,11 +301,15 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	ck, l := t.keys.Context, t.keys.List
-	if key.Matches(kp, ck.Packs) {
+	switch {
+	case key.Matches(kp, ck.Packs):
 		return t.togglePacks()
-	}
-	if t.pk.on {
+	case key.Matches(kp, ck.Cache):
+		return t.toggleCache()
+	case t.view == viewPacks:
 		return t.packKey(kp)
+	case t.view == viewCache:
+		return t.cacheKey(kp)
 	}
 	switch {
 	case key.Matches(kp, ck.Edit):
@@ -375,17 +402,19 @@ func (t *Tab) SetSize(width, height int) {
 	t.width, t.height = width, height
 	t.split.SetSize(width, max(height-sectionBarLines, 1))
 	t.clampTop()
+	t.setCacheCursor(t.cs.cursor)
+	t.setProjectCursor(t.cs.pcursor)
 	if t.pk.dialog != nil && t.pk.dialog.form != nil {
 		w, h := t.dialogSize()
 		_, _ = t.pk.dialog.form.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	}
 }
 
-// sectionBarLines is the Memory | Packs bar above the panes.
+// sectionBarLines is the Memory | Packs | Cache bar above the panes.
 const sectionBarLines = 1
 
-// CapturingInput implements tabs.InputCapturer: a pack form or the file
-// picker takes every key.
+// CapturingInput implements tabs.InputCapturer: a pack or cache form, or
+// the file picker, takes every key.
 func (t *Tab) CapturingInput() bool { return t.pk.dialog != nil }
 
 // SetProject implements tabs.Tab.
@@ -400,10 +429,16 @@ func (t *Tab) SetProject(p *config.Project) {
 }
 
 // SetVisible implements tabs.VisibilityAware: memory files change outside
-// forge (Claude writes MEMORY.md), so showing the tab rescans.
+// forge (Claude writes MEMORY.md), so showing the tab rescans; the cache
+// view is measured again too.
 func (t *Tab) SetVisible(visible bool) tea.Cmd {
-	if visible && t.scanned {
+	switch {
+	case !visible:
+		return nil
+	case t.scanned:
 		return t.Refresh()
+	case t.view == viewCache:
+		return t.loadCache()
 	}
 	return nil
 }
@@ -416,7 +451,10 @@ func (t *Tab) LastUpdated() time.Time { return t.updated }
 
 // StatusDetail implements tabs.StatusDetailer.
 func (t *Tab) StatusDetail() string {
-	if t.pk.on {
+	if t.view == viewCache {
+		return t.cacheStatus()
+	}
+	if t.view == viewPacks {
 		e, ok := t.selectedPack()
 		if !ok {
 			return ""
@@ -444,14 +482,18 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return t.pk.dialog.picker.Help()
 	case t.pk.dialog != nil:
 		return t.keys.FormHelp()
-	case t.pk.on:
+	case t.view == viewPacks:
 		return []key.Binding{ck.Packs, ck.NewPack, ck.AddFiles, ck.Edit, ck.SendPack, ck.DeletePack}
+	case t.view == viewCache && t.cs.drill != "":
+		return []key.Binding{ck.Back, ck.ClearCache, ck.PruneCache, ck.Cache}
+	case t.view == viewCache:
+		return []key.Binding{ck.Cache, ck.Open, ck.ClearCache, ck.PruneCache, ck.RemoveOrphans, ck.Vacuum}
 	}
 	if t.focusDetail {
 		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to list"))
 		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back, ck.Edit}
 	}
-	return []key.Binding{ck.Packs, ck.Worktrees, ck.Open, ck.Edit}
+	return []key.Binding{ck.Packs, ck.Cache, ck.Worktrees, ck.Open, ck.Edit}
 }
 
 // FullHelp implements tabs.Tab.
@@ -460,8 +502,9 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{ck.Open, ck.Back, t.keys.Input.Cancel, ck.DetailDown, ck.DetailUp, l.ShrinkPane, l.GrowPane},
-		{ck.Edit, ck.Worktrees, ck.Packs},
+		{ck.Edit, ck.Worktrees, ck.Packs, ck.Cache},
 		{ck.NewPack, ck.AddFiles, ck.DeletePack, ck.SendPack},
+		{ck.ClearCache, ck.PruneCache, ck.RemoveOrphans, ck.Vacuum},
 	}
 }
 
@@ -477,6 +520,11 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "context_add_files", Title: "Context: pick the pack's files", Key: ck.AddFiles, Run: t.inPacks(t.addFiles)},
 		{ID: "context_delete_pack", Title: "Context: delete context pack", Key: ck.DeletePack, Run: t.inPacks(t.deletePack)},
 		{ID: "context_send_pack", Title: "Context: send pack to a session", Key: ck.SendPack, Run: t.inPacks(t.sendPack)},
+		{ID: "context_cache", Title: "Context: switch memory files / cache", Key: ck.Cache, Run: t.toggleCache},
+		{ID: "context_cache_clear", Title: "Context: clear the selected cache", Key: ck.ClearCache, Run: t.inCache(t.clearCache)},
+		{ID: "context_cache_prune", Title: "Context: prune cache entries older than N days", Key: ck.PruneCache, Run: t.inCache(t.pruneCache)},
+		{ID: "context_cache_orphans", Title: "Context: remove orphaned worktrees", Key: ck.RemoveOrphans, Run: t.inCache(t.removeOrphans)},
+		{ID: "context_cache_vacuum", Title: "Context: vacuum the database", Key: ck.Vacuum, Run: t.inCache(t.vacuum)},
 		{ID: "context_open", Title: "Context: focus the rendered file", Key: ck.Open, Run: do(t.focus)},
 		{ID: "context_back", Title: "Context: back to the file list", Key: ck.Back, Run: do(func() { t.focusDetail = false })},
 		{ID: "context_detail_down", Title: "Context: scroll file down", Key: ck.DetailDown, Run: do(func() { t.scrollDetail(1) })},
@@ -491,7 +539,7 @@ func (t *Tab) Commands() []tabs.Command {
 // editCurrent edits the selected pack in the Packs view, else the
 // selected memory file.
 func (t *Tab) editCurrent() tea.Cmd {
-	if t.pk.on {
+	if t.view == viewPacks {
 		return t.editPack()
 	}
 	return t.editSelected()
@@ -502,7 +550,7 @@ func (t *Tab) editCurrent() tea.Cmd {
 func (t *Tab) inPacks(f func() tea.Cmd) func() tea.Cmd {
 	return func() tea.Cmd {
 		var load tea.Cmd
-		if !t.pk.on {
+		if t.view != viewPacks {
 			load = t.togglePacks()
 		}
 		if !t.pk.loaded {
@@ -517,19 +565,21 @@ func (t *Tab) View() string {
 	if t.pk.dialog != nil {
 		return t.packDialogView()
 	}
-	active, packCount := 0, -1
-	if t.pk.on {
-		active = 1
-	}
+	packCount := -1
 	if t.pk.loaded {
 		packCount = len(t.pk.entries)
 	}
-	bar := ui.SectionBar(t.theme, []string{"Memory", "Packs"}, []int{-1, packCount}, active, t.width)
+	bar := ui.SectionBar(t.theme, []string{"Memory", "Packs", "Cache"}, []int{-1, packCount, -1}, int(t.view), t.width)
 	return bar + "\n" + t.panes()
 }
 
 func (t *Tab) panes() string {
-	if t.pk.on {
+	if t.view == viewCache {
+		lw, lh := t.split.LeftSize()
+		rw, rh := t.split.RightSize()
+		return t.split.View(t.cacheListView(lw, lh), t.cacheDetailView(rw, rh), true)
+	}
+	if t.view == viewPacks {
 		lw, lh := t.split.LeftSize()
 		rw, rh := t.split.RightSize()
 		return t.split.View(t.packsListView(lw, lh), t.packDetailView(rw, rh), true)

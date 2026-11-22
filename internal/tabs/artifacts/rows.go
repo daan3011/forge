@@ -409,7 +409,7 @@ func (t *Tab) detailView(w, h int) string {
 		field("Project", project),
 		field("Source", t.source(a)),
 		field("Type", a.Type),
-		field("Size", humanSize(a.Size)),
+		field("Size", ui.HumanBytes(a.Size)),
 		field("Modified", a.ModifiedAt.Format("2006-01-02 15:04")+" ("+ago(now.Sub(a.ModifiedAt))+")"),
 		field("Created", a.CreatedAt.Format("2006-01-02 15:04")),
 	)
@@ -461,18 +461,4 @@ func ago(d time.Duration) string {
 		return age + " ago"
 	}
 	return "just now"
-}
-
-// humanSize is "512 B", "3.4 KB", "1.2 MB".
-func humanSize(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit && exp < 3; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
 }

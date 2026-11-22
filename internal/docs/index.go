@@ -10,9 +10,9 @@ import (
 // memory. It is small (personal docs), so a rebuild after each change is
 // cheaper than keeping it in sync incrementally.
 
-// maxIndexBytes caps how much of a file is indexed; bigger files are found
+// MaxIndexBytes caps how much of a file is indexed; bigger files are found
 // by title only.
-const maxIndexBytes = 1 << 20
+const MaxIndexBytes = 1 << 20
 
 // Heading is an ATX heading ("## Rollback") in a doc.
 type Heading struct {
@@ -88,7 +88,7 @@ func (ix *Index) add(root string, n *Node) {
 		return
 	}
 	var text string
-	if info, err := os.Stat(n.Path); err == nil && info.Size() <= maxIndexBytes {
+	if info, err := os.Stat(n.Path); err == nil && info.Size() <= MaxIndexBytes {
 		if b, err := os.ReadFile(n.Path); err == nil {
 			text = string(b)
 		}

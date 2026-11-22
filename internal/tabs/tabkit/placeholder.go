@@ -92,6 +92,9 @@ type Deps struct {
 	// Artifacts persists the artifact index (P4.5); nil shows each scan
 	// without remembering it.
 	Artifacts tabs.ArtifactIndex
+	// Caches measures and clears forge's stored data for the Context tab's
+	// Cache view (P5.3); nil shows it as unavailable.
+	Caches tabs.CacheControl
 	// ArtifactWatcher signals artifact changes (P4.5); nil means the
 	// Artifacts tab only rescans on refresh.
 	ArtifactWatcher artifacts.Watcher
