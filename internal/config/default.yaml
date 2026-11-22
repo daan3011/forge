@@ -84,9 +84,18 @@ sessions:
   archive_cleanup: ask
 
 artifacts:
-  # Globs of folders/files to watch for HTML/SVG/PNG/MD made by Claude.
+  # Globs of files to show in the Artifacts tab. Relative globs apply inside
+  # every project checkout and session worktree; absolute ones (~ and $VAR
+  # work) add folders of their own. ** matches any number of folders.
+  # node_modules, .git, dist, build and other dot / build folders are
+  # skipped. Leave empty for the defaults below; a list replaces them.
   watch:
-    # - ~/code/*/artifacts/**
+    # - "**/*.html"
+    # - "**/*.svg"
+    # - "**/*.png"
+    # - "design/**"
+    # - ".forge/artifacts/**"
+    # - ~/Desktop/mockups/**
 
 ui:
   # full | reduced | off
@@ -202,6 +211,10 @@ keybinds:
   # docs_decision: ["a"]           # log a decision (ADR)
   # docs_decisions: ["d"]          # toggle the decisions view
   # docs_supersede: ["S"]          # mark a decision superseded by a newer one
+  # Artifacts tab (P4.5)
+  # artifacts_open: ["o"]          # open in the default app (browser for HTML)
+  # artifacts_copy_path: ["y"]     # copy the path
+  # artifacts_keep: ["c"]          # copy into the project's .forge/artifacts
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

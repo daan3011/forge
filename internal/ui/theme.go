@@ -213,6 +213,11 @@ type Theme struct {
 	// Docs tab (P4.3).
 	DocMarked lipgloss.Style // a doc marked for sending to an agent
 
+	// Artifact gallery (P4.5).
+	ArtifactIcon    lipgloss.Style // the type glyph before an artifact's name
+	ArtifactSession lipgloss.Style // the source session's name
+	ArtifactKept    lipgloss.Style // "kept" for copies in .forge/artifacts
+
 	// Decision log (P4.4).
 	DecisionNumber     lipgloss.Style // "0007" in the decisions view
 	DecisionSuperseded lipgloss.Style // a superseded decision's row
@@ -358,6 +363,9 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		BoardCollapsed:     lipgloss.NewStyle().Foreground(p.Muted),
 		DocMarked:          lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		DecisionNumber:     lipgloss.NewStyle().Foreground(p.Highlight),
+		ArtifactIcon:       lipgloss.NewStyle().Foreground(p.Accent),
+		ArtifactSession:    lipgloss.NewStyle().Foreground(p.Highlight),
+		ArtifactKept:       lipgloss.NewStyle().Foreground(p.Accent).Italic(true),
 		DecisionSuperseded: lipgloss.NewStyle().Foreground(p.Muted).Strikethrough(true),
 		BoardScrollHint:    lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
 		BoardOverlay:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),

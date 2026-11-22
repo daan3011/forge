@@ -20,14 +20,15 @@ type PaletteRow struct {
 
 // paletteIcons maps result groups to their header icon.
 var paletteIcons = map[string]string{
-	"Recent":   "↺",
-	"Commands": "⚒",
-	"Tabs":     "▤",
-	"Projects": "◆",
-	"PRs":      "⎇",
-	"Issues":   "◉",
-	"Sessions": "❯",
-	"Docs":     "¶",
+	"Recent":    "↺",
+	"Commands":  "⚒",
+	"Tabs":      "▤",
+	"Projects":  "◆",
+	"PRs":       "⎇",
+	"Issues":    "◉",
+	"Sessions":  "❯",
+	"Docs":      "¶",
+	"Artifacts": "◫",
 }
 
 // PaletteIcon returns the header icon for a result group.

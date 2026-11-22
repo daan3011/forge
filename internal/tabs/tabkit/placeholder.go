@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/browser"
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/clipboard"
@@ -84,6 +85,14 @@ type Deps struct {
 	// DocsWatcher signals changes in the docs folders (P4.1); nil means
 	// the Docs tab only reloads on refresh.
 	DocsWatcher docs.Watcher
+	// Artifacts persists the artifact index (P4.5); nil shows each scan
+	// without remembering it.
+	Artifacts tabs.ArtifactIndex
+	// ArtifactWatcher signals artifact changes (P4.5); nil means the
+	// Artifacts tab only rescans on refresh.
+	ArtifactWatcher artifacts.Watcher
+	// Files opens local files (artifacts) in their default app; nil can't.
+	Files browser.FileOpener
 }
 
 // Engine returns d.Anim, or a clock that never ticks.

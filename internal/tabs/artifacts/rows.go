@@ -1,0 +1,383 @@
+package artifacts
+
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/x/ansi"
+
+	artfs "github.com/daan3011/forge/internal/artifacts"
+	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/ui"
+)
+
+// row is one line of the list: a project header (all projects) or an
+// artifact.
+type row struct {
+	header  bool
+	project string
+	count   int
+	item    int // index into Tab.items; -1 for a header
+}
+
+// otherProject heads artifacts from absolute globs outside every project.
+const otherProject = "other"
+
+// setItems replaces the artifacts, keeping the selection.
+func (t *Tab) setItems(items []store.Artifact) {
+	t.items = items
+	t.rebuild()
+}
+
+// rebuild groups the items into rows: with every project shown, one header
+// per project, projects ordered by their newest artifact; items stay
+// newest first.
+func (t *Tab) rebuild() {
+	t.rows = t.rows[:0]
+	if !t.all() {
+		for i := range t.items {
+			t.rows = append(t.rows, row{item: i})
+		}
+	} else {
+		var order []string
+		groups := map[string][]int{}
+		for i, a := range t.items { // newest first, so groups are too
+			p := a.Project
+			if p == "" {
+				p = otherProject
+			}
+			if _, ok := groups[p]; !ok {
+				order = append(order, p)
+			}
+			groups[p] = append(groups[p], i)
+		}
+		for _, p := range order {
+			t.rows = append(t.rows, row{header: true, project: p, count: len(groups[p]), item: -1})
+			for _, i := range groups[p] {
+				t.rows = append(t.rows, row{project: p, item: i})
+			}
+		}
+	}
+	idx := -1
+	for _, p := range []string{t.want, t.selKey} {
+		if p == "" {
+			continue
+		}
+		if idx = t.indexOf(p); idx >= 0 {
+			break
+		}
+	}
+	if idx >= 0 && t.items[t.rows[idx].item].Path == t.want {
+		t.want = ""
+	}
+	if idx < 0 {
+		idx = min(t.cursor, len(t.rows)-1)
+	}
+	t.setCursor(max(idx, 0), 1)
+}
+
+func (t *Tab) indexOf(path string) int {
+	for i, r := range t.rows {
+		if !r.header && t.items[r.item].Path == path {
+			return i
+		}
+	}
+	return -1
+}
+
+// selected is the artifact under the cursor.
+func (t *Tab) selected() (store.Artifact, bool) {
+	if t.cursor < 0 || t.cursor >= len(t.rows) || t.rows[t.cursor].header {
+		return store.Artifact{}, false
+	}
+	return t.items[t.rows[t.cursor].item], true
+}
+
+// move steps the cursor by delta, over headers.
+func (t *Tab) move(delta int) {
+	dir := 1
+	if delta < 0 {
+		dir = -1
+	}
+	t.setCursor(t.cursor+delta, dir)
+}
+
+// setCursor puts the cursor on row i, or the nearest artifact from it in
+// direction dir (then the other way).
+func (t *Tab) setCursor(i, dir int) {
+	if len(t.rows) == 0 {
+		t.cursor, t.top, t.selKey = 0, 0, ""
+		return
+	}
+	i = min(max(i, 0), len(t.rows)-1)
+	pick := func(step int) int {
+		for j := i; j >= 0 && j < len(t.rows); j += step {
+			if !t.rows[j].header {
+				return j
+			}
+		}
+		return -1
+	}
+	j := pick(dir)
+	if j < 0 {
+		j = pick(-dir)
+	}
+	if j >= 0 {
+		i = j
+	}
+	t.cursor = i
+	if a, ok := t.selected(); ok {
+		t.selKey = a.Path
+	}
+	t.clampTop()
+}
+
+func (t *Tab) listHeight() int {
+	_, h := t.split.LeftSize()
+	return max(h, 1)
+}
+
+// clampTop scrolls so the cursor is on screen, showing the header above
+// the first artifact of a group when it fits.
+func (t *Tab) clampTop() {
+	h := t.listHeight()
+	if t.cursor < t.top {
+		t.top = t.cursor
+		if t.top > 0 && t.rows[t.top-1].header {
+			t.top--
+		}
+	}
+	if t.cursor >= t.top+h {
+		t.top = t.cursor - h + 1
+	}
+	t.top = max(min(t.top, len(t.rows)-h), 0)
+}
+
+// --- view ------------------------------------------------------------------------
+
+// View implements tabs.Tab.
+func (t *Tab) View() string {
+	lw, lh := t.split.LeftSize()
+	rw, rh := t.split.RightSize()
+	return t.split.View(t.listView(lw, lh), t.detailView(rw, rh), true)
+}
+
+// icon is the glyph shown before an artifact of type typ.
+func icon(typ string) string {
+	switch typ {
+	case "html":
+		return "◫"
+	case "svg":
+		return "◇"
+	case "png", "jpg", "gif", "webp":
+		return "▣"
+	case "md":
+		return "¶"
+	case "pdf":
+		return "▤"
+	default:
+		return "·"
+	}
+}
+
+// source names where an artifact came from: its session, "kept" for a
+// copy in .forge/artifacts, else "repo".
+func (t *Tab) source(a store.Artifact) string {
+	switch {
+	case artfs.IsKept(a.Path):
+		return "kept"
+	case a.SessionName != "":
+		return a.SessionName
+	case a.SessionID != 0:
+		return fmt.Sprintf("session %d", a.SessionID)
+	case a.Project == "":
+		return filepath.Dir(a.Path)
+	default:
+		return "repo"
+	}
+}
+
+func (t *Tab) listView(w, h int) string {
+	if w <= 0 || h <= 0 {
+		return ""
+	}
+	if len(t.rows) == 0 {
+		return t.emptyView(w)
+	}
+	end := min(t.top+h, len(t.rows))
+	lines := make([]string, 0, end-t.top)
+	for i := t.top; i < end; i++ {
+		lines = append(lines, t.rowView(t.rows[i], i == t.cursor, w))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (t *Tab) rowView(r row, selected bool, w int) string {
+	th := t.theme
+	if r.header {
+		right := count(r.count, "artifact")
+		label := ansi.Truncate(r.project, max(w-ansi.StringWidth(right)-1, 1), "…")
+		pad := max(w-ansi.StringWidth(label)-ansi.StringWidth(right), 1)
+		return th.DetailTitle.Render(label) + strings.Repeat(" ", pad) + th.Hint.Render(right)
+	}
+	a := t.items[r.item]
+	indent := ""
+	if t.all() {
+		indent = "  "
+	}
+	glyph := icon(a.Type)
+	name := filepath.Base(a.Path)
+	src := t.source(a)
+	age := ui.ShortAge(t.now().Sub(a.ModifiedAt))
+
+	// Columns drop from the right of the name as space runs out: the
+	// session first, then the type.
+	srcW := min(ansi.StringWidth(src), 18)
+	typW := 4
+	ageW := 4
+	fixed := ansi.StringWidth(indent) + 2 // glyph and a space
+	showSrc, showTyp := true, true
+	if w-fixed-ageW-typW-srcW-3 < 10 {
+		showSrc = false
+	}
+	if w-fixed-ageW-typW-2 < 10 {
+		showTyp = false
+	}
+	nameW := w - fixed - ageW - 1
+	if showTyp {
+		nameW -= typW + 1
+	}
+	if showSrc {
+		nameW -= srcW + 1
+	}
+	nameW = max(nameW, 1)
+	name = ansi.Truncate(name, nameW, "…")
+	namePad := strings.Repeat(" ", max(nameW-ansi.StringWidth(name), 0))
+	srcCell := ""
+	if showSrc {
+		srcCell = " " + padRight(ansi.Truncate(src, srcW, "…"), srcW)
+	}
+	typCell := ""
+	if showTyp {
+		typCell = " " + padRight(ansi.Truncate(a.Type, typW, ""), typW)
+	}
+	ageCell := " " + padLeft(age, ageW)
+
+	if selected {
+		line := indent + glyph + " " + name + namePad + srcCell + typCell + ageCell
+		return th.TableSelected.Render(padRight(line, w))
+	}
+	srcStyle := th.ArtifactSession
+	switch src {
+	case "kept":
+		srcStyle = th.ArtifactKept
+	case "repo":
+		srcStyle = th.Hint
+	}
+	return indent + th.ArtifactIcon.Render(glyph) + " " + th.TableRow.Render(name+namePad) +
+		srcStyle.Render(srcCell) + th.Hint.Render(typCell+ageCell)
+}
+
+// truncateLeft keeps the end of s (the informative part of a path).
+func truncateLeft(s string, w int) string {
+	if ansi.StringWidth(s) <= w {
+		return s
+	}
+	if w <= 1 {
+		return "…"
+	}
+	return "…" + ansi.TruncateLeft(s, ansi.StringWidth(s)-w+1, "")
+}
+
+func padRight(s string, w int) string {
+	return s + strings.Repeat(" ", max(w-ansi.StringWidth(s), 0))
+}
+
+func padLeft(s string, w int) string {
+	return strings.Repeat(" ", max(w-ansi.StringWidth(s), 0)) + s
+}
+
+// emptyView explains why there is nothing to show.
+func (t *Tab) emptyView(w int) string {
+	th := t.theme
+	switch {
+	case !t.scanned:
+		return th.Hint.Render("Scanning for artifacts…")
+	case len(t.projects()) == 0 && len(t.spec.Absolute) == 0:
+		return th.TableEmpty.Render(ansi.Wrap("No projects configured. Add one under projects: in the config.", w, ""))
+	}
+	globs := append(append([]string(nil), t.spec.Relative...), t.spec.Absolute...)
+	msg := "No artifacts yet. Watching " + strings.Join(globs, ", ") +
+		" in every checkout and session worktree."
+	out := th.TableEmpty.Render(ansi.Wrap(msg, w, " ,"))
+	if t.scanErr != nil {
+		out += "\n\n" + th.Hint.Render(ansi.Wrap(t.scanErr.Error(), w, " /"))
+	}
+	return out
+}
+
+// detailView shows the selected artifact's facts.
+func (t *Tab) detailView(w, h int) string {
+	if w <= 0 || h <= 0 {
+		return ""
+	}
+	th := t.theme
+	a, ok := t.selected()
+	if !ok {
+		return th.Hint.Render("Nothing selected")
+	}
+	field := func(label, value string) string {
+		return th.DetailLabel.Render(padRight(label, 9)) + th.Body.Render(ansi.Truncate(value, max(w-9, 1), "…"))
+	}
+	project := a.Project
+	if project == "" {
+		project = "—"
+	}
+	now := t.now()
+	lines := []string{
+		th.ArtifactIcon.Render(icon(a.Type)) + " " + th.DetailTitle.Render(ansi.Truncate(filepath.Base(a.Path), max(w-2, 1), "…")),
+		th.Hint.Render(truncateLeft(filepath.Dir(a.Path), w)),
+		"",
+		field("Project", project),
+		field("Source", t.source(a)),
+		field("Type", a.Type),
+		field("Size", humanSize(a.Size)),
+		field("Modified", a.ModifiedAt.Format("2006-01-02 15:04")+" ("+ago(now.Sub(a.ModifiedAt))+")"),
+		field("Created", a.CreatedAt.Format("2006-01-02 15:04")),
+		"",
+	}
+	ak := t.keys.Artifacts
+	hints := []string{ak.Open.Help().Key + " open", ak.CopyPath.Help().Key + " copy path"}
+	if !artfs.IsKept(a.Path) {
+		hints = append(hints, ak.Keep.Help().Key+" keep a copy")
+	}
+	lines = append(lines, th.Hint.Render(ansi.Truncate(strings.Join(hints, " · "), w, "…")))
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ago is "just now" or "5m ago".
+func ago(d time.Duration) string {
+	if age := ui.ShortAge(d); age != "now" {
+		return age + " ago"
+	}
+	return "just now"
+}
+
+// humanSize is "512 B", "3.4 KB", "1.2 MB".
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit && exp < 3; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+}
