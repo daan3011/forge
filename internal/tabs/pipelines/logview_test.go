@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/daan3011/forge/internal/cilog"
 	"github.com/daan3011/forge/internal/github"
@@ -334,20 +333,6 @@ func TestLogCommands(t *testing.T) {
 	help := h.ShortHelp()
 	if len(help) == 0 || help[0].Help().Desc != "full log / errors" {
 		t.Errorf("viewer help = %v", help)
-	}
-}
-
-func TestHighlight(t *testing.T) {
-	th := ui.NewTheme(true, nil)
-	got := highlight("an Error and error", "error", th.Body, th.LogMatch)
-	if ansi.Strip(got) != "an Error and error" {
-		t.Errorf("highlight changed text: %q", ansi.Strip(got))
-	}
-	if !strings.Contains(got, th.LogMatch.Render("E")) {
-		t.Error("match not highlighted")
-	}
-	if highlight("plain", "", th.Body, th.LogMatch) != th.Body.Render("plain") {
-		t.Error("empty query should render plainly")
 	}
 }
 

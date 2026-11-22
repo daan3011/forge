@@ -143,6 +143,59 @@ func (t *Tab) current() (rendered, bool) {
 	return got, ok
 }
 
+// applyJump scrolls the detail to the pending heading once the doc it
+// belongs to is selected and rendered.
+func (t *Tab) applyJump() {
+	if t.jump == "" {
+		return
+	}
+	r, ok := t.selected()
+	if !ok || r.node.Path != t.jumpPath {
+		if t.want != t.jumpPath {
+			t.jump, t.jumpPath = "", "" // the selection moved on
+		}
+		return
+	}
+	got, ok := t.current()
+	if !ok {
+		return // still rendering
+	}
+	if i := headingLine(got.lines, t.jump); i >= 0 {
+		maxOff := max(len(got.lines)-t.detailBodyHeight(), 0)
+		t.det.offset = min(i, maxOff)
+	}
+	t.jump, t.jumpPath = "", ""
+}
+
+// headingLine finds the rendered line showing heading: one that reads as
+// the heading (once styling, margins and "#" marks are stripped), else the
+// first line containing it; -1 if none does.
+func headingLine(lines []string, heading string) int {
+	want := plainHeading(heading)
+	if want == "" {
+		return -1
+	}
+	contains := -1
+	for i, l := range lines {
+		got := plainHeading(ansi.Strip(l))
+		if strings.EqualFold(got, want) {
+			return i
+		}
+		if contains < 0 && strings.Contains(strings.ToLower(got), strings.ToLower(want)) {
+			contains = i
+		}
+	}
+	return contains
+}
+
+// plainHeading drops "#" marks, inline markdown markers and outer space.
+func plainHeading(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimSpace(strings.TrimLeft(s, "#"))
+	s = strings.NewReplacer("**", "", "__", "", "`", "", "*", "").Replace(s)
+	return strings.TrimSpace(s)
+}
+
 func (t *Tab) scrollDetail(delta int) {
 	got, ok := t.current()
 	if !ok {

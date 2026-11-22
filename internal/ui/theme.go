@@ -191,6 +191,9 @@ type Theme struct {
 	LogMatch    lipgloss.Style // a search match
 	LogMatchCur lipgloss.Style // the current search match
 
+	// Docs search (P4.2).
+	SearchMatch lipgloss.Style // the query in a result snippet
+
 	// PR detail pane (P2.2).
 	DetailBand      lipgloss.Style // the title on a raised band
 	DetailTab       lipgloss.Style // Overview / Checks / Activity
@@ -332,6 +335,8 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		LogHidden:   lipgloss.NewStyle().Foreground(p.Muted).Italic(true),
 		LogMatch:    lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Underline(true),
 		LogMatchCur: lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true),
+
+		SearchMatch: lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true).Underline(true),
 
 		DetailBand:      lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		DetailTab:       lipgloss.NewStyle().Foreground(p.Muted).Padding(0, 1),

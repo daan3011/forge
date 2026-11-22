@@ -62,13 +62,23 @@ type Tab struct {
 
 	dialog *huh.Form
 	onDone func() tea.Cmd
+
+	// Search (P4.2): the index is rebuilt with every scan.
+	index     *docfs.Index
+	search    ui.Filter
+	hits      []docfs.Hit
+	hitCursor int
+	hitTop    int
+	jump      string // heading to scroll the detail to once rendered
+	jumpPath  string // the doc jump belongs to
 }
 
 var (
-	_ tabs.Tab           = (*Tab)(nil)
-	_ tabs.InputCapturer = (*Tab)(nil)
-	_ tabs.Commander     = (*Tab)(nil)
-	_ tabs.Updater       = (*Tab)(nil)
+	_ tabs.Tab            = (*Tab)(nil)
+	_ tabs.InputCapturer  = (*Tab)(nil)
+	_ tabs.Commander      = (*Tab)(nil)
+	_ tabs.Updater        = (*Tab)(nil)
+	_ tabs.EntityProvider = (*Tab)(nil)
 )
 
 // New returns the Docs tab.
@@ -86,6 +96,7 @@ func newTab(d tabkit.Deps) *Tab {
 		expanded: map[string]bool{},
 		known:    map[string]bool{},
 		det:      newDetailState(),
+		search:   ui.NewFilter(d.Theme, d.Keys),
 	}
 	t.split.SetRatio(0.32)
 	t.edit = func(path string) tea.Cmd {
@@ -102,6 +113,7 @@ type scannedMsg struct {
 	gen   int
 	trees []*docfs.Node
 	errs  []error
+	index *docfs.Index
 	at    time.Time
 }
 
@@ -162,8 +174,9 @@ func (t *Tab) Init() tea.Cmd { return tea.Batch(t.Refresh(), t.waitWatch()) }
 func (t *Tab) Refresh() tea.Cmd {
 	gen, w := t.gen, t.watcher
 	paths := make([]string, len(t.roots))
+	names := make([]string, len(t.roots))
 	for i, r := range t.roots {
-		paths[i] = r.path
+		paths[i], names[i] = r.path, r.name
 	}
 	now := t.now
 	return func() tea.Msg {
@@ -171,9 +184,12 @@ func (t *Tab) Refresh() tea.Cmd {
 		if w != nil {
 			_ = w.Set(paths) // best effort: without it, r still reloads
 		}
+		roots := make([]docfs.IndexRoot, len(paths))
 		for i, p := range paths {
 			msg.trees[i], msg.errs[i] = docfs.Scan(p)
+			roots[i] = docfs.IndexRoot{Name: names[i], Tree: msg.trees[i]}
 		}
+		msg.index = docfs.BuildIndex(roots)
 		msg.at = now()
 		return msg
 	}
@@ -204,10 +220,18 @@ func (t *Tab) scannedIn(msg scannedMsg) {
 		t.learn(msg.trees[i])
 	}
 	t.scanned, t.updated = true, msg.at
+	t.index = msg.index
 	if t.want != "" {
 		t.reveal(t.want)
 	}
 	t.rebuild()
+	if t.searching() {
+		keep := ""
+		if h, ok := t.currentHit(); ok {
+			keep = h.Doc.Path
+		}
+		t.runSearch(keep)
+	}
 }
 
 // learn records n's folders so later scans know which are new.
@@ -228,7 +252,9 @@ func (t *Tab) learn(n *docfs.Node) {
 // Update implements tabs.Tab.
 func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 	cmd := t.update(msg)
-	return t, tea.Batch(cmd, t.syncDetail())
+	sync := t.syncDetail()
+	t.applyJump()
+	return t, tea.Batch(cmd, sync)
 }
 
 func (t *Tab) update(msg tea.Msg) tea.Cmd {
@@ -258,6 +284,16 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 	kp, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
+	}
+	if t.searching() {
+		if t.searchKey(kp) {
+			return nil
+		}
+		cmd, _ := t.actionKey(kp)
+		return cmd
+	}
+	if !t.focusDetail && key.Matches(kp, t.keys.List.Filter) {
+		return t.startSearch()
 	}
 	if cmd, ok := t.actionKey(kp); ok {
 		return cmd
@@ -437,13 +473,15 @@ func (t *Tab) SetProject(p *config.Project) {
 	t.scanned = false
 	t.rows, t.cursor, t.top, t.selPath = nil, 0, 0, ""
 	t.focusDetail = false
+	t.index, t.jump, t.jumpPath = nil, "", ""
+	t.clearSearch()
 }
 
 // Title implements tabs.Tab.
 func (t *Tab) Title() string { return Title }
 
 // CapturingInput implements tabs.InputCapturer.
-func (t *Tab) CapturingInput() bool { return t.dialog != nil }
+func (t *Tab) CapturingInput() bool { return t.dialog != nil || t.search.Active() }
 
 // LastUpdated implements tabs.Updater.
 func (t *Tab) LastUpdated() time.Time { return t.updated }
@@ -454,11 +492,17 @@ func (t *Tab) ShortHelp() []key.Binding {
 	switch {
 	case t.dialog != nil:
 		return t.keys.FormHelp()
+	case t.search.Active():
+		return []key.Binding{t.keys.Input.Cancel, t.keys.Input.Accept}
+	case t.searching():
+		jump := key.NewBinding(key.WithKeys(), key.WithHelp(dk.Open.Help().Key, "jump to match"))
+		clearSearch := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "clear search"))
+		return []key.Binding{t.keys.List.Down, t.keys.List.Up, clearSearch, jump}
 	case t.focusDetail:
 		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to tree"))
 		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back, dk.Edit}
 	}
-	return []key.Binding{dk.Rename, dk.New, dk.Open, dk.Edit}
+	return []key.Binding{dk.New, t.keys.List.Filter, dk.Open, dk.Edit}
 }
 
 // FullHelp implements tabs.Tab.
@@ -467,7 +511,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{dk.Open, dk.Back, t.keys.Input.Cancel, dk.DetailDown, dk.DetailUp, l.ShrinkPane, l.GrowPane},
-		{dk.New, dk.Edit, dk.Rename, dk.Delete},
+		{l.Filter, dk.New, dk.Edit, dk.Rename, dk.Delete},
 	}
 }
 
@@ -475,7 +519,8 @@ func (t *Tab) FullHelp() [][]key.Binding {
 func (t *Tab) Commands() []tabs.Command {
 	l, dk := t.keys.List, t.keys.Docs
 	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return nil } }
-	return []tabs.Command{
+	cmds := []tabs.Command{
+		{ID: "filter", Title: "Docs: search titles and content…", Key: l.Filter, Run: t.startSearch},
 		{ID: "docs_new", Title: "Docs: new doc…", Key: dk.New, Run: t.newDoc},
 		{ID: "docs_edit", Title: "Docs: edit in $EDITOR", Key: dk.Edit, Run: t.editSelected},
 		{ID: "docs_rename", Title: "Docs: rename / move…", Key: dk.Rename, Run: t.renameSelected},
@@ -493,6 +538,13 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(t.split.Grow)},
 		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(t.split.Shrink)},
 	}
+	if t.searching() {
+		cmds = append(cmds,
+			tabs.Command{ID: "docs_jump", Title: "Docs: jump to search match", Key: dk.Open, Run: do(t.jumpToHit)},
+			tabs.Command{ID: "docs_clear_search", Title: "Docs: clear search", Key: t.keys.Input.Cancel, Run: do(t.clearSearch)},
+		)
+	}
+	return cmds
 }
 
 // --- view ------------------------------------------------------------------------
@@ -509,7 +561,11 @@ func (t *Tab) View() string {
 	}
 	lw, lh := t.split.LeftSize()
 	rw, rh := t.split.RightSize()
-	return t.split.View(t.treeView(lw, lh), t.detailView(rw, rh), !t.focusDetail)
+	left := t.treeView(lw, lh)
+	if t.searching() {
+		left = t.searchView(lw, lh)
+	}
+	return t.split.View(left, t.detailView(rw, rh), !t.focusDetail)
 }
 
 // docCount is "1 doc" / "3 docs".
