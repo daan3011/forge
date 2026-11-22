@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/packs"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/templates"
@@ -160,5 +161,38 @@ func TestNewUnknownTemplateWithPrompt(t *testing.T) {
 	d, _ := newEnvCLI(t, twoProjects)
 	if _, _, err := run(t, d, "new", "--name", "x", "--project", "forge", "--template", "nope", "--prompt", "p"); err == nil {
 		t.Error("unknown template accepted")
+	}
+}
+
+func TestNewWithPack(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "internal", "auth"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "internal", "auth", "token.go"), []byte("package auth"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, fake := newEnvCLI(t, "projects:\n  - {name: forge, repo: daan/forge, path: "+repo+"}\n")
+	dir, err := packs.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := packs.Save(dir, packs.Pack{Name: "auth", Files: []string{"internal/auth/*.go"}, Preamble: "Auth layer.\n"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := run(t, d, "new", "--name", "x", "--project", "forge", "--pack", "auth", "--prompt", "Fix login."); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.got) != 1 {
+		t.Fatalf("Start = %+v", fake.got)
+	}
+	o := fake.got[0]
+	want := "Auth layer.\n\nRead these files first (context pack auth): @internal/auth/token.go\n\nFix login.\n"
+	if o.Prompt != want || len(o.Docs) != 1 || o.Docs[0].Rel != "internal/auth/token.go" {
+		t.Errorf("Start = %+v", o)
+	}
+	if _, _, err := run(t, d, "new", "--name", "y", "--project", "forge", "--pack", "nope", "--prompt", "p"); err == nil ||
+		!strings.Contains(err.Error(), "no context pack called nope") {
+		t.Errorf("unknown pack: %v", err)
 	}
 }

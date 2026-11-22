@@ -195,7 +195,8 @@ func (t *Tab) docsPlan(req NewRequest) []docfs.Attachment {
 	if len(req.Docs) == 0 {
 		return nil
 	}
-	return docfs.Plan(t.projectPath(req.Opts.Project), req.Docs)
+	_, plan := SplitPlan(t.projectPath(req.Opts.Project), req.Packs, req.Docs)
+	return plan
 }
 
 // withDocsVar sets {docs} to the mentions of req's docs (they win over the

@@ -40,6 +40,9 @@ type Source struct {
 	// tab): the Sessions tab asks for a new or a running session and
 	// mentions them there. Kind and ID are empty then.
 	Docs []string
+	// Packs are context pack names to give an agent (P5.2, the Context
+	// tab's Packs view); handled like Docs, with Repo picking the project.
+	Packs []string
 }
 
 // FixRequest says how a "fix this" source is handled (P2.8).

@@ -43,8 +43,11 @@ type KeyMap struct {
 	// Capture drives the quick capture line (P3.5): the ctrl+n overlay
 	// and `forge capture`.
 	Capture CaptureKeys
-	Demo    DemoKeys
-	Tmux    TmuxDemoKeys
+	// FilePicker drives the fuzzy file picker (P5.2), together with the
+	// Input keys; everything else types into its query.
+	FilePicker FilePickerKeys
+	Demo       DemoKeys
+	Tmux       TmuxDemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -101,6 +104,7 @@ type SessionKeys struct {
 	Transcript  key.Binding // open the transcript viewer
 	OpenPR      key.Binding // open the linked PR (else the issue) in the browser
 	OpenIssue   key.Binding // open the linked issue in the browser
+	AttachPack  key.Binding // send a context pack to the running session (P5.2)
 }
 
 // PRKeys are the PRs tab's actions (P2.1).
@@ -204,12 +208,25 @@ type DocKeys struct {
 // ContextKeys are the Context tab's actions (P5.1). While the detail pane
 // has focus, the List keys scroll it.
 type ContextKeys struct {
-	Edit       key.Binding // the memory file in $EDITOR (created if missing)
+	Edit       key.Binding // the memory file / pack in $EDITOR (created if missing)
 	Worktrees  key.Binding // toggle the worktree inheritance matrix
 	Open       key.Binding // focus the rendered file
 	Back       key.Binding // back to the list
 	DetailDown key.Binding
 	DetailUp   key.Binding
+	// Packs view (P5.2).
+	Packs      key.Binding // switch between memory files and packs
+	NewPack    key.Binding
+	AddFiles   key.Binding // pick the pack's files with the fuzzy picker
+	DeletePack key.Binding
+	SendPack   key.Binding // give the pack to a new or running session
+}
+
+// FilePickerKeys drive the fuzzy file picker (P5.2). Next / Prev, Accept
+// and Cancel are the Input keys.
+type FilePickerKeys struct {
+	Toggle    key.Binding // mark / unmark the file under the cursor
+	ToggleAll key.Binding // mark / unmark every visible match
 }
 
 // ArtifactKeys are the Artifacts tab's actions (P4.5, P4.6).
@@ -369,6 +386,7 @@ func DefaultKeyMap() *KeyMap {
 			Transcript:  bind("transcript", "t"),
 			OpenPR:      bind("open linked PR", "o"),
 			OpenIssue:   bind("open linked issue", "O"),
+			AttachPack:  bind("attach context pack", "P"),
 		},
 		PRs: PRKeys{
 			NextSection: bind("next section", "l", "right"),
@@ -454,6 +472,15 @@ func DefaultKeyMap() *KeyMap {
 			Back:       bind("back to list", "h", "left"),
 			DetailDown: bind("scroll detail down", "J"),
 			DetailUp:   bind("scroll detail up", "K"),
+			Packs:      bind("memory / packs", "p"),
+			NewPack:    bind("new pack", "n"),
+			AddFiles:   bind("pick files", "a"),
+			DeletePack: bind("delete pack", "D"),
+			SendPack:   bind("send pack to session", "s"),
+		},
+		FilePicker: FilePickerKeys{
+			Toggle:    bind("mark file", "tab"),
+			ToggleAll: bind("mark all shown", "ctrl+a"),
 		},
 		Artifacts: ArtifactKeys{
 			Open:         bind("open", "o"),
@@ -573,6 +600,9 @@ const (
 	// scopeCapture is modal too: the quick capture line (P3.5), live
 	// with the input keys.
 	scopeCapture = "capture"
+	// scopeFilePicker is modal too: the fuzzy file picker (P5.2), live
+	// with the input keys.
+	scopeFilePicker = "filepicker"
 )
 
 // isTabScope reports whether scope belongs to one tab (and is active
@@ -582,7 +612,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
 	pp, lg, pl, cp, dc, ar := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs, &k.Artifacts
-	cx := &k.Context
+	cx, fp := &k.Context, &k.FilePicker
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -615,6 +645,7 @@ func (k *KeyMap) actions() []action {
 		{"session_transcript", scopeSessions, &ss.Transcript},
 		{"session_open_pr", scopeSessions, &ss.OpenPR},
 		{"session_open_issue", scopeSessions, &ss.OpenIssue},
+		{"session_attach_pack", scopeSessions, &ss.AttachPack},
 		{"pr_next_section", scopePRs, &pr.NextSection},
 		{"pr_prev_section", scopePRs, &pr.PrevSection},
 		{"pr_repo_filter", scopePRs, &pr.RepoFilter},
@@ -695,6 +726,13 @@ func (k *KeyMap) actions() []action {
 		{"context_back", scopeContext, &cx.Back},
 		{"context_detail_down", scopeContext, &cx.DetailDown},
 		{"context_detail_up", scopeContext, &cx.DetailUp},
+		{"context_packs", scopeContext, &cx.Packs},
+		{"context_new_pack", scopeContext, &cx.NewPack},
+		{"context_add_files", scopeContext, &cx.AddFiles},
+		{"context_delete_pack", scopeContext, &cx.DeletePack},
+		{"context_send_pack", scopeContext, &cx.SendPack},
+		{"file_picker_toggle", scopeFilePicker, &fp.Toggle},
+		{"file_picker_toggle_all", scopeFilePicker, &fp.ToggleAll},
 		{"transcript_up", scopeTranscript, &tr.Up},
 		{"transcript_down", scopeTranscript, &tr.Down},
 		{"transcript_page_up", scopeTranscript, &tr.PageUp},

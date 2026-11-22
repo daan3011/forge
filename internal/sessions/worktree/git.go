@@ -216,6 +216,24 @@ func (e *Exec) Status(ctx context.Context, dir string) ([]string, error) {
 	return lines, nil
 }
 
+// LsFiles lists the files of the checkout at dir, tracked and untracked
+// but not ignored, slash-separated and relative to dir, sorted (P5.2's
+// file picker).
+func (e *Exec) LsFiles(ctx context.Context, dir string) ([]string, error) {
+	out, err := e.Run(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for f := range strings.SplitSeq(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	slices.Sort(files)
+	return slices.Compact(files), nil
+}
+
 // IsAncestor implements Git.
 func (e *Exec) IsAncestor(ctx context.Context, repo, a, b string) (bool, error) {
 	_, err := e.Run(ctx, repo, "merge-base", "--is-ancestor", "--end-of-options", a, b)

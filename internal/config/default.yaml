@@ -154,6 +154,7 @@ keybinds:
   # session_transcript: ["t"]   # read the session's transcript
   # session_open_pr: ["o"]      # open the linked PR (else the issue) in the browser
   # session_open_issue: ["O"]   # open the linked issue in the browser
+  # session_attach_pack: ["P"]  # send a context pack to the running session
   # PRs tab
   # pr_next_section: ["l", "right"]
   # pr_prev_section: ["h", "left"]
@@ -240,6 +241,11 @@ keybinds:
   # context_back: ["h", "left"]    # back to the list (esc too)
   # context_detail_down: ["J"]
   # context_detail_up: ["K"]
+  # context_packs: ["p"]          # switch between memory files and context packs
+  # context_new_pack: ["n"]       # new pack: name, description, preamble, then files
+  # context_add_files: ["a"]      # pick the pack's files with the fuzzy picker
+  # context_delete_pack: ["D"]
+  # context_send_pack: ["s"]      # give the pack to a new or running session
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]
@@ -296,6 +302,8 @@ keybinds:
   # capture_end: ["end", "ctrl+e"]
   # capture_delete_word: ["ctrl+w", "alt+backspace"]
   # capture_delete_forward: ["delete"]
+  # file_picker_toggle: ["tab"]          # fuzzy file picker: mark the file
+  # file_picker_toggle_all: ["ctrl+a"]   # mark / unmark every match shown
   # Text inputs (filter, palette)
   # cancel: ["esc"]
   # accept: ["enter"]

@@ -6,6 +6,7 @@ import (
 	"charm.land/huh/v2"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/packs"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
@@ -33,6 +34,9 @@ type NewRequest struct {
 	// Docs are absolute doc paths to hand the session (P4.3); they fill
 	// {docs} as @path mentions for the chosen project's worktree.
 	Docs []string
+	// Packs are the context packs chosen in the form (Opts.Packs),
+	// expanded for the chosen project (P5.2).
+	Packs []packs.Resolved
 }
 
 // TemplateInput is what templates.Resolve needs for the chosen options.

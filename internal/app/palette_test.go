@@ -144,6 +144,7 @@ var notRegistered = []string{
 	"capture_submit", "capture_full_form", "capture_complete", "capture_complete_prev",
 	"capture_left", "capture_right", "capture_home", "capture_end",
 	"capture_delete_word", "capture_delete_forward",
+	"file_picker_toggle", "file_picker_toggle_all",
 }
 
 // TestEveryActionIsACommand guards the "every user action is a palette

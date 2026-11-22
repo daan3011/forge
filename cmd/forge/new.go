@@ -16,6 +16,7 @@ import (
 	"github.com/daan3011/forge/internal/checkout"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/github"
+	"github.com/daan3011/forge/internal/packs"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/worktree"
@@ -100,7 +101,10 @@ interactive form asks for the rest. --prompt - reads the prompt from stdin.
 ~/.config/forge/templates (unless --prompt is given). --issue and --pr name
 the issue / PR it is for (the session is linked to them); --var name=value
 fills any other variable. --branch works on an existing branch (e.g. a PR's
-head) or names the new one.`,
+head) or names the new one.
+
+--pack gives the agent a context pack from ~/.config/forge/packs: its
+preamble and @path mentions of its files start the first prompt.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _, _, err := config.LoadOrCreate()
@@ -128,6 +132,7 @@ head) or names the new one.`,
 			if err != nil {
 				return err
 			}
+			ps := loadPacks(cmd.ErrOrStderr())
 			usable := sessionstab.UsableProjects(cfg.Projects)
 			switch {
 			case o.Project != "":
@@ -154,7 +159,7 @@ head) or names the new one.`,
 					pre.Template = cfg.Sessions.DefaultTemplate // pre-selected only
 				}
 				f, vals, err := sessionstab.NewForm(sessionstab.FormInput{
-					Theme: theme, Keys: keys, Projects: cfg.Projects, Values: pre, Templates: ts,
+					Theme: theme, Keys: keys, Projects: cfg.Projects, Values: pre, Templates: ts, Packs: ps,
 				})
 				if err != nil {
 					return err
@@ -164,6 +169,19 @@ head) or names the new one.`,
 				}
 				o, asked = *vals, true
 			}
+			project := projectNamed(cfg.Projects, o.Project)
+			rs, notes, err := sessionstab.ResolvePacks(ps, o.Packs, project)
+			if err != nil {
+				return err
+			}
+			for _, n := range notes {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", n)
+			}
+			// The packs' files go into the worktree; their block starts the
+			// prompt (before the last look at it, when there is one).
+			packPlan, _ := sessionstab.SplitPlan(project.Path, rs, nil)
+			o.Docs = packPlan
+			withPacks := func(prompt string) string { return packs.Prompt(rs, packPlan, prompt) }
 			if o.Template != "" {
 				tmpl, ok := templates.Find(ts, o.Template)
 				if !ok {
@@ -172,10 +190,14 @@ head) or names the new one.`,
 				// An explicit --prompt wins; the template is then recorded only.
 				if asked || o.Prompt == "" {
 					refs := map[store.LinkKind]string{store.KindPlaneIssue: issue, store.KindGitHubPR: pr}
-					if o.Prompt, err = templatePrompt(cmd, d, theme, keys, cfg.Projects, tmpl, o, refs, vars, asked); err != nil {
+					if o.Prompt, err = templatePrompt(cmd, d, theme, keys, cfg.Projects, tmpl, o, refs, vars, asked, withPacks); err != nil {
 						return err
 					}
+				} else {
+					o.Prompt = withPacks(o.Prompt)
 				}
+			} else {
+				o.Prompt = withPacks(o.Prompt)
 			}
 
 			svc, err := d.sessions(cfg, st)
@@ -208,6 +230,7 @@ head) or names the new one.`,
 	f.StringVar(&pr, "pr", "", "pull request the session is for, owner/repo#n (template {pr})")
 	f.StringArrayVar(&varFlags, "var", nil, "template variable as name=value (repeatable)")
 	f.StringVar(&o.Prompt, "prompt", "", "first prompt; - reads stdin")
+	f.StringArrayVar(&o.Packs, "pack", nil, "context pack to give the agent (repeatable)")
 	return cmd
 }
 
@@ -222,6 +245,30 @@ func parseVars(flags []string) (map[string]string, error) {
 		vars[name] = value
 	}
 	return vars, nil
+}
+
+// loadPacks reads the context packs folder. Broken packs are skipped with
+// a warning.
+func loadPacks(stderr io.Writer) []packs.Pack {
+	dir, err := packs.Dir()
+	if err != nil {
+		return nil
+	}
+	ps, errs := packs.Load(dir)
+	for _, err := range errs {
+		fmt.Fprintln(stderr, "warning:", err)
+	}
+	return ps
+}
+
+// projectNamed is the configured project called name.
+func projectNamed(ps []config.Project, name string) config.Project {
+	for _, p := range ps {
+		if p.Name == name {
+			return p
+		}
+	}
+	return config.Project{Name: name}
 }
 
 func templatesDirName() string {
@@ -254,6 +301,7 @@ func loadTemplates(stderr io.Writer) ([]templates.Template, error) {
 // the rendered prompt for editing if the form was used.
 func templatePrompt(cmd *cobra.Command, d deps, theme *ui.Theme, keys *ui.KeyMap, projects []config.Project,
 	tmpl templates.Template, o agent.StartOpts, refs map[store.LinkKind]string, vars map[string]string, asked bool,
+	decorate func(string) string,
 ) (string, error) {
 	if d.runForm != nil {
 		if f, get := sessionstab.RefsForm(theme, keys, tmpl, refs); f != nil {
@@ -278,7 +326,7 @@ func templatePrompt(cmd *cobra.Command, d deps, theme *ui.Theme, keys *ui.KeyMap
 		}
 		maps.Copy(vals, get())
 	}
-	prompt := sessionstab.RenderPrompt(tmpl, vals)
+	prompt := decorate(sessionstab.RenderPrompt(tmpl, vals))
 	if asked {
 		if err := d.runForm(sessionstab.PromptForm(theme, keys, &prompt)); err != nil {
 			return "", err
