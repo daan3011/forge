@@ -14,6 +14,7 @@ import (
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // The detail pane shows the selected work item. Its header comes from the
@@ -462,7 +463,7 @@ func (t *Tab) body(item plane.WorkItem, w int) []string {
 	case e != nil:
 		section("Description", t.markdown(e.descR, e.description, e.mdWidth == w, w, "no description")...)
 	default:
-		section("Description", t.pending(item))
+		section("Description", t.pending(item, w)...)
 	}
 	if t.sessions != nil {
 		section("Linked", t.linkLines(item, w)...)
@@ -480,15 +481,17 @@ func commentsTitle(e *detailEntry) string {
 	return "Comments"
 }
 
-// pending is the line shown where details aren't there yet.
-func (t *Tab) pending(item plane.WorkItem) string {
+// pending is what's shown where details aren't there yet: the error, or
+// the loading hammer (P6.4).
+func (t *Tab) pending(item plane.WorkItem, w int) []string {
 	if err := t.det.failed[detailKey(item)]; err != nil {
-		return t.theme.DiffDel.Render("couldn't load details: " + reason(err))
+		return []string{t.theme.DiffDel.Render("couldn't load details: " + reason(err))}
 	}
 	if t.api == nil {
-		return t.theme.Hint.Render("Plane isn't set up")
+		return []string{t.theme.Hint.Render("Plane isn't set up")}
 	}
-	return t.theme.TableEmpty.Render("heating up…")
+	t.detailLoading = true
+	return anim.LoadingLines("heating up…", t.anim.Frame(), t.anim.Settings(), t.theme, w)
 }
 
 // markdown is rendered Markdown when ready, else the Markdown wrapped.

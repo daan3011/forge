@@ -80,16 +80,19 @@ type projectMeta struct {
 type Tab struct {
 	theme *ui.Theme
 	// anim drives the loading hammer (P6.4).
-	anim     *anim.Engine
-	keys     *ui.KeyMap
-	api      plane.API
-	apiErr   error
-	linker   tabs.ProjectLinker
-	sessions sessions.API
-	browser  browser.Opener
-	clip     clipboard.Copier
-	cfg      *config.Config
-	now      func() time.Time
+	anim *anim.Engine
+	// detailLoading is set by the last View when the detail pane showed
+	// the loading hammer, so Animating keeps it moving.
+	detailLoading bool
+	keys          *ui.KeyMap
+	api           plane.API
+	apiErr        error
+	linker        tabs.ProjectLinker
+	sessions      sessions.API
+	browser       browser.Opener
+	clip          clipboard.Copier
+	cfg           *config.Config
+	now           func() time.Time
 	// tick arms timers (tea.Tick; tests replace it).
 	tick func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 
@@ -1045,7 +1048,7 @@ func (t *Tab) Sources() []refresh.Source { return []refresh.Source{refresh.Plane
 
 // Animating implements tabs.Animator: the hammer while the list loads.
 func (t *Tab) Animating() bool {
-	return t.loading() && anim.Ticks(t.anim.Settings())
+	return (t.loading() || t.detailLoading) && anim.Ticks(t.anim.Settings())
 }
 
 // loading reports whether the list waits for its first issues.
@@ -1087,6 +1090,7 @@ func (t *Tab) StatusDetail() string {
 
 // View implements tabs.Tab.
 func (t *Tab) View() string {
+	t.detailLoading = false // set again if the detail draws the hammer
 	if t.dialog != nil {
 		w, h := t.dialogSize()
 		return t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), w, h))

@@ -63,8 +63,11 @@ type Tab struct {
 	store tabs.KVStore
 	gh    github.PRClient
 	anim  *anim.Engine
-	cfg   *config.Config
-	now   func() time.Time
+	// detailLoading is set by the last View when the detail pane showed
+	// the loading hammer, so Animating keeps it moving.
+	detailLoading bool
+	cfg           *config.Config
+	now           func() time.Time
 	// sessions finds the forge sessions linked to a PR; nil shows none.
 	sessions sessions.API
 	// tick arms the detail debounce (tea.Tick; tests replace it).
@@ -656,8 +659,8 @@ func (t *Tab) Animating() bool {
 	if t.diff != nil && !t.diff.loaded && t.dialog == nil && t.anim.Settings().Motion() {
 		return true // the hammer while fetching the diff
 	}
-	if t.loading() && anim.Ticks(t.anim.Settings()) {
-		return true // the hammer while the section first loads
+	if (t.loading() || t.detailLoading) && anim.Ticks(t.anim.Settings()) {
+		return true // the hammer while the section or a PR's details load
 	}
 	return t.sliding && !t.divider.Settled(t.anim.Frame())
 }
@@ -707,6 +710,7 @@ func (t *Tab) SetProject(p *config.Project) {
 
 // View implements tabs.Tab.
 func (t *Tab) View() string {
+	t.detailLoading = false // set again if the detail draws the hammer
 	t.slide()
 	bar := ui.SectionBar(t.theme, t.sectionTitles(), t.counts(), t.active, t.width)
 	if t.dialog != nil {

@@ -69,13 +69,16 @@ type repoRuns struct {
 type Tab struct {
 	theme *ui.Theme
 	// anim drives the loading hammer (P6.4).
-	anim    *anim.Engine
-	keys    *ui.KeyMap
-	store   tabs.KVStore
-	gh      github.RunsClient
-	browser browser.Opener
-	cfg     *config.Config
-	now     func() time.Time
+	anim *anim.Engine
+	// detailLoading is set by the last View when the run detail or the
+	// log showed the loading hammer, so Animating keeps it moving.
+	detailLoading bool
+	keys          *ui.KeyMap
+	store         tabs.KVStore
+	gh            github.RunsClient
+	browser       browser.Opener
+	cfg           *config.Config
+	now           func() time.Time
 	// tick arms timers (tea.Tick; tests replace it).
 	tick func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 
@@ -959,7 +962,10 @@ func (t *Tab) loading() bool {
 
 // Animating implements tabs.Animator: the hammer while the list loads.
 func (t *Tab) Animating() bool {
-	return t.loading() && len(t.table.Rows()) == 0 && anim.Ticks(t.anim.Settings())
+	if !anim.Ticks(t.anim.Settings()) {
+		return false
+	}
+	return t.detailLoading || (t.loading() && len(t.table.Rows()) == 0)
 }
 
 // RefreshWhenHidden implements tabs.AutoRefresher: no, GitHub calls are
@@ -998,6 +1004,7 @@ func (t *Tab) StatusDetail() string {
 
 // View implements tabs.Tab.
 func (t *Tab) View() string {
+	t.detailLoading = false // set again if the detail or log draws the hammer
 	if t.dialog != nil {
 		w, h := t.dialogSize()
 		return t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), w, h))

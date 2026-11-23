@@ -125,7 +125,8 @@ func (d deps) doctorEnv(ctx context.Context) (doctor.Env, func()) {
 	if p, err := config.TmuxConfPath(); err == nil {
 		e.TmuxConf = p
 	}
-	e.TmuxVersion = tmux.New(tmux.WithConfig(e.TmuxConf)).Version
+	tx := tmux.New(tmux.WithConfig(e.TmuxConf))
+	e.TmuxVersion, e.TmuxServerConfig = tx.Version, tx.ServerConfigFiles
 
 	if cfg.Plane.Workspace != "" {
 		e.PlaneConfigured = true

@@ -33,19 +33,20 @@ func healthy(t *testing.T) Env {
 		Output: func(_ context.Context, bin string, _ ...string) (string, error) {
 			return filepath.Base(bin) + " version 1.0\nmore", nil
 		},
-		Lstat:         func(string) (fs.FileInfo, error) { return fakeInfo{}, nil },
-		EvalSymlinks:  func(p string) (string, error) { return p, nil },
-		TempDirs:      []string{"/tmp"},
-		Version:       "v1.2.3",
-		Bin:           "/usr/bin/forge",
-		PathDirs:      []string{"/usr/bin"},
-		ConfigPath:    "/cfg/config.yaml",
-		StorePath:     "/data/forge.db",
-		GitHubViewer:  func(context.Context) (string, error) { return "octo", nil },
-		IsGitHubAuth:  func(err error) bool { return errors.Is(err, errAuth) },
-		TmuxVersion:   func(context.Context) (tmux.Version, error) { return tmux.Version{Major: 3, Minor: 5}, nil },
-		TmuxConf:      conf,
-		SkillsEnabled: true,
+		Lstat:            func(string) (fs.FileInfo, error) { return fakeInfo{}, nil },
+		EvalSymlinks:     func(p string) (string, error) { return p, nil },
+		TempDirs:         []string{"/tmp"},
+		Version:          "v1.2.3",
+		Bin:              "/usr/bin/forge",
+		PathDirs:         []string{"/usr/bin"},
+		ConfigPath:       "/cfg/config.yaml",
+		StorePath:        "/data/forge.db",
+		GitHubViewer:     func(context.Context) (string, error) { return "octo", nil },
+		IsGitHubAuth:     func(err error) bool { return errors.Is(err, errAuth) },
+		TmuxVersion:      func(context.Context) (tmux.Version, error) { return tmux.Version{Major: 3, Minor: 5}, nil },
+		TmuxConf:         conf,
+		TmuxServerConfig: func(context.Context) ([]string, bool, error) { return nil, false, nil },
+		SkillsEnabled:    true,
 	}
 }
 
@@ -139,6 +140,24 @@ func TestChecks(t *testing.T) {
 			}
 			e.TmuxConf = p
 		}, "tmux config", OK, "customised", ""},
+		{"tmux server down", func(e *Env) {
+			e.TmuxServerConfig = func(context.Context) ([]string, bool, error) { return nil, false, nil }
+		}, "tmux server", OK, "not running (it starts with ", ""},
+		{"tmux server forge conf", func(e *Env) {
+			conf := e.TmuxConf
+			e.TmuxServerConfig = func(context.Context) ([]string, bool, error) { return []string{"/etc/tmux.conf", conf}, true, nil }
+		}, "tmux server", OK, "running with ", ""},
+		{"tmux server other conf", func(e *Env) {
+			e.TmuxServerConfig = func(context.Context) ([]string, bool, error) { return []string{"/home/me/.tmux.conf"}, true, nil }
+		}, "tmux server", Warn, "running with /home/me/.tmux.conf, not ", "forge tmux restart"},
+		{"tmux server no conf", func(e *Env) {
+			e.TmuxServerConfig = func(context.Context) ([]string, bool, error) { return nil, true, nil }
+		}, "tmux server", Warn, "running with no config file", "forge tmux restart"},
+		{"tmux server error", func(e *Env) {
+			e.TmuxServerConfig = func(context.Context) ([]string, bool, error) { return nil, false, errors.New("permission denied") }
+		}, "tmux server", Warn, "permission denied", ""},
+		{"tmux server unknown", func(e *Env) { e.TmuxServerConfig = nil }, "tmux server", Skip, "", ""},
+		{"tmux server no tmux", func(e *Env) { e.LookPath = missing("tmux") }, "tmux server", Skip, "isn't installed", ""},
 		{"claude missing", func(e *Env) { e.LookPath = missing("claude") }, "claude", Fail, "not installed", "claude.ai/install.sh"},
 		{"claude version fails", func(e *Env) {
 			e.Output = func(context.Context, string, ...string) (string, error) { return "", errors.New("exit 1") }

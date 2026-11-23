@@ -23,6 +23,16 @@ func Loading(label string, frame int, s Settings, th *ui.Theme, w, h int) string
 	return centred(append(lines, wrap(th.TableEmpty.Render(label), w)...), w, h)
 }
 
+// LoadingBlockHeight is the height of LoadingLines.
+const LoadingBlockHeight = 3
+
+// LoadingLines is Loading as a block of lines inside scrolling content
+// (a detail pane's section): the hammer above label, LoadingBlockHeight
+// rows, w wide.
+func LoadingLines(label string, frame int, s Settings, th *ui.Theme, w int) []string {
+	return strings.Split(Loading(label, frame, s, th, max(w, 1), LoadingBlockHeight), "\n")
+}
+
 // Ticks reports whether a visible Loading body needs the animation clock:
 // the hammer moves (full) or pulses (reduced); off draws it static.
 func Ticks(s Settings) bool { return s.Motion() || s.Pulses() }

@@ -17,6 +17,7 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // The log viewer (P2.7) takes over the tab to show a job's log, collapsed
@@ -561,7 +562,7 @@ func (t *Tab) logViewString() string {
 	v := t.log
 	w, h := t.logSize()
 	lines := []string{t.logTitle(w), th.DetailRule.Render(t.logRule(w))}
-	body := t.logBody(w)
+	body := t.logBody(w, h-2) // under the title and rule
 	lines = append(lines, body...)
 	if v.search.Visible() {
 		for len(lines) < h-1 {
@@ -640,12 +641,17 @@ func plural(n int, word string) string {
 }
 
 // logBody is the visible log lines with a line-number gutter.
-func (t *Tab) logBody(w int) []string {
+func (t *Tab) logBody(w, h int) []string {
 	th := t.theme
 	v := t.log
 	switch {
 	case v.waitJobs || v.loading:
-		return []string{th.TableEmpty.Render("heating up…")}
+		t.detailLoading = true
+		lh := h
+		if v.search.Visible() {
+			lh-- // the search line goes under it
+		}
+		return strings.Split(anim.Loading("fetching the log…", t.anim.Frame(), t.anim.Settings(), th, max(w, 1), max(lh, 1)), "\n")
 	case v.err != nil:
 		msg := "couldn't load the log: " + github.Reason(v.err)
 		out := strings.Split(ansi.Wrap(th.DiffDel.Render(msg), max(w, 1), ""), "\n")

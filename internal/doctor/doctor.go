@@ -120,6 +120,9 @@ type Env struct {
 	TmuxVersion func(context.Context) (tmux.Version, error)
 	// TmuxConf is forge's tmux config file.
 	TmuxConf string
+	// TmuxServerConfig asks forge's running tmux server which config files
+	// it loaded; running is false when no server is up.
+	TmuxServerConfig func(context.Context) (files []string, running bool, err error)
 
 	// Sessions are the active agent sessions; SessionsErr why they
 	// couldn't be listed. SkillsEnabled says forge syncs skills.
@@ -144,7 +147,7 @@ var (
 // Run runs every check concurrently and returns them in a fixed order.
 func Run(ctx context.Context, e Env) []Check {
 	checks := []func(context.Context, Env) Check{
-		checkForge, checkConfig, checkStore, checkGit, checkGH, checkTmux, checkTmuxConf,
+		checkForge, checkConfig, checkStore, checkGit, checkGH, checkTmux, checkTmuxConf, checkTmuxServer,
 		checkClaude, optional("delta", "diffs are coloured by forge instead", "git-delta"),
 		optional("chafa", "image previews fall back to text in terminals without graphics", "chafa"),
 		optional("rsvg-convert", "SVG artifacts aren't previewed", "librsvg"),
@@ -332,6 +335,59 @@ func checkTmuxConf(_ context.Context, e Env) Check {
 		c.Fix = "forge tmux config --reset (back up your changes first)"
 	}
 	return c
+}
+
+// checkTmuxServer reports the config file the running forge tmux server
+// loaded. A server started some other way (by hand, or before forge wrote
+// its config) may run without it, and then forge's keys are missing.
+func checkTmuxServer(ctx context.Context, e Env) Check {
+	c := Check{Name: "tmux server"}
+	if e.TmuxServerConfig == nil {
+		c.Status, c.Detail = Skip, "can't ask tmux"
+		return c
+	}
+	if _, err := e.LookPath("tmux"); err != nil {
+		c.Status, c.Detail = Skip, "tmux isn't installed"
+		return c
+	}
+	files, running, err := e.TmuxServerConfig(ctx)
+	switch {
+	case err != nil:
+		c.Status, c.Detail = Warn, "couldn't ask forge's tmux server: "+err.Error()
+		c.Fix = "forge tmux restart (it asks first when agents are running)"
+		return c
+	case !running:
+		c.Detail = "not running (it starts with " + e.TmuxConf + ")"
+		return c
+	}
+	for _, f := range files {
+		if samePath(e, f, e.TmuxConf) {
+			c.Detail = "running with " + e.TmuxConf
+			return c
+		}
+	}
+	loaded := "no config file"
+	if len(files) > 0 {
+		loaded = strings.Join(files, ", ")
+	}
+	c.Status = Warn
+	c.Detail = "running with " + loaded + ", not " + e.TmuxConf
+	c.Fix = "forge tmux restart, so it starts with forge's config (it asks first when agents are running)"
+	return c
+}
+
+// samePath compares two paths after resolving symlinks.
+func samePath(e Env, a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	norm := func(p string) string {
+		if r, err := e.EvalSymlinks(p); err == nil {
+			p = r
+		}
+		return filepath.Clean(p)
+	}
+	return norm(a) == norm(b)
 }
 
 func checkClaude(ctx context.Context, e Env) Check {

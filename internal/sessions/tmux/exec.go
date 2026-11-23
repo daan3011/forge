@@ -125,6 +125,25 @@ func (e *Exec) Version(ctx context.Context) (Version, error) {
 	return Version{Major: 99}, nil
 }
 
+// ServerConfigFiles returns the config files the running forge server
+// loaded (`display -p '#{config_files}'`, tmux 3.2+). running is false
+// when no server is up; files is empty when it loaded none.
+func (e *Exec) ServerConfigFiles(ctx context.Context) (files []string, running bool, err error) {
+	out, err := e.tmux(ctx, "display-message", "-p", "#{config_files}")
+	if errors.Is(err, ErrNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	for _, f := range strings.Split(strings.TrimSpace(out), ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, true, nil
+}
+
 // ListAll implements Driver.
 func (e *Exec) ListAll(ctx context.Context) ([]Target, error) {
 	out, err := e.tmux(ctx, "list-windows", "-a", "-F", allWindowsFormat)

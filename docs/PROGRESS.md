@@ -838,7 +838,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - `attach: false` started a detached window in the worktree; running it again attached to that same window, and `M-d` returned to forge.
 - [ ] P6.4 Polish & packaging. Built and tested; **the "done when" still needs a real release**: tag a version, then check that a fresh machine installs it and `forge doctor` is green. Files: `internal/doctor`, `cmd/forge/doctor.go`, `internal/ui/anim/state.go`, `internal/sessions/prepare.go`, `internal/demo`, `.goreleaser.yaml`, `install.sh`, `README.md`, `docs/demo.tape`.
   - **Tab states** (`anim.Loading` / `anim.Failed` / `anim.Notice`, centred and exactly w×h):
-    - Every tab shows the hammer while its first data loads, and ticks the clock only while it is visible (`anim.Ticks`: full or reduced; off is static).
+    - Every tab shows the hammer while its first data loads, and so do the PRs, Pipelines (jobs and log) and Plane detail panes (`anim.LoadingLines`). The clock ticks only while a hammer is visible (`anim.Ticks`: full or reduced; off is static).
     - A first load that fails says "couldn't load …: reason · r to retry". Fetch-error toasts end in "· r to retry" (`ui.WithRetry`, with the key from the keymap).
     - Fixed: PRs stayed on "heating up…" forever after a failed first fetch (per-section `err`). Sessions showed "nothing on the anvil" before its first list; it now shows loading, failed, "no agents yet · n starts one", or "agent sessions aren't available".
     - Docs and Context gained `Fetching()` (status bar spinner). Docs shows the errors of every root. Context Memory has an empty message.
@@ -847,7 +847,7 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - Checks run concurrently, 5s each. It exits 1 on any failure; `--json` gives machine-readable output.
     - It never writes without `--fix`. `--fix` writes a missing default config and tmux.conf, and re-prepares stale sessions through `Service.Prepare`, which Start and Resume now use as well.
     - It is also the palette's "Run doctor", which shows the report in the output view.
-    - Still open from the P1.1 note: show the running server's `#{config_files}`.
+    - "tmux server": when forge's server is running, it shows the config files the server loaded (`Exec.ServerConfigFiles`, `display -p '#{config_files}'`). It warns, with `forge tmux restart` as the fix, when forge's tmux.conf isn't among them (paths compared after resolving symlinks). This closes the P1.1 note.
   - **Packaging**:
     - goreleaser v2 (`CGO_ENABLED=0`, linux/darwin × amd64/arm64, tar.gz with `checksums.txt`, `-X main.buildVersion`; `forge --version`).
     - `release.yml` on `v*` tags.

@@ -19,6 +19,7 @@ import (
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 var now = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
@@ -634,4 +635,27 @@ func TestLoadStates(t *testing.T) {
 	v = view(tb)
 	mustContain(t, v, "feat(examples): tree")
 	mustLack(t, v, "couldn't load PRs", "heating up…")
+}
+
+// TestDetailLoadingHammer (P6.4): until a PR's details land, the detail
+// pane shows the hammer and keeps the clock running; once they land it
+// stops.
+func TestDetailLoadingHammer(t *testing.T) {
+	tb := newTestTab(sampleGH(), newKV())
+	tb.anim = anim.NewEngine(anim.Full())
+	tb.tick = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil } // details never fetched
+	drain(tb, tb.Init())
+	v := view(tb)
+	mustContain(t, v, "feat(examples): tree", "heating up…")
+	if !tb.Animating() {
+		t.Error("the detail hammer must keep the clock running")
+	}
+
+	tb = newTestTab(sampleGH(), newKV())
+	tb.anim = anim.NewEngine(anim.Full())
+	drain(tb, tb.Init())
+	mustLack(t, view(tb), "heating up…")
+	if tb.Animating() {
+		t.Error("details loaded: no clock")
+	}
 }

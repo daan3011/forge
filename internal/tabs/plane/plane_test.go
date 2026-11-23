@@ -23,6 +23,7 @@ import (
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 var now = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
@@ -865,3 +866,26 @@ func TestCommandsMatchKeymap(t *testing.T) {
 }
 
 var _ tabs.Tab = (*harness)(nil)
+
+// TestDetailLoadingHammer (P6.4): the description shows the hammer until
+// the item's details land, and the clock runs only meanwhile.
+func TestDetailLoadingHammer(t *testing.T) {
+	h := newHarness(samplePlane(), nil, "app")
+	h.anim = anim.NewEngine(anim.Full())
+	h.tick = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil } // details never fetched
+	h.init()
+	mustContain(t, h.view(), "Project switcher", "Description", "heating up…")
+	if !h.Animating() {
+		t.Error("the detail hammer must keep the clock running")
+	}
+
+	h = newHarness(samplePlane(), nil, "app")
+	h.anim = anim.NewEngine(anim.Full())
+	h.init()
+	if strings.Contains(h.view(), "heating up…") {
+		t.Errorf("details loaded, still loading:\n%s", h.view())
+	}
+	if h.Animating() {
+		t.Error("details loaded: no clock")
+	}
+}

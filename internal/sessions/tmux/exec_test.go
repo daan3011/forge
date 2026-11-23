@@ -595,3 +595,33 @@ func TestWindowWatched(t *testing.T) {
 		t.Errorf("invalid target err = %v", err)
 	}
 }
+
+func TestServerConfigFiles(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name    string
+		r       reply
+		files   []string
+		running bool
+		wantErr bool
+	}{
+		{"one file", reply{sub: "display-message", out: "/home/me/.config/forge/tmux.conf\n"}, []string{"/home/me/.config/forge/tmux.conf"}, true, false},
+		{"several", reply{sub: "display-message", out: "/a.conf,/b.conf\n"}, []string{"/a.conf", "/b.conf"}, true, false},
+		{"none", reply{sub: "display-message", out: "\n"}, nil, true, false},
+		{"no server", reply{sub: "display-message", stderr: "no server running on /tmp/tmux-501/forge"}, nil, false, false},
+		{"other error", reply{sub: "display-message", stderr: "unknown variable"}, nil, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, r := newRec(tt.r)
+			files, running, err := e.ServerConfigFiles(ctx)
+			if (err != nil) != tt.wantErr || running != tt.running || !reflect.DeepEqual(files, tt.files) {
+				t.Fatalf("got %q, %v, %v", files, running, err)
+			}
+			want := []string{"-L", "forge", "-f", "/dev/null", "display-message", "-p", "#{config_files}"}
+			if !reflect.DeepEqual(r.calls[0].args, want) {
+				t.Errorf("args = %q", r.calls[0].args)
+			}
+		})
+	}
+}
