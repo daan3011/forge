@@ -838,7 +838,11 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - `attach: false` started a detached window in the worktree; running it again attached to that same window, and `M-d` returned to forge.
 - [ ] P6.4 Polish & packaging
   - [ ] TODO: `forge doctor` reports the tmux version and which config file the forge server uses (`#{config_files}`), and warns when the user's tmux.conf version (`tmux.ParseConfigVersion`) is older than the embedded one (`tmux.ConfigVersion`).
-- [ ] P6.5 forge MCP server: `internal/mcpserver`, `cmd/forge/mcp.go`, `internal/proposals`, `internal/store/proposals.go`, migration 0010. **Registration (`--mcp-config` per session) is pending the Step 0 check; everything else is done.**
+- [x] P6.5 forge MCP server: `internal/mcpserver`, `cmd/forge/mcp.go`, `internal/proposals`, `internal/store/proposals.go`, migration 0010, `internal/sessions/claude/mcpconfig.go`.
+  - **Registration**: per session, with `claude --mcp-config <session dir>/mcp.json`, on start and on every resume. Checked by hand first: interactive start and `--resume` both connect with no approval prompt.
+    - The file is `{"mcpServers": {"forge": {"type": "stdio", "command": <forge binary>, "args": ["mcp"], "env": {"FORGE_SESSION": <name>}}}}`, written atomically with mode 0600. It is rewritten on each resume, which covers sessions from before P6.5, a moved binary and a removed session dir.
+    - The flag comes right after the claude binary, because it takes several values. `--strict-mcp-config` is not passed, so the user's own servers still load.
+    - Nothing goes into the worktree or any Claude config. A failed start removes the session dir.
   - **`forge mcp`**: stdio server on `github.com/modelcontextprotocol/go-sdk` v1.8.0.
     - Logs (standard logger, slog, the SDK, panics) go to `config.StateHome()/forge/mcp.log`, rotated at 1 MB, never to stdout. A test runs the command over pipes and asserts the real stdout stays empty and the stream is JSON-RPC only.
     - It loads the config like `forge hook`, opens the store, resolves projects (`projects.Resolve`, moved out of `cmd/forge`), and builds the Plane client. Plane failing is not fatal: Plane tools report why.

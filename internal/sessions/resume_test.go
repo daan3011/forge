@@ -13,6 +13,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/shell"
 	"github.com/daan3011/forge/internal/store"
 )
 
@@ -297,6 +298,40 @@ func TestResumeInstallsHooks(t *testing.T) {
 	}
 	if !slices.Contains(e.wt.excluded, filepath.Join(x.Worktree, hooks.SettingsRel)) {
 		t.Errorf("excluded = %v", e.wt.excluded)
+	}
+}
+
+func TestResumeRegistersMCPServer(t *testing.T) {
+	e := newEnv(t)
+	x := e.dead(t, "fix-ci")
+	// Sessions from before P6.5 and a removed session dir both get one.
+	if err := os.RemoveAll(e.svc.SessionDir("fix-ci")); err != nil {
+		t.Fatal(err)
+	}
+	e.svc.c.ForgeBin = "/opt/bin/forge"
+	if _, err := e.svc.Resume(context.Background(), x, ResumeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, argv := mcpConfigOf(t, e, "fix-ci")
+	if !strings.Contains(cfg, `"FORGE_SESSION": "fix-ci"`) || !strings.Contains(cfg, "/opt/bin/forge") {
+		t.Errorf("config:\n%s", cfg)
+	}
+	want := "--mcp-config " + shell.Quote(filepath.Join(e.svc.SessionDir("fix-ci"), claude.MCPConfigFile))
+	if !strings.Contains(argv[2], want) {
+		t.Errorf("argv %q lacks %q", argv, want)
+	}
+
+	// A resume with a moved forge binary rewrites it.
+	if _, err := e.svc.Kill(context.Background(), x, KillOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	x, _ = e.st.Sessions().Get(context.Background(), x.ID)
+	e.svc.c.ForgeBin = "/new/forge"
+	if _, err := e.svc.Resume(context.Background(), x, ResumeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := mcpConfigOf(t, e, "fix-ci"); !strings.Contains(cfg, "/new/forge") {
+		t.Errorf("config not rewritten:\n%s", cfg)
 	}
 }
 
