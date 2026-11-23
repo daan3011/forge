@@ -51,6 +51,9 @@ type Launch struct {
 	// MCPConfig, when set, is passed as --mcp-config: forge's MCP server
 	// for this session (P6.5). The user's other MCP servers still load.
 	MCPConfig string
+	// AddDir, when set, is passed as --add-dir: the folder whose
+	// .claude/skills hold forge's skills for this session (P6.7).
+	AddDir string
 }
 
 // Argv returns the command to run in the agent's window:
@@ -58,8 +61,9 @@ type Launch struct {
 //	sh -c 'exec <bin> --session-id <id> -- "$(cat <file>)"'
 //	sh -c 'exec <bin> --resume <id>'                         (Resume)
 //
-// With MCPConfig, `--mcp-config <file>` comes right after <bin>: the flag
-// takes several values, so it must be followed by another flag.
+// With AddDir and MCPConfig, `--add-dir <dir>` and `--mcp-config <file>`
+// come right after <bin>: both flags take several values, so each must be
+// followed by another flag.
 //
 // The bin and file paths are single-quoted for the shell; the prompt itself
 // only ever exists in the file and in the expanded, double-quoted argument,
@@ -74,6 +78,9 @@ func (l Launch) Argv() ([]string, error) {
 		bin = DefaultBin
 	}
 	head := "exec " + shell.Quote(bin)
+	if l.AddDir != "" {
+		head += " --add-dir " + shell.Quote(l.AddDir)
+	}
 	if l.MCPConfig != "" {
 		head += " --mcp-config " + shell.Quote(l.MCPConfig)
 	}

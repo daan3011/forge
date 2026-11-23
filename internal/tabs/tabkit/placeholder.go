@@ -26,6 +26,7 @@ import (
 	"github.com/daan3011/forge/internal/rsvg"
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/live"
+	"github.com/daan3011/forge/internal/slashcmd"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
@@ -58,6 +59,11 @@ type Deps struct {
 	TemplatesDir string
 	// PacksDir is the context packs folder (P5.2); "" offers none.
 	PacksDir string
+	// Skills are forge's slash commands (P6.7) for the Context tab's
+	// Commands view; nil hides them. slashcmd.Catalog satisfies it.
+	Skills SkillCatalog
+	// SyncSkills re-syncs every session's skills; nil can't.
+	SyncSkills func(ctx context.Context) ([]sessions.SyncResult, error)
 	// NotesDir holds the daily notes (P6.2); Home shows today's. "" shows
 	// none.
 	NotesDir string
@@ -547,4 +553,11 @@ func wrap(s string, width int) string {
 		lines = append(lines, cur)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// SkillCatalog lists forge's skills and edits the user's overrides.
+type SkillCatalog interface {
+	Status(checkout string) ([]slashcmd.Status, []error)
+	EnsureOverride(name string) (string, error)
+	Reset(name string) error
 }

@@ -105,6 +105,7 @@ type Model struct {
 	live         <-chan live.Ping
 	templatesDir string              // from WithTemplates
 	packsDir     string              // from WithPacks
+	skills       tabkit.SkillCatalog // from WithSkills
 	notesDir     string              // from WithNotes
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
@@ -175,6 +176,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,
 		Artifacts: m.artifactIdx, ArtifactWatcher: m.artifactWatch, Files: m.files, Caches: m.caches,
 		Usage: m.usage, Proposals: m.proposals, Links: m.links,
+		Skills: m.skills, SyncSkills: skillSyncer(m.sessions),
 		Chafa: m.chafa, Rsvg: m.rsvg,
 	}
 	m.tabs = []tabs.Tab{

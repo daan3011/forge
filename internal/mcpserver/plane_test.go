@@ -19,7 +19,7 @@ func TestToolsListed(t *testing.T) {
 	want := []string{
 		"create_issue", "update_issue", "comment_issue", "list_issues", "get_issue",
 		"write_doc", "read_doc", "list_docs", "log_decision", "pin_artifact", "list_artifacts",
-		"set_session_summary", "report_progress", "get_context_pack",
+		"set_session_summary", "report_progress", "get_context_pack", "get_ci_failure",
 	}
 	got := map[string]*mcp.Tool{}
 	for _, tl := range res.Tools {

@@ -276,6 +276,9 @@ keybinds:
   # context_cache_orphans: ["o"]  # remove orphaned worktrees; asks first
   # context_cache_vacuum: ["V"]   # vacuum forge.db; asks first
   # context_usage: ["u"]          # switch between memory files and token usage (P5.4)
+  # context_commands: ["m"]       # switch between memory files and forge's slash commands (P6.7)
+  # context_commands_reset: ["X"] # delete the selected command's override; asks first
+  # context_commands_sync: ["S"]  # re-sync the skills of every running session
   # Transcript viewer (only these keys are live while it is open)
   # transcript_up: ["k", "up"]
   # transcript_down: ["j", "down"]

@@ -878,6 +878,9 @@ func (t *Tab) started(msg startedMsg) tea.Cmd {
 	if msg.res.FetchErr != nil {
 		cmds = append(cmds, info("couldn't fetch origin; branched from the local base"))
 	}
+	if msg.res.SkillsErr != nil {
+		cmds = append(cmds, errCmd(msg.res.SkillsErr))
+	}
 	if t.archived {
 		t.archived = false
 		t.resetList()

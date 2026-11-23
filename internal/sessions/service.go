@@ -20,6 +20,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/transcript"
 	"github.com/daan3011/forge/internal/sessions/worktree"
+	"github.com/daan3011/forge/internal/slashcmd"
 	"github.com/daan3011/forge/internal/store"
 )
 
@@ -183,6 +184,15 @@ type Config struct {
 	// Transcripts persists the transcript index between runs (P5.3); nil
 	// keeps it in memory only.
 	Transcripts transcript.Persister
+	// Skills writes forge's skills (slash commands, P6.7) into a session's
+	// SkillsRoot, which claude gets with --add-dir; nil gives none.
+	// *slashcmd.Catalog satisfies it.
+	Skills SkillSyncer
+}
+
+// SkillSyncer writes forge's skills, rendered with vals, under root.
+type SkillSyncer interface {
+	Sync(root string, vals map[string]string) (slashcmd.Result, error)
 }
 
 // ProjectRecorder remembers that a repo was used at a checkout.
@@ -251,6 +261,76 @@ func (s *Service) SessionDir(name string) string {
 	return filepath.Join(s.c.DataDir, "sessions", name)
 }
 
+// SkillsRoot is the --add-dir folder holding the session's forge skills
+// in .claude/skills. It is called "forge", so a skill whose bare name the
+// repo or the user's own skills take is still /forge:<name>.
+func (s *Service) SkillsRoot(name string) string {
+	return filepath.Join(s.SessionDir(name), "forge")
+}
+
+// skillVals are the placeholders a session's skills are rendered with.
+func (s *Service) skillVals(x store.Session) map[string]string {
+	vals := map[string]string{"session": x.Name, "repo": x.Repo, "branch": x.Branch}
+	if p, ok := s.Project(x.Project); ok {
+		if vals["repo"] == "" {
+			vals["repo"] = p.Repo
+		}
+		if p.Path != "" || p.DocsDir != "" {
+			vals["docs"] = p.DocsPath()
+		}
+	}
+	return vals
+}
+
+// syncSkills writes x's skills and returns the --add-dir folder, or "" when
+// there is none to pass. A failed sync never stops a session: what could be
+// written is still passed, and the error is returned to show as a warning.
+func (s *Service) syncSkills(x store.Session) (string, error) {
+	if s.c.Skills == nil {
+		return "", nil
+	}
+	root := s.SkillsRoot(x.Name)
+	_, err := s.c.Skills.Sync(root, s.skillVals(x))
+	if err != nil {
+		err = fmt.Errorf("forge skills: %w", err)
+	}
+	if !isDir(root) {
+		return "", err
+	}
+	return root, err
+}
+
+// SyncResult is SyncSkills' outcome for one session.
+type SyncResult struct {
+	Session string
+	slashcmd.Result
+	Err error
+}
+
+// SyncSkills rewrites the skills of every session that isn't archived, so
+// overrides and template edits reach them. Running agents pick the change
+// up live (Claude Code watches --add-dir skill folders). Sessions without
+// a session dir are skipped: they get theirs on resume.
+func (s *Service) SyncSkills(ctx context.Context) ([]SyncResult, error) {
+	if s.c.Skills == nil {
+		return nil, nil
+	}
+	archived := false
+	xs, err := s.c.Store.List(ctx, store.SessionFilter{Archived: &archived})
+	if err != nil {
+		return nil, err
+	}
+	var out []SyncResult
+	for _, x := range xs {
+		if x.Status == store.StatusArchived || !isDir(s.SessionDir(x.Name)) {
+			continue
+		}
+		r, err := s.c.Skills.Sync(s.SkillsRoot(x.Name), s.skillVals(x))
+		out = append(out, SyncResult{Session: x.Name, Result: r, Err: err})
+	}
+	return out, nil
+}
+
 // StartOpts are the inputs to Start.
 type StartOpts struct {
 	Name     string
@@ -291,6 +371,9 @@ type Started struct {
 	// FetchErr is set when the base could not be fetched and the local base
 	// branch was used (e.g. offline).
 	FetchErr error
+	// SkillsErr is set when forge's skills couldn't all be written; the
+	// session runs anyway.
+	SkillsErr error
 }
 
 // Start creates the worktree, writes the first prompt to the session's data
@@ -389,6 +472,20 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 			return Started{}, err
 		}
 	}
+	if s.c.Skills != nil {
+		// forge's skills (P6.7) in the session dir, never in the worktree;
+		// the dir's removal (undo above) takes them along.
+		if err := os.MkdirAll(s.SessionDir(o.Name), 0o700); err != nil {
+			return Started{}, fmt.Errorf("session dir: %w", err)
+		}
+		if o.Prompt == "" && s.c.ForgeBin == "" {
+			dir := s.SessionDir(o.Name)
+			undo = append(undo, func(context.Context) error { return os.RemoveAll(dir) })
+		}
+		launch.AddDir, res.SkillsErr = s.syncSkills(store.Session{
+			Name: o.Name, Project: p.Name, Repo: p.Repo, Branch: wt.Branch,
+		})
+	}
 	if o.Prompt != "" {
 		launch.PromptFile = filepath.Join(s.SessionDir(o.Name), promptFileName)
 		if err := os.WriteFile(launch.PromptFile, []byte(o.Prompt), 0o600); err != nil {
@@ -443,7 +540,7 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		// isn't listed first next time.
 		_ = s.c.Recent.Touch(ctx, p.Repo, p.Path)
 	}
-	return Started{Session: x, FetchErr: wt.FetchErr}, nil
+	return Started{Session: x, FetchErr: wt.FetchErr, SkillsErr: res.SkillsErr}, nil
 }
 
 func (o StartOpts) external() bool { return o.Worktree != "" }

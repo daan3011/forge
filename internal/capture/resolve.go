@@ -199,6 +199,10 @@ var priorities = []plane.Priority{
 	plane.PriorityUrgent, plane.PriorityHigh, plane.PriorityMedium, plane.PriorityLow, plane.PriorityNone,
 }
 
+// ParsePriority matches a priority by prefix ("h" and "hi" are high), as
+// the ! token does.
+func ParsePriority(v string) (plane.Priority, bool) { return parsePriority(v) }
+
 // parsePriority accepts a priority or a prefix of one (!h, !med).
 func parsePriority(v string) (plane.Priority, bool) {
 	n := norm(v)

@@ -281,3 +281,28 @@ func FixBranch(workflow string, runID int64) string {
 	}
 	return "fix/" + slug + "-" + strconv.FormatInt(runID, 10)
 }
+
+// PRTargets are a PR's failing checks as failure targets, up to MaxJobs:
+// Actions jobs with their run and job ids, other checks (commit statuses,
+// third-party apps) by name and URL. branch is the PR's head branch.
+func PRTargets(repo, branch string, d github.PRDetail) []Target {
+	var out []Target
+	for _, c := range d.Checks {
+		if c.State != github.CheckFail {
+			continue
+		}
+		run := Run{
+			Repo: repo, Workflow: c.Workflow, Branch: branch,
+			HeadSHA: d.HeadSHA, CommitMsg: d.HeadMessage,
+		}
+		tg := Target{Run: run, Job: c.Name, URL: c.URL}
+		if runID, jobID, ok := c.CheckIDs(); ok {
+			tg.Run.ID, tg.JobID = runID, jobID
+		}
+		out = append(out, tg)
+		if len(out) == MaxJobs {
+			break
+		}
+	}
+	return out
+}

@@ -169,6 +169,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | P6.3 | Custom commands | Config-defined commands (palette + optional per-tab key) on the selection, with `{repo}`, `{pr}`, `{branch}`, `{worktree}`, `{issue}`, `{session}`, `{path}`; modes background (toast + viewable output), exec (suspend the TUI) and tmux-window (forge socket, attach or detached). |
 | P6.4 | Polish & packaging | Error toasts, empty states, `goreleaser`, install script, README with screenshots. |
 | P6.5 | forge MCP server | `forge mcp` (stdio) gives session agents tools for Plane issues (filed as proposals triaged on Home), `.forge/docs`, artifacts, summary/progress and context packs; every write attributed to the session, its branch and PR. |
+| P6.7 | forge slash commands | forge-managed Claude Code skills in every session (`/fix-ci`, `/forge-ticket`, `/forge-doc`, `/forge-adr`, `/forge-pin`, `/forge-status`, `/forge-pack`, `/forge-tpl-<template>`), from embedded markdown plus overrides in `~/.config/forge/commands`, passed with `--add-dir`; listed, edited and re-synced from Context → Commands. |
 
 ## tmux setup (from a plain install)
 
@@ -1091,4 +1092,38 @@ Add a forge MCP server (spec P6.5).
 
 Done when: inside a forge session, asking Claude "file a ticket to add retries to the Plane
 client" creates a proposed issue linked to that session, visible on Home.
+```
+
+#### P6.7 forge slash commands (skills)
+
+```text
+Add forge-managed Claude Code skills (slash commands; spec P6.7). Claude Code merged custom
+commands into skills, so forge writes skills: <name>/SKILL.md with description, argument-hint,
+allowed-tools (mcp__forge__* names) and disable-model-invocation: true, so they only run when
+typed. Arguments use $ARGUMENTS / $ARGUMENTS[N].
+
+- Sources: built-ins embedded in the binary, plus overrides in ~/.config/forge/commands/<name>.md
+  (same name wins; a new name is a command of the user's own).
+- Built-ins: /fix-ci [run-url] (get_ci_failure: the run, else the session PR's failing checks,
+  else the branch's latest failed run; then fix it), /forge-ticket <title #project !priority
+  +label, details> (create_issue with the capture text, parsed by forge), /forge-doc <name>
+  [what], /forge-adr <decision>, /forge-pin [path] (default the last HTML/SVG written),
+  /forge-status <summary>, /forge-pack <name>.
+- Templates: every session template is also /forge-tpl-<name>; its variables other than
+  session, repo, branch and docs become positional arguments.
+- Location: <session dir>/forge/.claude/skills, passed with `claude --add-dir` on every start
+  and resume (--resume doesn't restore it). Nothing goes into the worktree, .git/info/exclude
+  or ~/.claude. Skills in an added dir reload live. A manifest in that folder records what
+  forge wrote; sync only rewrites changed files and only removes its own.
+- Clashes: a repo or personal (~/.claude) skill or command of the same name wins the bare
+  /<name>; forge's stays reachable as /forge:<name> and the Commands view says so.
+- MCP: new get_ci_failure tool; create_issue takes `capture` (quick-capture syntax).
+- Context tab → Commands view: list built-ins, templates and overrides with shadow badges, edit
+  an override in $EDITOR (copies the built-in first), reset to built-in, re-sync all running
+  sessions.
+- Tests: rendering with arguments, override precedence, manifest cleanup, shadowing,
+  start/resume flags, re-sync. Use testutil.IsolateHome.
+
+Done when: in a forge session, typing /forge-ticket Add retries to Plane client !high creates a
+proposed issue linked to that session, and /fix-ci on a session with a red PR starts fixing it.
 ```

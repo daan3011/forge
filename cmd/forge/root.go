@@ -32,6 +32,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/slashcmd"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui/termcaps"
@@ -175,6 +176,7 @@ func newRootCmd(d deps) *cobra.Command {
 			if dir, err := packs.Dir(); err == nil {
 				opts = append(opts, app.WithPacks(dir))
 			}
+			opts = append(opts, app.WithSkills(slashcmd.NewCatalog()))
 			opts = append(opts, app.WithNotes(config.NotesDir()))
 			if w, err := docs.NewWatcher(0); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: docs won't reload live:", err)

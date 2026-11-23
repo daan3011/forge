@@ -16,7 +16,9 @@ import (
 	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/plane"
+	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/tabs"
+	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/templates"
 	"github.com/daan3011/forge/internal/ui"
 )
@@ -32,6 +34,21 @@ func WithTemplates(dir string, providers *templates.Registry) Option {
 // Packs view and the new-session form.
 func WithPacks(dir string) Option {
 	return func(m *Model) { m.packsDir = dir }
+}
+
+// WithSkills gives the Context tab forge's slash commands (P6.7).
+func WithSkills(c tabkit.SkillCatalog) Option {
+	return func(m *Model) { m.skills = c }
+}
+
+// skillSyncer is the sessions service's SyncSkills, nil when it has none.
+func skillSyncer(s agent.API) func(context.Context) ([]agent.SyncResult, error) {
+	if x, ok := s.(interface {
+		SyncSkills(context.Context) ([]agent.SyncResult, error)
+	}); ok {
+		return x.SyncSkills
+	}
+	return nil
 }
 
 // WithNotes sets the daily notes folder (P6.2); Home shows today's note.

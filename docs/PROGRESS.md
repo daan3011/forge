@@ -861,3 +861,50 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
   - **Docs tab**: a read-only "From sessions" group per project. It lists docs in live session worktrees that are new or changed against the main checkout (`docs.Diverged`), labelled by session, with `✎` on docs the agent wrote through forge mcp (session → doc links). Docs open in the same renderer. Edit, new, rename, trash, mark, send and supersede are refused with a toast. It rescans on refresh and on session pings.
   - **Templates**: every default template ends with a short forge tools section, opened by `<!-- forge:mcp-tools v1 -->`. **Existing users: run `forge templates sync`** (or the palette's "Templates: sync forge tools section"). It appends the section to templates that lack the marker and prints what it added (`--dry-run` shows the diff only). Prompt dialogs now open at the start of the prompt, and doc mentions go before the tools section.
   - **Test helpers**: `testutil.IsolateHome` (HOME and XDG dirs in a temp dir) and `testutil.FakePlane`.
+- [ ] P6.7 forge slash commands (skills). Built and tested; **the live check below hasn't been run yet**. Files: `internal/slashcmd`, `internal/mcpserver/ci.go`, `internal/mcpserver/capture.go`, `internal/tabs/context/commands.go`.
+  - **Format: skills, not commands.** Claude Code merged custom commands into skills. Each one is `<name>/SKILL.md` with `name`, `description`, `argument-hint`, `allowed-tools` (exact `mcp__forge__<tool>` names, plus `Read` for /forge-pack) and `disable-model-invocation: true`, so they only run when typed. Agents keep the MCP tools for autonomous use.
+  - **Location: `--add-dir`, nothing in the worktree.** forge writes `<session dir>/forge/.claude/skills/` and passes `claude --add-dir <session dir>/forge`, right after the binary next to `--mcp-config`, on every start and resume (`--resume` doesn't restore it).
+    - Claude Code loads an added dir's `.claude/skills` with live reload and no namespace. Only `enabledPlugins` / `extraKnownMarketplaces` are read from its settings, and CLAUDE.md only with an env var forge doesn't set.
+    - No worktree files, no `.git/info/exclude` entries, nothing in `~/.claude`. The repo's own gitignored skills keep loading.
+    - Side effect: claude may read and edit that folder; it only holds the rendered skills.
+    - `--plugin-dir` was rejected: its skills are namespaced (`/forge:…`), edits need `/reload-plugins`, and admins can block sideloading.
+  - **Clashes**: a repo (`.claude/skills/<name>/`, `.claude/commands/<name>.md`) or personal (`~/.claude/…`, or `$CLAUDE_CONFIG_DIR`) skill or command with the same name wins the bare `/<name>`. forge still syncs its own, reachable as `/forge:<name>`. `slashcmd.Shadow` checks both places read-only, for the Commands view's badges.
+  - **Sources** (`slashcmd.Catalog`, reloaded on every sync): built-ins (`builtin/*.md`: fix-ci, forge-ticket, forge-doc, forge-adr, forge-pin, forge-status, forge-pack), `/forge-tpl-<name>` per session template, and overrides in `~/.config/forge/commands/<name>.md`. An override wins by name; a new name is the user's own command.
+    - Rendering fills `{session}`, `{repo}`, `{branch}`, `{docs}` and leaves `$ARGUMENTS` alone.
+    - Template variables other than those four become positional arguments (`$ARGUMENTS[N]`, in order of use, listed in `argument-hint`), with a short preamble naming them and their defaults. Indexed, not named, so `{v}s` can't run into the next word.
+  - **Manifest**: `<root>/.forge-skills.json` (path → sha256).
+    - Sync writes only changed files, atomically.
+    - It removes skills forge wrote that are no longer wanted (e.g. a deleted template), with empty folders.
+    - It never touches a file that isn't in the manifest or that changed since forge wrote it; those are reported as kept.
+  - **Sessions**: `Config.Skills` (a `SkillSyncer`), `Service.SkillsRoot`, `Service.SyncSkills` (every non-archived session that has a session dir).
+    - A failed sync is a warning on `Started.SkillsErr` / `Resumed.SkillsErr`, shown as a toast, a resume note or a CLI warning. It never fails the session.
+  - **MCP**:
+    - `get_ci_failure {run_url?}`, read-only. It takes a run, job or PR URL. Without one it uses the session's latest linked PR, else the latest failed run on its branch.
+      - It summarises through `cifix.Summarize`, so logs are cached in kv_cache like the PRs tab's fix flow.
+      - `FixTargets` moved to `cifix.PRTargets`.
+      - `Deps.GitHub` / `GitHubErr`; `forge mcp` passes the gh client.
+    - `create_issue` takes `capture` (quick-capture syntax via `capture.Parse`):
+      - The words become the title.
+      - `!prio` by prefix (`capture.ParsePriority`, now exported).
+      - `+label`s are merged.
+      - `#project` is a forge project name, or a Plane identifier or name linked to one. An unknown one errors with the list.
+      - `@person` is ignored with a note.
+      - Explicit fields win.
+    - The default templates' tools section is unchanged (the tool is in the server instructions and the tool list), so no `forge templates sync` is needed.
+  - **Context → Commands** (`m`): built-ins, templates and overrides with their source and shadow badge; the detail is the SKILL.md.
+    - `e` copies the built-in or template into the override (if none yet) and opens `$EDITOR`.
+    - `X` resets after a confirm.
+    - `S` re-syncs every session and toasts the totals.
+    - Palette: `context_commands`, `context_commands_reset`, `context_commands_sync`; editing goes through `context_edit`. Keys are in `ContextKeys` and documented in default.yaml.
+  - **Tests**:
+    - slashcmd: built-in front matter, rendering, template mapping, override precedence and bad names, manifest install / idempotency / kept / cleanup / removed template, shadowing (repo, personal, ~/.claude never written), and shadowed names still synced.
+    - claude `Argv` with `--add-dir`.
+    - sessions: start / resume pass `--add-dir`, a sync error is a warning, nothing goes into the worktree or the excludes, `SyncSkills` skips archived sessions, and the real catalog renders for the session.
+    - MCP: `get_ci_failure` (run, job, PR, session PR, branch, caching, errors); `create_issue` capture — **done-when** `TestCreateIssueCapture`: `Add retries to Plane client !high` gives proposal P-1, high, linked to the session. Every `allowed-tools` name exists on the server.
+    - Context tab: list, badge, edit / reset / sync flow, palette and help.
+  - **Live check (to run by hand)**. Never give the real `claude` a temp HOME or XDG dirs: keep the real ones and set `DISABLE_AUTOUPDATER=1`. Only forge's own dirs and the tmux socket may be isolated.
+    1. `make build`, then `TMUX_TMPDIR=$(mktemp -d) DISABLE_AUTOUPDATER=1 ./forge` and start a session on a test repo.
+    2. `ls ~/.local/share/forge/sessions/<name>/forge/.claude/skills` shows fix-ci, forge-* and forge-tpl-*. The pane's command has `--add-dir`. `git status` in the worktree is clean.
+    3. In claude: `/forge-ticket Add retries to Plane client !high`. Home shows a proposed P-n, priority high, linked to the session.
+    4. On a session with a red linked PR: `/fix-ci`. It calls `get_ci_failure` and starts fixing.
+    5. Context → Commands: `e` on forge-status, change the description, `S`. The running session shows the new description without a restart (`/reload-skills` if not). Kill and resume the session; the skills are still there.
