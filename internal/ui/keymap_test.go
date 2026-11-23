@@ -201,3 +201,65 @@ func TestConflictsAcrossTabScopes(t *testing.T) {
 		})
 	}
 }
+
+var allTabs = []string{"home", "prs", "pipelines", "plane", "sessions", "docs", "artifacts", "context"}
+
+func TestSetCustom(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmds    []CustomKey
+		wantErr string
+	}{
+		{"free key on a tab", []CustomKey{{Name: "edit", Key: "ctrl+e", Tabs: []string{"sessions"}}}, ""},
+		{"no key is fine", []CustomKey{{Name: "edit"}}, ""},
+		{"tab key reused on another tab", []CustomKey{{Name: "x", Key: "x", Tabs: []string{"docs"}}}, ""},
+		{"clash with a main key", []CustomKey{{Index: 2, Name: "x", Key: "q", Tabs: []string{"docs"}}}, `custom_commands[2].key: "q" is already bound to quit`},
+		{"clash with the tab's key", []CustomKey{{Name: "x", Key: "x", Tabs: []string{"sessions"}}}, `"x" is already bound to session_kill`},
+		{"all tabs clash with one tab's key", []CustomKey{{Name: "x", Key: "x"}}, `"x" is already bound to `},
+		{"two customs on a shared tab", []CustomKey{
+			{Index: 0, Name: "a", Key: "ctrl+e", Tabs: []string{"sessions"}},
+			{Index: 1, Name: "b", Key: "ctrl+e"},
+		}, `custom_commands[1].key: "ctrl+e" is already bound to custom command "a"`},
+		{"two customs on different tabs", []CustomKey{
+			{Name: "a", Key: "ctrl+e", Tabs: []string{"sessions"}},
+			{Name: "b", Key: "ctrl+e", Tabs: []string{"prs"}},
+		}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k := DefaultKeyMap()
+			err := k.SetCustom(tt.cmds, allTabs)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCustomFor(t *testing.T) {
+	k := DefaultKeyMap()
+	err := k.SetCustom([]CustomKey{
+		{Name: "edit", Key: "ctrl+e", Desc: "open in editor", Tabs: []string{"sessions"}},
+		{Name: "all", Key: "ctrl+y"},
+		{Name: "nokey"},
+	}, allTabs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := k.CustomFor("Sessions"); len(got) != 2 || got[0].Name != "edit" || got[1].Name != "all" {
+		t.Fatalf("Sessions = %+v", got)
+	}
+	if got := k.CustomFor("PRs"); len(got) != 1 || got[0].Name != "all" {
+		t.Fatalf("PRs = %+v", got)
+	}
+	b := k.CustomFor("Sessions")[0].Binding
+	if !key.Matches(keyMsg("ctrl+e"), b) || b.Help().Desc != "open in editor" || b.Help().Key != "ctrl+e" {
+		t.Fatalf("binding = %v %+v", b.Keys(), b.Help())
+	}
+}

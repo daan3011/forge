@@ -349,10 +349,42 @@ keybinds:
   # next: ["down", "ctrl+n"]   # palette results
   # prev: ["up", "ctrl+p"]
 
-# Shell commands available in the palette, optionally bound to a key.
-# Placeholders: {pr}, {branch}, {repo}, {worktree}.
+# Your own shell commands, offered in the palette (ctrl+k) and listed in the
+# help overlay (?). Each one runs on the current selection:
+#   name:        palette title (required, unique)
+#   command:     run with sh -c (required). These variables are replaced
+#                with the selection's value, already shell-quoted, so don't
+#                put quotes around them:
+#                  {repo} owner/name   {pr} PR number    {branch} branch
+#                  {worktree} agent worktree   {issue} Plane key (PROJ-12)
+#                  {session} agent name   {path} selected file, else the
+#                  worktree or project checkout
+#                The same values are in $FORGE_REPO, $FORGE_PR, ... A
+#                variable the selection doesn't have stops the command with
+#                a message. It runs in the worktree, else the project checkout.
+#   key:         optional key; it must not clash with forge's keys on the
+#                command's tabs
+#   tabs:        tabs it is offered on: home, prs, pipelines, plane,
+#                sessions, docs, artifacts, context (default: all)
+#   mode:        background (default): run quietly, toast the exit status;
+#                ctrl+k "Command output…" shows what it printed.
+#                exec: suspend forge and run it in this terminal.
+#                tmux-window: run it in a window on forge's tmux server and
+#                show it; running it again goes back to the same window.
+#   attach:      tmux-window only; false starts the window without showing it
+#   description: palette detail (default: the command)
 custom_commands:
   # - name: open-in-editor
   #   key: ctrl+e
+  #   tabs: [sessions]
   #   command: code {worktree}
   #   description: Open the worktree in VS Code
+  # - name: nvim
+  #   tabs: [sessions, prs]
+  #   mode: exec
+  #   command: nvim .
+  # - name: dev-server
+  #   tabs: [sessions]
+  #   mode: tmux-window
+  #   attach: false
+  #   command: npm run dev

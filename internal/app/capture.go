@@ -74,7 +74,7 @@ func (m Model) openCapture() (Model, tea.Cmd) {
 		}
 		return m, m.toast.Show("quick capture: "+err.Error(), ui.ToastError)
 	}
-	m.helpOpen = false
+	m.helpOpen, m.outputOpen = false, false
 	m.overlay = overlayCapture
 	if !m.cap.keep {
 		m.capture.Reset()

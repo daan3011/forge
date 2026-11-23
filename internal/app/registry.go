@@ -155,6 +155,9 @@ func (m Model) paletteItems() []item {
 		}
 	}
 
+	// Custom commands on the active tab (P6.3).
+	items = append(items, m.customItems()...)
+
 	// Switch tab.
 	tabKeys := g.GotoTab.Keys()
 	for i, t := range m.tabs {

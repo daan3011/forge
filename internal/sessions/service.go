@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/customcmd"
 	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/sessions/claude"
@@ -490,6 +491,22 @@ type Row struct {
 	// LinkList is every link of the session, oldest first, with the cached
 	// url, title and state of the far end (P1.9 detail pane).
 	LinkList []store.Link
+}
+
+// Vars are the session's custom command variables (P6.3): its repo,
+// branch, worktree (also {path}) and name, plus the PR number and issue
+// key of its primary links.
+func (r Row) Vars() customcmd.Vars {
+	v := customcmd.Vars{Repo: r.Repo, Branch: r.Branch, Worktree: r.Worktree, Session: r.Name, Path: r.Worktree}
+	if pr, ok := PrimaryLink(r.LinkList, store.KindGitHubPR); ok {
+		if _, num, ok := strings.Cut(pr.Other.ID, "#"); ok {
+			v.PR = num
+		}
+	}
+	if issue, ok := PrimaryLink(r.LinkList, store.KindPlaneIssue); ok {
+		v.Issue = issue.Other.ID
+	}
+	return v
 }
 
 // List returns the project's sessions (all projects when project is ""),
@@ -1104,6 +1121,82 @@ func (s *Service) ResetTmuxConfig() (backup string, err error) {
 	return tmux.ResetConfig(s.c.TmuxConf, s.c.TmuxColors, s.c.Now())
 }
 
+// DefaultCommandSession is the tmux session custom command windows open in
+// when no project is known.
+const DefaultCommandSession = "forge"
+
+// WindowOpts are the inputs to OpenWindow.
+type WindowOpts struct {
+	// Project names the tmux session (as for agents); "" uses
+	// DefaultCommandSession.
+	Project string
+	// Name is the window name before sanitising, e.g. "cmd-dev-fix-login".
+	Name   string
+	Dir    string
+	Script string // run with sh -c
+	Env    map[string]string
+	// Attach shows the window once it runs.
+	Attach bool
+}
+
+// WindowResult is what OpenWindow did.
+type WindowResult struct {
+	Target tmux.Target
+	// Attachment is set when the window was shown (Attach, or Reused).
+	Attachment *tmux.Attachment
+	// Reused means the window was already running, so it was shown
+	// instead of starting the command again.
+	Reused bool
+}
+
+// OpenWindow runs a custom command (P6.3) in a window on forge's tmux
+// server. A window of the same name that still runs is shown instead of
+// starting a second one; one whose command exited is replaced.
+func (s *Service) OpenWindow(ctx context.Context, o WindowOpts) (WindowResult, error) {
+	project := o.Project
+	if project == "" {
+		project = DefaultCommandSession
+	}
+	tsess, err := s.c.Tmux.EnsureSession(ctx, project)
+	if err != nil {
+		return WindowResult{}, err
+	}
+	t := tmux.Target{Session: tsess, Window: tmux.SanitizeName(o.Name)}
+	if err := t.Validate(); err != nil {
+		return WindowResult{}, err
+	}
+	ws, err := s.c.Tmux.ListWindows(ctx, tsess)
+	if err != nil {
+		return WindowResult{}, err
+	}
+	res := WindowResult{Target: t}
+	if i := slices.IndexFunc(ws, func(w tmux.Window) bool { return w.Name == t.Window }); i >= 0 {
+		if !ws[i].Dead {
+			res.Reused = true
+			return s.showWindow(ctx, res)
+		}
+		if err := s.c.Tmux.KillWindow(ctx, t); err != nil {
+			return WindowResult{}, err
+		}
+	}
+	if res.Target, err = s.c.Tmux.NewWindow(ctx, tsess, o.Name, o.Dir, []string{"sh", "-c", o.Script}, o.Env); err != nil {
+		return WindowResult{}, err
+	}
+	if !o.Attach {
+		return res, nil
+	}
+	return s.showWindow(ctx, res)
+}
+
+func (s *Service) showWindow(ctx context.Context, res WindowResult) (WindowResult, error) {
+	a, err := s.c.Tmux.Attach(ctx, res.Target)
+	if err != nil {
+		return WindowResult{}, err
+	}
+	res.Attachment = &a
+	return res, nil
+}
+
 // API is what the UI (the Sessions tab, `forge new`) needs from the session
 // service; *Service implements it and tests fake it.
 type API interface {
@@ -1137,6 +1230,7 @@ type TmuxControl interface {
 	RestartTmux(ctx context.Context) error
 	TmuxConfig() string
 	ResetTmuxConfig() (backup string, err error)
+	OpenWindow(ctx context.Context, o WindowOpts) (WindowResult, error)
 }
 
 var _ API = (*Service)(nil)

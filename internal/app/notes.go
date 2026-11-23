@@ -81,7 +81,7 @@ func (m Model) openNote(day time.Time) (Model, tea.Cmd) {
 		return m, m.toast.Show("daily notes are off (no notes directory)", ui.ToastInfo)
 	}
 	if m.overlay != overlayNote {
-		m.helpOpen = false
+		m.helpOpen, m.outputOpen = false, false
 		m.overlay = overlayNote
 		m.startSlideIn()
 	}

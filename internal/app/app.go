@@ -82,6 +82,10 @@ type Model struct {
 	help     ui.HelpView
 	helpOpen bool
 
+	custom     customState   // custom commands (P6.3)
+	output     ui.OutputView // a background run's output, full screen
+	outputOpen bool
+
 	palette ui.CommandPalette
 	overlay paletteMode
 	capture ui.CaptureInput // the quick capture line (P3.5)
@@ -142,6 +146,7 @@ const (
 	overlaySessions             // ctrl+g: the session picker
 	overlayCapture              // ctrl+n: quick capture (not a picker)
 	overlayNote                 // ctrl+s: the daily note pane (not a picker)
+	overlayOutputs              // "Command output…": recent custom command runs
 )
 
 // New returns the root model for the given config. It fails if the keybinds
@@ -149,6 +154,9 @@ const (
 func New(cfg *config.Config, opts ...Option) (Model, error) {
 	keys, err := ui.NewKeyMap(cfg.Keybinds)
 	if err != nil {
+		return Model{}, err
+	}
+	if err := keys.SetCustom(customKeys(cfg.CustomCommands), config.TabNames); err != nil {
 		return Model{}, err
 	}
 	theme := ui.NewTheme(true, cfg.UI.Theme)
@@ -187,6 +195,7 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		theme:   theme,
 		keys:    keys,
 		help:    ui.NewHelpView(theme, keys),
+		output:  ui.NewOutputView(theme, keys),
 		palette: ui.NewCommandPalette(theme, keys),
 		capture: ui.NewCaptureInput(theme, keys, nil),
 		note:    ui.NewNotePad(theme, keys),
@@ -294,7 +303,7 @@ func (m Model) animating() bool {
 		return true
 	case m.overlay == overlayNote && m.notes.busy:
 		return true
-	case m.helpOpen || len(m.tabs) == 0:
+	case m.helpOpen || m.outputOpen || len(m.tabs) == 0:
 		return false
 	}
 	a, ok := m.tabs[m.active].(tabs.Animator)
@@ -346,6 +355,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.SetSize(m.contentSize())
 		}
 		m.help.SetSize(m.width, m.height)
+		m.output.SetSize(m.width, m.height)
 		m.resizeNote()
 		return m, m.resized()
 
@@ -431,6 +441,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case copyMsg:
 		return m, m.copyText(msg.text, msg.done)
 
+	case customDoneMsg:
+		return m.handleCustomDone(msg)
+
+	case customExecMsg:
+		return m.handleCustomExec(msg)
+
+	case customWindowMsg:
+		return m.handleCustomWindow(msg)
+
+	case customDetachedMsg:
+		return m.handleCustomDetached(msg)
+
 	case tea.FocusMsg:
 		m.focused = true
 		return m, nil
@@ -490,6 +512,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.helpOpen {
 		return m.handleHelpKey(msg)
 	}
+	if m.outputOpen {
+		return m.handleOutputKey(msg)
+	}
 	if m.capturingInput() {
 		return m.updateActive(msg)
 	}
@@ -517,12 +542,15 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, g.RefreshAll):
 		return m.refreshAll()
 	}
+	if c, ok := m.customKey(msg); ok {
+		return m.runCustom(c)
+	}
 	return m.updateActive(msg)
 }
 
 // openPalette snapshots the registry and shows every item, recents first.
 func (m *Model) openPalette() {
-	m.helpOpen = false
+	m.helpOpen, m.outputOpen = false, false
 	m.items = m.paletteItems()
 	m.overlay = overlayCommands
 	m.palette.Reset()
@@ -544,7 +572,7 @@ func (m Model) openProjects() (Model, tea.Cmd) {
 	if len(m.cfg.Projects) == 0 {
 		return m, m.toast.Show("no git repos found — set project_roots in your config", ui.ToastInfo)
 	}
-	m.helpOpen = false
+	m.helpOpen, m.outputOpen = false, false
 	m.items = m.projectItems()
 	m.overlay = overlayProjects
 	m.palette.Reset()
@@ -566,7 +594,7 @@ func (m Model) openSessions() (Model, tea.Cmd) {
 	if len(items) == 0 {
 		return m, m.toast.Show("no sessions to go to — start one on the Sessions tab", ui.ToastInfo)
 	}
-	m.helpOpen = false
+	m.helpOpen, m.outputOpen = false, false
 	m.items = items
 	m.overlay = overlaySessions
 	m.palette.Reset()
@@ -621,7 +649,7 @@ func (m Model) handlePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Global.Help, m.keys.Input.Cancel, m.keys.Global.Quit):
-		m.helpOpen = false
+		m.helpOpen, m.outputOpen = false, false
 	default:
 		m.help.Update(msg)
 	}
@@ -635,6 +663,7 @@ func (m *Model) openHelp() {
 		t := m.tabs[m.active]
 		sections = append(sections, ui.HelpSection{Title: t.Title(), Groups: t.FullHelp()})
 	}
+	sections = append(sections, m.customHelp()...)
 	sections = append(sections, ui.HelpSection{
 		Title:  "Daily note",
 		Groups: [][]key.Binding{m.keys.NoteHelp(), m.keys.NoteEditHelp()},
@@ -957,6 +986,9 @@ func (m Model) render() string {
 	}
 	if m.helpOpen {
 		return m.help.View()
+	}
+	if m.outputOpen {
+		return m.output.View()
 	}
 	titles := make([]string, len(m.tabs))
 	for i, t := range m.tabs {

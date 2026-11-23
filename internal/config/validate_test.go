@@ -46,6 +46,11 @@ func TestValidation(t *testing.T) {
 		{"keybind empty key", "keybinds:\n  quit: [q, \"\"]\n", "keybinds.quit[1]", 2, "must not be empty"},
 		{"command name", "custom_commands:\n  - command: ls\n", "custom_commands[0].name", 2, "is required"},
 		{"command body", "custom_commands:\n  - name: ls\n", "custom_commands[0].command", 2, "is required"},
+		{"command blank key", "custom_commands:\n  - name: a\n    command: x\n    key: \" \"\n", "custom_commands[0].key", 4, "must not be blank"},
+		{"command mode", "custom_commands:\n  - name: a\n    command: x\n    mode: popup\n", "custom_commands[0].mode", 4, `must be one of background, exec, tmux-window; got "popup"`},
+		{"command attach", "custom_commands:\n  - name: a\n    command: x\n    mode: exec\n    attach: false\n", "custom_commands[0].attach", 5, "only applies to mode tmux-window"},
+		{"command attach default mode", "custom_commands:\n  - name: a\n    command: x\n    attach: true\n", "custom_commands[0].attach", 4, "only applies"},
+		{"command tab", "custom_commands:\n  - name: a\n    command: x\n    tabs: [sessions, agents]\n", "custom_commands[0].tabs[1]", 4, `unknown tab "agents"`},
 		{"duplicate command", "custom_commands:\n  - name: a\n    command: x\n  - name: a\n    command: y\n", "custom_commands[1].name", 4, "duplicate command"},
 	}
 	for _, tt := range tests {
