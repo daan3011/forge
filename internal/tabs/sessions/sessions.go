@@ -1081,6 +1081,11 @@ func (t *Tab) openDialogOr(subject string, f *huh.Form, done func() tea.Cmd, abo
 	init := f.Init()
 	w, h := t.formSize()
 	_, _ = f.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	if _, ok := f.GetFocusedField().(*huh.Text); ok {
+		// A prompt opens at its start, not scrolled to its last line, so
+		// the task shows above the template's closing sections.
+		_, _ = f.Update(tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
+	}
 	return init
 }
 
@@ -1308,6 +1313,12 @@ func (t *Tab) detail() string {
 		label("created", r.CreatedAt.Format("2006-01-02 15:04")),
 		label("activity", Ago(t.now(), r.LastActivityAt)),
 	)
+	if r.Progress != "" { // the agent's latest report_progress (P6.5)
+		lines = append(lines, label("progress", r.Progress+" · "+Ago(t.now(), r.ProgressAt)))
+	}
+	if r.AgentSummary != "" && !r.Archived() {
+		lines = append(lines, label("summary", r.AgentSummary))
+	}
 	if t.usage != nil {
 		lines = append(lines, label("usage", t.usageLine(r.ClaudeSessionID)))
 	}

@@ -35,3 +35,8 @@ The error context from the failing log:
 2. Fix the cause, not the symptom. Don't skip or weaken tests to get green.
 3. Run the affected tests and linters locally.
 4. Explain the cause and the fix in a short summary.
+
+<!-- forge:mcp-tools v1 -->
+forge tools (mcp__forge__*): get_context_pack first; create_issue for follow-ups you won't do now (a proposal
+the user triages; list_issues first); log_decision for real design choices; write_doc for notes in .forge/docs;
+pin_artifact for outputs; report_progress at milestones; set_session_summary before you finish.

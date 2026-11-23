@@ -120,6 +120,8 @@ type Model struct {
 	docsWatcher  docfs.Watcher       // from WithDocsWatcher
 
 	artifactIdx   tabs.ArtifactIndex // from WithArtifacts
+	proposals     tabs.ProposalQueue // from WithProposals
+	links         tabs.LinkReader    // from WithLinks
 	caches        tabs.CacheControl  // from WithCaches
 	usage         tabs.UsageSource   // from WithUsage
 	artifactWatch artfs.Watcher      // from WithArtifactWatcher
@@ -172,7 +174,7 @@ func New(cfg *config.Config, opts ...Option) (Model, error) {
 		Runs: m.runs, Pulls: m.pulls, Plane: m.plane, PlaneErr: m.planeErr,
 		ProjectLinks: linker(m.projStore), DocsWatcher: m.docsWatcher,
 		Artifacts: m.artifactIdx, ArtifactWatcher: m.artifactWatch, Files: m.files, Caches: m.caches,
-		Usage: m.usage,
+		Usage: m.usage, Proposals: m.proposals, Links: m.links,
 		Chafa: m.chafa, Rsvg: m.rsvg,
 	}
 	m.tabs = []tabs.Tab{

@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	"github.com/daan3011/forge/internal/app"
@@ -25,6 +26,7 @@ import (
 	"github.com/daan3011/forge/internal/notify"
 	"github.com/daan3011/forge/internal/packs"
 	"github.com/daan3011/forge/internal/plane"
+	"github.com/daan3011/forge/internal/proposals"
 	"github.com/daan3011/forge/internal/rsvg"
 	agent "github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/alert"
@@ -68,6 +70,8 @@ type deps struct {
 	// detection.
 	getwd   func() string
 	homeDir func() string
+	// mcpTransport replaces stdio for `forge mcp`.
+	mcpTransport func() mcp.Transport
 }
 
 func (d deps) sessions(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -123,6 +127,9 @@ func newRootCmd(d deps) *cobra.Command {
 				return err
 			}
 			planeAPI, planeErr := d.planeClient(cfg.Plane, st.Cache())
+			if planeErr != nil {
+				planeAPI = nil // never a typed nil client
+			}
 			opts := []app.Option{
 				app.WithPlane(planeAPI, planeErr), app.WithProjectStore(st.Projects()),
 				app.WithStore(st.Cache()), app.WithSplash(), app.WithSessions(svc),
@@ -131,6 +138,10 @@ func newRootCmd(d deps) *cobra.Command {
 				app.WithClipboard(clipboard.Exec{}), app.WithCheckout(newCheckout(cfg)),
 				app.WithDelta(delta.Exec{Dark: true}),
 				app.WithArtifacts(st.Artifacts()), app.WithFiles(browser.Exec{}),
+				app.WithLinks(st.Links()),
+				app.WithProposals(proposals.Queue{
+					Store: st, Plane: planeAPI, Projects: func() []config.Project { return cfg.Projects },
+				}),
 				app.WithCaches(newCaches(cfg, st, svc)),
 				app.WithUsage(newUsage(cfg, st)),
 				app.WithPreviewTools(chafa.Exec{}, rsvg.Exec{}),
@@ -205,6 +216,8 @@ func newRootCmd(d deps) *cobra.Command {
 		newConfigCmd(d),
 		newTmuxCmd(d),
 		newPlaneCmd(d),
+		newMCPCmd(d),
+		newTemplatesCmd(d),
 		newDemoCmd(),
 	)
 	return root

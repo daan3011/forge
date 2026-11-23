@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ type kind int
 const (
 	kindWaiting  kind = iota + 1 // agent waiting for input
 	kindErrored                  // agent errored
+	kindProposed                 // issue an agent proposed through forge mcp (P6.5)
 	kindReview                   // review requested from me
 	kindFailing                  // my PR with failing checks
 	kindApproved                 // my PR approved and green
@@ -30,7 +32,7 @@ func (k kind) source() string {
 	switch k {
 	case kindWaiting, kindErrored:
 		return "agent"
-	case kindIssue:
+	case kindIssue, kindProposed:
 		return "plane"
 	}
 	return "pr"
@@ -38,20 +40,22 @@ func (k kind) source() string {
 
 // item is one "needs me" row.
 type item struct {
-	kind  kind
-	id    string    // unique row id: "agent:<name>", "pr:<owner/repo#n>", "plane:<uuid>"
-	at    time.Time // when it started needing me (sorts oldest first)
-	agent sessions.Row
-	pr    github.PR
-	issue plane.WorkItem
+	kind     kind
+	id       string    // unique row id: "agent:<name>", "pr:<owner/repo#n>", "plane:<uuid>", "proposal:<id>"
+	at       time.Time // when it started needing me (sorts oldest first)
+	agent    sessions.Row
+	pr       github.PR
+	issue    plane.WorkItem
+	proposal store.Proposal
 }
 
 // inputs are what the sources loaded.
 type inputs struct {
-	sessions []sessions.Row
-	reviews  []github.PR // review-requested:@me
-	mine     []github.PR // author:@me
-	issues   []plane.WorkItem
+	sessions  []sessions.Row
+	reviews   []github.PR // review-requested:@me
+	mine      []github.PR // author:@me
+	issues    []plane.WorkItem
+	proposals []store.Proposal // waiting for accept / edit / drop
 }
 
 // mergeReady reports whether p is approved, green and can be merged.
@@ -60,8 +64,8 @@ func mergeReady(p github.PR) bool {
 		!p.Draft && p.Mergeable != github.Conflicting
 }
 
-// rank builds the prioritised list: waiting agents, errored agents, review
-// requests, my failing PRs, my approved green PRs, then my Plane items in
+// rank builds the prioritised list: waiting agents, errored agents,
+// issues agents proposed, review requests, my failing PRs, my approved green PRs, then my Plane items in
 // the current cycle. Within a group the oldest comes first, except Plane
 // items: in progress first, then by priority, then most recently updated.
 func rank(in inputs) []item {
@@ -85,6 +89,9 @@ func rank(in inputs) []item {
 			continue
 		}
 		add(item{kind: k, id: "agent:" + r.Name, at: firstSet(r.StatusChangedAt, r.LastActivityAt), agent: r})
+	}
+	for _, p := range in.proposals {
+		add(item{kind: kindProposed, id: "proposal:" + strconv.FormatInt(p.ID, 10), at: p.CreatedAt, proposal: p})
 	}
 	for _, p := range in.reviews {
 		if p.Open() {

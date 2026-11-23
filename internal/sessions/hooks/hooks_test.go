@@ -277,6 +277,91 @@ func TestInstallErrors(t *testing.T) {
 	}
 }
 
+func TestInstallAllowsForgeMCP(t *testing.T) {
+	allowOf := func(t *testing.T, dir string) (allow []string, rest map[string]any) {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(dir, SettingsRel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var top struct {
+			Permissions map[string]any `json:"permissions"`
+		}
+		if err := json.Unmarshal(b, &top); err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range top.Permissions["allow"].([]any) {
+			allow = append(allow, r.(string))
+		}
+		delete(top.Permissions, "allow")
+		return allow, top.Permissions
+	}
+	tests := []struct {
+		name     string
+		existing string
+		want     []string
+		rest     []string // other permission keys that must survive
+	}{
+		{"fresh", "", []string{MCPAllowRule}, nil},
+		{"no permissions", `{"model": "opus"}`, []string{MCPAllowRule}, nil},
+		{
+			"keeps rules", `{"permissions": {"allow": ["Bash(make test)"], "deny": ["Bash(rm:*)"], "ask": ["WebFetch"], "defaultMode": "acceptEdits"}}`,
+			[]string{"Bash(make test)", MCPAllowRule},
+			[]string{"deny", "ask", "defaultMode"},
+		},
+		{"already there", `{"permissions": {"allow": ["mcp__forge__*", "Read"]}}`, []string{MCPAllowRule, "Read"}, nil},
+		{"null allow", `{"permissions": {"allow": null}}`, []string{MCPAllowRule}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tt.existing != "" {
+				_ = os.MkdirAll(filepath.Join(dir, ".claude"), 0o755)
+				if err := os.WriteFile(filepath.Join(dir, SettingsRel), []byte(tt.existing), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := Install(dir, "/f/forge"); err != nil {
+				t.Fatal(err)
+			}
+			first, err := os.ReadFile(filepath.Join(dir, SettingsRel))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Install(dir, "/f/forge"); err != nil {
+				t.Fatal(err)
+			}
+			second, _ := os.ReadFile(filepath.Join(dir, SettingsRel))
+			if string(first) != string(second) {
+				t.Errorf("second install changed the file:\n%s\n---\n%s", first, second)
+			}
+			allow, rest := allowOf(t, dir)
+			if !reflect.DeepEqual(allow, tt.want) {
+				t.Errorf("allow = %v, want %v", allow, tt.want)
+			}
+			for _, k := range tt.rest {
+				if _, ok := rest[k]; !ok {
+					t.Errorf("permissions.%s dropped: %v", k, rest)
+				}
+			}
+		})
+	}
+}
+
+func TestInstallBadAllow(t *testing.T) {
+	for _, bad := range []string{`{"permissions": {"allow": "mcp__forge__*"}}`, `{"permissions": ["x"]}`} {
+		dir := t.TempDir()
+		_ = os.MkdirAll(filepath.Join(dir, ".claude"), 0o755)
+		_ = os.WriteFile(filepath.Join(dir, SettingsRel), []byte(bad), 0o600)
+		if err := Install(dir, "/f/forge"); err == nil {
+			t.Errorf("%s: want an error, not an overwrite", bad)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, SettingsRel)); string(b) != bad {
+			t.Errorf("file changed: %s", b)
+		}
+	}
+}
+
 // --- Ingest -------------------------------------------------------------------
 
 func newStore(t *testing.T) *store.Store {

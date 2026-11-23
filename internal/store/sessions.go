@@ -57,6 +57,12 @@ type Session struct {
 	// AutoArchiveOff is set when the session was restored from the archive;
 	// it is then never archived automatically again (P1.10).
 	AutoArchiveOff bool
+	// Progress is the latest line the agent reported through forge mcp
+	// (P6.5), at ProgressAt. AgentSummary is the agent's own summary;
+	// Archive prefers it over the generated one. Update never writes these.
+	Progress     string
+	ProgressAt   time.Time
+	AgentSummary string
 }
 
 // Archived reports whether the session is in the archive.
@@ -71,21 +77,25 @@ const sessionInsertCols = `name, claude_session_id, project, repo, base_branch, 
 	transcript_path, transcript_offset, waiting_notified_at, notes, summary, archived_at,
 	created_at, updated_at, branch_created, worktree_external, auto_archive_off`
 
-const sessionCols = `id, ` + sessionInsertCols
+const sessionCols = `id, ` + sessionInsertCols + `, progress, progress_at, agent_summary`
 
 func scanSession(sc interface{ Scan(...any) error }) (Session, error) {
 	var (
 		x                                                            Session
 		repo, base, branch, wt, tsess, twin, tmpl, tpath, notes, sum sql.NullString
 		statusAt, activity, notified, archived, created, updated     sql.NullInt64
+		progress, agentSum                                           sql.NullString
+		progressAt                                                   sql.NullInt64
 	)
 	err := sc.Scan(&x.ID, &x.Name, &x.ClaudeSessionID, &x.Project, &repo, &base, &branch, &wt,
 		&tsess, &twin, &tmpl, &x.Status, &statusAt, &activity,
 		&tpath, &x.TranscriptOffset, &notified, &notes, &sum, &archived,
-		&created, &updated, &x.BranchCreated, &x.WorktreeExternal, &x.AutoArchiveOff)
+		&created, &updated, &x.BranchCreated, &x.WorktreeExternal, &x.AutoArchiveOff,
+		&progress, &progressAt, &agentSum)
 	if err != nil {
 		return Session{}, err
 	}
+	x.Progress, x.ProgressAt, x.AgentSummary = progress.String, fromMillis(progressAt), agentSum.String
 	x.Repo, x.BaseBranch, x.Branch, x.Worktree = repo.String, base.String, branch.String, wt.String
 	x.TmuxSession, x.TmuxWindow, x.Template = tsess.String, twin.String, tmpl.String
 	x.TranscriptPath, x.Notes, x.Summary = tpath.String, notes.String, sum.String
@@ -297,12 +307,31 @@ func (r *Sessions) SetTranscript(ctx context.Context, id int64, path string, off
 	return mustAffect("set session transcript", res, err)
 }
 
-// Archive moves the session to the archive with a summary (P1.10). Notes are kept.
+// Archive moves the session to the archive with a summary (P1.10). Notes are
+// kept. A summary the agent set through forge mcp wins over the given one.
 func (r *Sessions) Archive(ctx context.Context, id int64, summary string, at time.Time) error {
 	res, err := r.s.w.ExecContext(ctx,
-		`UPDATE sessions SET archived_at = ?, summary = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE sessions SET archived_at = ?, summary = COALESCE(agent_summary, ?), updated_at = ? WHERE id = ?`,
 		at.UnixMilli(), nullStr(summary), r.s.now().UnixMilli(), id)
 	return mustAffect("archive session", res, err)
+}
+
+// SetAgentSummary stores the agent's own summary of the session (forge mcp,
+// P6.5). It is shown as the summary right away and kept by Archive.
+func (r *Sessions) SetAgentSummary(ctx context.Context, id int64, summary string) error {
+	res, err := r.s.w.ExecContext(ctx,
+		`UPDATE sessions SET agent_summary = ?1, summary = ?1, updated_at = ?2 WHERE id = ?3`,
+		nullStr(summary), r.s.now().UnixMilli(), id)
+	return mustAffect("set session summary", res, err)
+}
+
+// SetProgress stores the latest progress line the agent reported (forge
+// mcp, P6.5).
+func (r *Sessions) SetProgress(ctx context.Context, id int64, progress string, at time.Time) error {
+	res, err := r.s.w.ExecContext(ctx,
+		`UPDATE sessions SET progress = ?, progress_at = ?, updated_at = ? WHERE id = ?`,
+		nullStr(progress), toMillis(at), r.s.now().UnixMilli(), id)
+	return mustAffect("set session progress", res, err)
 }
 
 // ArchiveRemoved records that a killed session's worktree was removed: the

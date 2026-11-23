@@ -144,6 +144,22 @@ type ArtifactIndex interface {
 	Detach(ctx context.Context, copyPath, reason string, at time.Time) error
 }
 
+// LinkReader reads the links touching an entity. *store.Links satisfies
+// it.
+type LinkReader interface {
+	For(ctx context.Context, ref store.Ref) ([]store.Link, error)
+}
+
+// ProposalQueue holds the issues agents proposed through forge mcp (P6.5)
+// until the user accepts (creates them in Plane), edits or drops them.
+// proposals.Queue satisfies it.
+type ProposalQueue interface {
+	Pending(ctx context.Context, project string) ([]store.Proposal, error)
+	Accept(ctx context.Context, id int64) (store.Proposal, error)
+	Edit(ctx context.Context, id int64, e store.ProposalEdit) (store.Proposal, error)
+	Drop(ctx context.Context, id int64) error
+}
+
 // CacheControl measures and clears what forge stores (P5.3).
 // *cachectl.Controller satisfies it.
 type CacheControl interface {

@@ -220,7 +220,8 @@ func DocsMessage(plan []docfs.Attachment) string {
 }
 
 // DocsPrompt is prompt with the docs' mentions appended when tmpl doesn't
-// place them itself through {docs}.
+// place them itself through {docs}: before the forge tools section when
+// the prompt ends with one, so the task stays together.
 func DocsPrompt(tmpl templates.Template, prompt string, plan []docfs.Attachment) string {
 	if len(plan) == 0 || slices.Contains(templates.Vars(tmpl.Body), "docs") {
 		return prompt
@@ -229,7 +230,7 @@ func DocsPrompt(tmpl templates.Template, prompt string, plan []docfs.Attachment)
 	if strings.TrimSpace(prompt) == "" {
 		return line
 	}
-	return strings.TrimRight(prompt, "\n") + "\n\n" + line
+	return templates.InsertBeforeTools(prompt, line)
 }
 
 func docNoun(n int) string {

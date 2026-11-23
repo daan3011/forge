@@ -245,6 +245,9 @@ keybinds:
   # home_fix: ["F"]                # start the CI fix flow (PR with failing checks)
   # home_merge: ["m"]              # merge an approved, green PR (asks first)
   # home_browse: ["o"]             # open the PR or issue in the browser
+  # home_accept: ["a"]             # create an agent-proposed issue in Plane (P6.5)
+  # home_edit: ["e"]               # edit an agent-proposed issue
+  # home_drop: ["x"]               # drop an agent-proposed issue (asks first)
   # Artifacts tab (P4.5)
   # artifacts_open: ["o"]          # open in the default app (browser for HTML)
   # artifacts_copy_path: ["y"]     # copy the path
@@ -388,3 +391,11 @@ custom_commands:
   #   mode: tmux-window
   #   attach: false
   #   command: npm run dev
+
+# forge mcp: the MCP server agents in forge sessions use to file issues,
+# write docs, pin artifacts and report progress.
+#   auto_create_issues: false keeps agent-filed issues as proposals on Home
+#                       (accept creates them in Plane); true creates them
+#                       in Plane straight away.
+mcp:
+  auto_create_issues: false

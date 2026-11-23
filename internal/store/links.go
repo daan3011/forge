@@ -16,6 +16,10 @@ const (
 	KindPlaneIssue LinkKind = "plane_issue"
 	KindGitHubPR   LinkKind = "github_pr"
 	KindGitHubRun  LinkKind = "github_run"
+	// Written by forge mcp (P6.5).
+	KindProposal LinkKind = "proposed_issue"
+	KindDoc      LinkKind = "doc"
+	KindArtifact LinkKind = "artifact"
 )
 
 // Ref identifies a linkable entity. IDs: sessions use their numeric id,
@@ -40,6 +44,15 @@ func RunRef(repo string, runID int64) Ref {
 
 // IssueRef returns the Ref for a Plane work item.
 func IssueRef(id string) Ref { return Ref{Kind: KindPlaneIssue, ID: id} }
+
+// ProposalRef returns the Ref for an agent-proposed issue (P6.5).
+func ProposalRef(id int64) Ref { return Ref{Kind: KindProposal, ID: strconv.FormatInt(id, 10)} }
+
+// DocRef returns the Ref for a doc, by absolute path (P6.5).
+func DocRef(path string) Ref { return Ref{Kind: KindDoc, ID: path} }
+
+// ArtifactRef returns the Ref for an artifact, by absolute path (P6.5).
+func ArtifactRef(path string) Ref { return Ref{Kind: KindArtifact, ID: path} }
 
 // LinkMeta describes the "to" end of a link, cached so detail panes can show
 // it without fetching.

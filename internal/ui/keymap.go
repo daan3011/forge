@@ -277,6 +277,10 @@ type HomeKeys struct {
 	Fix    key.Binding // start the CI fix flow for a PR with failing checks
 	Merge  key.Binding // merge an approved, green PR (asks first)
 	Browse key.Binding // open the PR or issue in the browser
+	// Agent-proposed issues (P6.5).
+	Accept key.Binding // create the proposed issue in Plane
+	Edit   key.Binding // edit the proposal's title, description, priority
+	Drop   key.Binding // discard the proposal (asks first)
 }
 
 // ArtifactKeys are the Artifacts tab's actions (P4.5, P4.6).
@@ -561,6 +565,9 @@ func DefaultKeyMap() *KeyMap {
 			Fix:    bind("fix CI", "F"),
 			Merge:  bind("merge", "m"),
 			Browse: bind("open in browser", "o"),
+			Accept: bind("accept proposal", "a"),
+			Edit:   bind("edit proposal", "e"),
+			Drop:   bind("drop proposal", "x"),
 		},
 		Artifacts: ArtifactKeys{
 			Open:         bind("open", "o"),
@@ -765,6 +772,9 @@ func (k *KeyMap) actions() []action {
 		{"home_fix", scopeHome, &hm.Fix},
 		{"home_merge", scopeHome, &hm.Merge},
 		{"home_browse", scopeHome, &hm.Browse},
+		{"home_accept", scopeHome, &hm.Accept},
+		{"home_edit", scopeHome, &hm.Edit},
+		{"home_drop", scopeHome, &hm.Drop},
 		{"pipeline_filters", scopePipes, &pp.Filters},
 		{"pipeline_mine", scopePipes, &pp.Mine},
 		{"pipeline_clear_filters", scopePipes, &pp.ClearFilters},

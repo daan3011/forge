@@ -140,6 +140,10 @@ func (m Model) paletteItems() []item {
 			id: "templates_edit", title: "Edit templates", group: groupCommands,
 			detail: "session templates in $EDITOR",
 			run:    func(m Model) (Model, tea.Cmd) { return m, editTemplates(dir) },
+		}, item{
+			id: "templates_sync", title: "Templates: sync forge tools section", group: groupCommands,
+			detail: "add the forge MCP tools section to templates that lack it",
+			run:    func(m Model) (Model, tea.Cmd) { return m, syncTemplates(dir) },
 		})
 	}
 
