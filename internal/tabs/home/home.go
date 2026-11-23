@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -72,12 +73,19 @@ type Tab struct {
 	plane    plane.API
 	planeErr error
 	arts     tabs.ArtifactIndex
+	props    tabs.ProposalQueue
 	browser  browser.Opener
 	notesDir string
 	now      func() time.Time
 
-	split ui.SplitPane
-	table ui.Table
+	split  ui.SplitPane
+	table  ui.Table
+	width  int
+	height int
+
+	// dialog is an open edit / drop form; onDone runs when it completes.
+	dialog *huh.Form
+	onDone func() tea.Cmd
 
 	project *config.Project
 	gen     int // bumps on SetProject; older loads are dropped
@@ -93,6 +101,9 @@ type Tab struct {
 	pinsErr error
 	note    []string
 	noteOK  bool // the note was read (it may not exist)
+
+	proposals []store.Proposal
+	propsErr  error
 
 	list []item // the ranked rows, as shown
 }
@@ -121,7 +132,7 @@ func newTab(d tabkit.Deps) *Tab {
 	t := &Tab{
 		theme: d.Theme, keys: d.Keys, anim: d.Engine(), cfg: cfg, store: d.Store,
 		svc: d.Sessions, gh: d.GitHub, plane: d.Plane, planeErr: d.PlaneErr,
-		arts: d.Artifacts, browser: d.Browser, notesDir: d.NotesDir,
+		arts: d.Artifacts, props: d.Proposals, browser: d.Browser, notesDir: d.NotesDir,
 		now:     time.Now,
 		split:   ui.NewSplitPane(d.Theme),
 		reviews: prSearch{which: "reviews", query: reviewsQuery},
@@ -149,7 +160,7 @@ func (t *Tab) Init() tea.Cmd { return t.Refresh() }
 // Refresh implements tabs.Tab: every source reloads (the PR searches
 // cache-first).
 func (t *Tab) Refresh() tea.Cmd {
-	return tea.Batch(t.loadSessions(), t.loadPRs(), t.loadPlane(), t.loadPins(), t.loadNote())
+	return tea.Batch(t.loadSessions(), t.loadPRs(), t.loadPlane(), t.loadPins(), t.loadNote(), t.loadProposals())
 }
 
 // RefreshSource implements tabs.SourceRefresher: a tick reloads only what
@@ -161,14 +172,16 @@ func (t *Tab) RefreshSource(src refresh.Source) tea.Cmd {
 	case refresh.Plane:
 		return t.loadPlane()
 	case refresh.Sessions:
-		return tea.Batch(t.loadSessions(), t.loadPins(), t.loadNote())
+		return tea.Batch(t.loadSessions(), t.loadPins(), t.loadNote(), t.loadProposals())
 	}
 	return t.Refresh()
 }
 
-// SessionsChanged implements tabs.SessionWatcher: a hook ping reloads the
-// agents at once.
-func (t *Tab) SessionsChanged() tea.Cmd { return t.loadSessions() }
+// SessionsChanged implements tabs.SessionWatcher: a hook or forge mcp ping
+// reloads the agents, their proposals and pins at once.
+func (t *Tab) SessionsChanged() tea.Cmd {
+	return tea.Batch(t.loadSessions(), t.loadProposals(), t.loadPins())
+}
 
 // NotesChanged implements tabs.NoteWatcher: the side panel rereads today's
 // note.
@@ -193,6 +206,25 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 }
 
 func (t *Tab) update(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case proposalsMsg:
+		if msg.gen == t.gen {
+			t.propsErr = msg.err
+			if msg.err == nil {
+				t.proposals = msg.proposals
+				t.rerank()
+			}
+		}
+		return nil
+	case proposalDoneMsg:
+		if msg.err != nil {
+			return tea.Batch(errCmd(msg.err), t.loadProposals())
+		}
+		return tea.Batch(success(msg.text), t.loadProposals())
+	}
+	if t.dialog != nil {
+		return t.updateDialog(msg)
+	}
 	switch msg := msg.(type) {
 	case sessionsMsg:
 		t.sessionsLoaded(msg)
@@ -233,6 +265,12 @@ func (t *Tab) handleKey(kp tea.KeyPressMsg) tea.Cmd {
 		return t.merge()
 	case key.Matches(kp, hk.Browse):
 		return t.browse()
+	case key.Matches(kp, hk.Accept):
+		return t.accept()
+	case key.Matches(kp, hk.Edit):
+		return t.edit()
+	case key.Matches(kp, hk.Drop):
+		return t.drop()
 	case key.Matches(kp, l.GrowPane):
 		t.split.Grow()
 		t.resize()
@@ -329,6 +367,7 @@ func (t *Tab) rerank() {
 	}
 	t.list = rank(inputs{
 		sessions: t.rows, reviews: t.reviews.res.PRs, mine: t.mine.res.PRs, issues: t.items,
+		proposals: t.proposals,
 	})
 	rows := make([][]string, len(t.list))
 	for i, it := range t.list {
@@ -365,6 +404,12 @@ func (t *Tab) itemText(it item) string {
 		return s
 	case kindIssue:
 		return it.issue.Key() + " " + it.issue.Name
+	case kindProposed:
+		s := it.proposal.Handle() + " " + it.proposal.Title + " · by " + it.proposal.SessionName
+		if t.multi() && it.proposal.Project != "" {
+			s += " · " + it.proposal.Project
+		}
+		return s
 	case kindReview:
 		s := prTitle(it.pr, t.multi())
 		if it.pr.Author != "" {
@@ -388,6 +433,8 @@ func (t *Tab) statusText(it item) string {
 		return "waiting" + t.age(it.at)
 	case kindErrored:
 		return "errored" + t.age(it.at)
+	case kindProposed:
+		return "proposed" + t.age(it.at)
 	case kindReview:
 		return "review" + t.age(it.at)
 	case kindFailing:
@@ -417,6 +464,8 @@ func (t *Tab) nextText(it item) string {
 		b, verb = hk.Fix, "fix"
 	case kindApproved:
 		b, verb = hk.Merge, "merge"
+	case kindProposed:
+		b, verb = hk.Accept, "accept"
 	}
 	return b.Help().Key + " " + verb
 }
@@ -451,6 +500,8 @@ func (t *Tab) renderStatus(cell string, width int, row lipgloss.Style) string {
 		_, st = t.theme.CIIcon(github.CIFailure)
 	case kindApproved:
 		_, st = t.theme.CIIcon(github.CISuccess)
+	case kindProposed:
+		st = t.theme.StateGroupStyle(string(plane.GroupTriage))
 	default:
 		var group string
 		group, text, _ = strings.Cut(text, "|")
@@ -489,8 +540,10 @@ func (t *Tab) selected() (item, bool) {
 
 // SetSize implements tabs.Tab.
 func (t *Tab) SetSize(width, height int) {
+	t.width, t.height = width, height
 	t.split.SetSize(width, height)
 	t.resize()
+	t.sizeDialog()
 }
 
 func (t *Tab) resize() {
@@ -508,6 +561,7 @@ func (t *Tab) SetProject(p *config.Project) {
 	t.gen++
 	t.agents, t.issues = loadState{}, loadState{}
 	t.rows, t.items, t.pins, t.pinsErr, t.note, t.noteOK = nil, nil, nil, nil, nil, false
+	t.proposals, t.propsErr = nil, nil
 	t.reviews = prSearch{which: t.reviews.which, query: t.reviews.query}
 	t.mine = prSearch{which: t.mine.which, query: t.mine.query}
 	t.rerank()
@@ -568,6 +622,9 @@ func (t *Tab) problems() []string {
 			out = append(out, "GitHub: "+s.err.Error())
 			break // one line for both searches
 		}
+	}
+	if t.propsErr != nil {
+		out = append(out, "proposals: "+t.propsErr.Error())
 	}
 	if err := t.issues.err; err != nil {
 		msg := err.Error()

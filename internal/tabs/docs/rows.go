@@ -17,6 +17,9 @@ type row struct {
 	depth int
 	top   bool            // a project's top level (all projects)
 	dec   *docfs.Decision // set in the decisions view
+	// session marks the read-only "From sessions" rows (P6.5): the group,
+	// a session, or one of its docs.
+	session bool
 }
 
 // rebuild flattens the open folders into rows, keeping the selection.
@@ -40,11 +43,43 @@ func (t *Tab) rebuildTree() {
 			t.rows = append(t.rows, row{node: r.tree, root: i, top: true})
 			if t.expanded[r.tree.Path] {
 				t.addChildren(r.tree, i, 1)
+				t.addSessionDocs(i, 1)
 			}
 			continue
 		}
 		t.addChildren(r.tree, i, 0)
+		t.addSessionDocs(i, 0)
 	}
+}
+
+// addSessionDocs adds root i's "From sessions" group, open folders first.
+func (t *Tab) addSessionDocs(i, depth int) {
+	g := t.roots[i].sessions.group
+	if g == nil {
+		return
+	}
+	t.rows = append(t.rows, row{node: g, root: i, depth: depth, session: true})
+	if !t.expanded[g.Path] {
+		return
+	}
+	for _, s := range g.Children {
+		t.rows = append(t.rows, row{node: s, root: i, depth: depth + 1, session: true})
+		if !t.expanded[s.Path] {
+			continue
+		}
+		for _, d := range s.Children {
+			t.rows = append(t.rows, row{node: d, root: i, depth: depth + 2, session: true})
+		}
+	}
+}
+
+// readOnlyNote is the toast for edit keys on session docs.
+const readOnlyNote = "session docs are read-only here — open the session to change them"
+
+// onSessionRow reports whether the cursor is on a "From sessions" row.
+func (t *Tab) onSessionRow() bool {
+	r, ok := t.selected()
+	return ok && r.session
 }
 
 // restoreCursor selects the wanted path, else the previous selection,
@@ -187,6 +222,25 @@ func (t *Tab) rowView(r row, selected bool, w int) string {
 	var label, right string
 	style := th.TableRow
 	switch {
+	case r.session && n.IsDir:
+		mark := "▸ "
+		if t.expanded[n.Path] {
+			mark = "▾ "
+		}
+		label = mark + n.Name
+		right = docCount(n.Docs())
+		style = th.DetailLabel
+		if n.Name == fromSessions {
+			style = th.DetailTitle
+		}
+	case r.session:
+		label = "  " + n.Name
+		sd := t.roots[r.root].sessions.info[n.Path]
+		right = string(sd.status)
+		if sd.agent {
+			right = "✎ " + right
+		}
+		right += " " + ui.ShortAge(t.now().Sub(n.ModTime))
 	case r.top:
 		mark := "▸ "
 		if t.expanded[n.Path] {

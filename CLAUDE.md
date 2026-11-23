@@ -6,7 +6,8 @@ Full spec: docs/SPEC.md. Progress: docs/PROGRESS.md.
 
 ## Stack
 Go 1.26+, Charm v2 (charm.land/bubbletea/v2, bubbles/v2, lipgloss/v2), Harmonica, Glamour, Huh, cobra,
-modernc.org/sqlite, cli/go-gh/v2, fsnotify, gen2brain/beeep.
+modernc.org/sqlite, cli/go-gh/v2, fsnotify, gen2brain/beeep,
+modelcontextprotocol/go-sdk (`forge mcp`; stdout is protocol-only, log to mcp.log).
 
 ## Rules
 - Never block Update(): all I/O goes through tea.Cmd and returns a Msg.

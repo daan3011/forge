@@ -21,6 +21,8 @@ func (t *Tab) Selection() tabs.Selection {
 		return tabs.Selection{Repo: it.pr.Repo, PR: strconv.Itoa(it.pr.Number), Branch: it.pr.HeadRef}
 	case kindIssue:
 		return tabs.Selection{Issue: it.issue.Key()}
+	case kindProposed:
+		return tabs.Selection{Session: it.proposal.SessionName, Issue: it.proposal.Handle()}
 	}
 	return tabs.Selection{}
 }

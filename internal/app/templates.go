@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/daan3011/forge/internal/github"
 
@@ -52,6 +53,16 @@ func WithDocsWatcher(w docfs.Watcher) Option {
 // WithArtifacts sets the artifact index the Artifacts tab keeps (P4.5).
 func WithArtifacts(idx tabs.ArtifactIndex) Option {
 	return func(m *Model) { m.artifactIdx = idx }
+}
+
+// WithProposals gives Home the agent-proposed issues to triage (P6.5).
+func WithProposals(q tabs.ProposalQueue) Option {
+	return func(m *Model) { m.proposals = q }
+}
+
+// WithLinks gives tabs read access to forge's links (P6.5).
+func WithLinks(l tabs.LinkReader) Option {
+	return func(m *Model) { m.links = l }
 }
 
 // WithCaches gives the Context tab's Cache view its controller (P5.3).
@@ -135,5 +146,22 @@ func editTemplates(dir string) tea.Cmd {
 			}
 			return ui.InfoMsg{Text: "templates saved; the next new session uses them"}
 		})()
+	}
+}
+
+// syncTemplates appends the forge tools section (P6.5) to the templates
+// that lack it, like `forge templates sync`, and says how many changed.
+func syncTemplates(dir string) tea.Cmd {
+	return func() tea.Msg {
+		changes, err := templates.Sync(dir, false)
+		switch {
+		case err != nil:
+			return ui.ErrMsg{Err: fmt.Errorf("sync templates: %w", err)}
+		case len(changes) == 0:
+			return ui.InfoMsg{Text: "all templates already have the forge tools section"}
+		case len(changes) == 1:
+			return ui.SuccessMsg{Text: "added the forge tools section to 1 template"}
+		}
+		return ui.SuccessMsg{Text: fmt.Sprintf("added the forge tools section to %d templates", len(changes))}
 	}
 }

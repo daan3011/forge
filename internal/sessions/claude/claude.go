@@ -48,12 +48,18 @@ type Launch struct {
 	// Resume continues the existing conversation SessionID with --resume
 	// instead of starting it; PromptFile is ignored.
 	Resume bool
+	// MCPConfig, when set, is passed as --mcp-config: forge's MCP server
+	// for this session (P6.5). The user's other MCP servers still load.
+	MCPConfig string
 }
 
 // Argv returns the command to run in the agent's window:
 //
 //	sh -c 'exec <bin> --session-id <id> -- "$(cat <file>)"'
 //	sh -c 'exec <bin> --resume <id>'                         (Resume)
+//
+// With MCPConfig, `--mcp-config <file>` comes right after <bin>: the flag
+// takes several values, so it must be followed by another flag.
 //
 // The bin and file paths are single-quoted for the shell; the prompt itself
 // only ever exists in the file and in the expanded, double-quoted argument,
@@ -67,10 +73,14 @@ func (l Launch) Argv() ([]string, error) {
 	if bin == "" {
 		bin = DefaultBin
 	}
-	if l.Resume {
-		return []string{"sh", "-c", "exec " + shell.Quote(bin) + " --resume " + l.SessionID}, nil
+	head := "exec " + shell.Quote(bin)
+	if l.MCPConfig != "" {
+		head += " --mcp-config " + shell.Quote(l.MCPConfig)
 	}
-	script := "exec " + shell.Quote(bin) + " --session-id " + l.SessionID
+	if l.Resume {
+		return []string{"sh", "-c", head + " --resume " + l.SessionID}, nil
+	}
+	script := head + " --session-id " + l.SessionID
 	if l.PromptFile != "" {
 		script += ` -- "$(cat ` + shell.Quote(l.PromptFile) + `)"`
 	}

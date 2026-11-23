@@ -235,8 +235,13 @@ func (t *Tab) detailView(w, h int) string {
 			th.Hint.Render(ansi.Truncate(sub, w, "…")) + "\n\n" +
 			th.Body.Render(docCount(n.Docs()))
 	}
+	sub := n.Rel + " · updated " + ui.ShortAge(t.now().Sub(n.ModTime))
+	if r.session {
+		sd := t.roots[r.root].sessions.info[n.Path]
+		sub = "from session " + sd.session + " · " + string(sd.status) + " · read-only · " + ui.ShortAge(t.now().Sub(n.ModTime))
+	}
 	header := th.DetailTitle.Render(ansi.Truncate(n.Name, w, "…")) + "\n" +
-		th.Hint.Render(ansi.Truncate(n.Rel+" · updated "+ui.ShortAge(t.now().Sub(n.ModTime)), w, "…")) + "\n"
+		th.Hint.Render(ansi.Truncate(sub, w, "…")) + "\n"
 	got, ok := t.current()
 	switch {
 	case !ok:
@@ -244,6 +249,9 @@ func (t *Tab) detailView(w, h int) string {
 	case got.err != nil:
 		return header + "\n" + th.TableEmpty.Render(ansi.Wrap(got.err.Error(), w, ""))
 	case len(got.lines) == 0:
+		if r.session {
+			return header + "\n" + th.Hint.Render("(empty doc)")
+		}
 		return header + "\n" + th.Hint.Render("(empty doc — "+t.keys.Docs.Edit.Help().Key+" to write it)")
 	}
 	body := max(h-detailHeader, 1)

@@ -168,6 +168,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | P6.2 | Scratchpad & daily note | Quick notes per day; auto "what I did" from merged PRs, closed issues, finished sessions. |
 | P6.3 | Custom commands | Config-defined commands (palette + optional per-tab key) on the selection, with `{repo}`, `{pr}`, `{branch}`, `{worktree}`, `{issue}`, `{session}`, `{path}`; modes background (toast + viewable output), exec (suspend the TUI) and tmux-window (forge socket, attach or detached). |
 | P6.4 | Polish & packaging | Error toasts, empty states, `goreleaser`, install script, README with screenshots. |
+| P6.5 | forge MCP server | `forge mcp` (stdio) gives session agents tools for Plane issues (filed as proposals triaged on Home), `.forge/docs`, artifacts, summary/progress and context packs; every write attributed to the session, its branch and PR. |
 
 ## tmux setup (from a plain install)
 
@@ -1066,4 +1067,28 @@ Polish and package forge (spec P6.4).
   charmbracelet/vhs.
 
 Done when: a fresh machine can install forge and `forge doctor` comes back green.
+```
+
+#### P6.5 forge MCP server
+
+```text
+Add a forge MCP server (spec P6.5).
+
+- `forge mcp` runs an MCP server over stdio (official Go MCP SDK). Stdout carries the protocol
+  only; logs go to ~/.local/state/forge/mcp.log.
+- Session awareness: FORGE_SESSION names the session; every write is linked to it (links
+  table), its branch and PR.
+- Tools: create_issue, update_issue, comment_issue, list_issues, get_issue (Plane, shared
+  project resolver); write_doc, read_doc, list_docs, log_decision (.forge/docs); pin_artifact,
+  list_artifacts; set_session_summary, report_progress; get_context_pack.
+- Safety: agent-created issues are "proposed" (forge DB, shown on Home with accept / edit /
+  drop) unless mcp.auto_create_issues is true. Docs writes stay in the session worktree's
+  .forge/docs. No delete tools.
+- Registration: per session only (start and resume), never in global Claude config; forge's
+  tools are allowed in the worktree's settings.local.json so they never prompt.
+- Docs tab: a read-only "From sessions" group of docs in live worktrees that the main checkout
+  lacks. `forge templates sync` adds the forge tools section to existing templates.
+
+Done when: inside a forge session, asking Claude "file a ticket to add retries to the Plane
+client" creates a proposed issue linked to that session, visible on Home.
 ```

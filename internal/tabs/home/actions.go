@@ -36,6 +36,8 @@ func (t *Tab) open() tea.Cmd {
 		return tabs.RunPRAction(it.pr, tabs.PRSelect)
 	case kindIssue:
 		return tabs.SelectEntity(planeTitle, it.issue.ID)
+	case kindProposed:
+		return t.edit() // review first; accepting is its own key
 	}
 	return nil
 }
@@ -78,6 +80,8 @@ func (t *Tab) url(it item) (string, error) {
 			return "", fmt.Errorf("%s: no URL (plane.base_url / workspace_slug)", it.issue.Key())
 		}
 		return u, nil
+	case kindProposed:
+		return "", fmt.Errorf("%s isn't in Plane yet; %s accepts it", it.proposal.Handle(), t.keys.Home.Accept.Help().Key)
 	}
 	return "", errors.New("agents have no web page; enter attaches")
 }
@@ -119,6 +123,8 @@ func (t *Tab) openHelp(it item) key.Binding {
 		verb = "show PR"
 	case kindIssue:
 		verb = "show issue"
+	case kindProposed:
+		verb = "review"
 	}
 	b.SetHelp(b.Help().Key, verb)
 	return b
@@ -128,6 +134,9 @@ func (t *Tab) openHelp(it item) key.Binding {
 // important last.
 func (t *Tab) ShortHelp() []key.Binding {
 	hk := t.keys.Home
+	if t.dialog != nil {
+		return t.keys.FormHelp()
+	}
 	it, ok := t.selected()
 	if !ok {
 		return []key.Binding{t.keys.Global.Refresh}
@@ -139,6 +148,8 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{hk.Browse, t.openHelp(it), hk.Fix}
 	case kindApproved:
 		return []key.Binding{hk.Browse, t.openHelp(it), hk.Merge}
+	case kindProposed:
+		return []key.Binding{hk.Drop, hk.Edit, hk.Accept}
 	}
 	return []key.Binding{hk.Browse, t.openHelp(it)}
 }
@@ -149,6 +160,7 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{hk.Open, hk.Fix, hk.Merge, hk.Browse},
+		{hk.Accept, hk.Edit, hk.Drop},
 		{l.ShrinkPane, l.GrowPane},
 	}
 }
@@ -162,6 +174,9 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "home_fix", Title: "Home: fix failing CI of the selected PR", Key: hk.Fix, Run: t.fix},
 		{ID: "home_merge", Title: "Home: merge the selected PR (asks first)", Key: hk.Merge, Run: t.merge},
 		{ID: "home_browse", Title: "Home: open in browser", Key: hk.Browse, Run: t.browse},
+		{ID: "home_accept", Title: "Home: accept the proposed issue (create it in Plane)", Key: hk.Accept, Run: t.accept},
+		{ID: "home_edit", Title: "Home: edit the proposed issue", Key: hk.Edit, Run: t.edit},
+		{ID: "home_drop", Title: "Home: drop the proposed issue (asks first)", Key: hk.Drop, Run: t.drop},
 		{ID: "grow_pane", Title: "Widen list", Key: l.GrowPane, Run: do(t.split.Grow)},
 		{ID: "shrink_pane", Title: "Narrow list", Key: l.ShrinkPane, Run: do(t.split.Shrink)},
 	}

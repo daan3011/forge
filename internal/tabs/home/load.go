@@ -73,6 +73,25 @@ type pinsMsg struct {
 	err  error
 }
 
+// proposalsMsg carries the issues agents proposed (P6.5).
+type proposalsMsg struct {
+	gen       int
+	proposals []store.Proposal
+	err       error
+}
+
+// TargetTab implements tabs.TargetedMsg.
+func (proposalsMsg) TargetTab() string { return Title }
+
+// proposalDoneMsg reports an accept / edit / drop.
+type proposalDoneMsg struct {
+	text string
+	err  error
+}
+
+// TargetTab implements tabs.TargetedMsg.
+func (proposalDoneMsg) TargetTab() string { return Title }
+
 // noteMsg carries the first lines of today's note; none when it doesn't
 // exist.
 type noteMsg struct {
@@ -223,6 +242,19 @@ func cycleItems(ctx context.Context, api plane.API, projects []string, me string
 		return out, errs[0] // the client's errors start with "plane:"
 	}
 	return out, nil
+}
+
+func (t *Tab) loadProposals() tea.Cmd {
+	if t.props == nil {
+		return nil
+	}
+	q, gen, project := t.props, t.gen, t.projectName()
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		ps, err := q.Pending(ctx, project)
+		return proposalsMsg{gen: gen, proposals: ps, err: err}
+	}
 }
 
 func (t *Tab) loadPins() tea.Cmd {

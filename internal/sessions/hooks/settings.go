@@ -18,6 +18,10 @@ import (
 // must be git-ignored.
 const SettingsRel = ".claude/settings.local.json"
 
+// MCPAllowRule auto-approves every tool of forge's MCP server (P6.5), so
+// forge tool calls never raise a permission prompt.
+const MCPAllowRule = "mcp__forge__*"
+
 // HookTimeout is the per-hook timeout in seconds. forge hook gives up on
 // its own well before this.
 const HookTimeout = 5
@@ -42,10 +46,11 @@ func isForgeCommand(cmd string) bool {
 }
 
 // Install registers forge's hooks for every event in Events in
-// <dir>/.claude/settings.local.json. Everything else in the file (other
-// settings, other hooks) is kept; forge's earlier registrations are
-// replaced, so installing twice is harmless. The file is replaced
-// atomically.
+// <dir>/.claude/settings.local.json, and allows forge's MCP tools
+// (MCPAllowRule in permissions.allow). Everything else in the file (other
+// settings, other hooks, other permission rules) is kept; forge's earlier
+// registrations are replaced and the rule is added once, so installing
+// twice is harmless. The file is replaced atomically.
 func Install(dir, forgeBin string) error {
 	if forgeBin == "" {
 		return errors.New("hooks: no forge binary")
@@ -88,11 +93,50 @@ func Install(dir, forgeBin string) error {
 		return err
 	}
 	top["hooks"] = raw
+	perms, err := withAllowRule(top["permissions"], MCPAllowRule)
+	if err != nil {
+		return fmt.Errorf("hooks: %s: permissions: %w", path, err)
+	}
+	top["permissions"] = perms
 	out, err := json.MarshalIndent(top, "", "  ")
 	if err != nil {
 		return err
 	}
 	return writeAtomic(path, append(out, '\n'))
+}
+
+// withAllowRule adds rule to permissions.allow, keeping every other key
+// and rule; a rule already there is not added again.
+func withAllowRule(raw json.RawMessage, rule string) (json.RawMessage, error) {
+	perms := map[string]json.RawMessage{}
+	if len(bytes.TrimSpace(raw)) > 0 && string(bytes.TrimSpace(raw)) != "null" {
+		if err := json.Unmarshal(raw, &perms); err != nil {
+			return nil, err
+		}
+	}
+	var allow []json.RawMessage
+	if a, ok := perms["allow"]; ok && string(bytes.TrimSpace(a)) != "null" {
+		if err := json.Unmarshal(a, &allow); err != nil {
+			return nil, fmt.Errorf("allow: %w", err)
+		}
+	}
+	for _, r := range allow {
+		var s string
+		if json.Unmarshal(r, &s) == nil && s == rule {
+			return json.Marshal(perms)
+		}
+	}
+	q, err := json.Marshal(rule)
+	if err != nil {
+		return nil, err
+	}
+	allow = append(allow, q)
+	a, err := json.Marshal(allow)
+	if err != nil {
+		return nil, err
+	}
+	perms["allow"] = a
+	return json.Marshal(perms)
 }
 
 // withoutForge drops forge's hook commands from groups, and groups left

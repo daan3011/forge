@@ -19,6 +19,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/tmux/tmuxtest"
 	"github.com/daan3011/forge/internal/sessions/worktree"
+	"github.com/daan3011/forge/internal/shell"
 	"github.com/daan3011/forge/internal/store"
 )
 
@@ -925,5 +926,68 @@ func TestAttachDocsRealGit(t *testing.T) {
 				t.Errorf("status of .forge = %q, %v", out, err)
 			}
 		})
+	}
+}
+
+// mcpConfigOf reads a session's forge MCP config and the window's argv.
+func mcpConfigOf(t *testing.T, e *env, name string) (cfg string, argv []string) {
+	t.Helper()
+	_, argv, _, ok := e.tmux.Started(tmux.Target{Session: "forge", Window: name})
+	if !ok {
+		t.Fatalf("window %s not started", name)
+	}
+	b, err := os.ReadFile(filepath.Join(e.svc.SessionDir(name), claude.MCPConfigFile))
+	if err != nil {
+		return "", argv
+	}
+	return string(b), argv
+}
+
+func TestStartRegistersMCPServer(t *testing.T) {
+	e := newEnv(t)
+	e.svc.c.ForgeBin = "/opt/bin/forge"
+	x := e.start(t, "hooked")
+	cfg, argv := mcpConfigOf(t, e, "hooked")
+	if !strings.Contains(cfg, `"command": "/opt/bin/forge"`) || !strings.Contains(cfg, `"FORGE_SESSION": "hooked"`) {
+		t.Errorf("config:\n%s", cfg)
+	}
+	want := "--mcp-config " + shell.Quote(filepath.Join(e.svc.SessionDir("hooked"), claude.MCPConfigFile))
+	if !strings.Contains(argv[2], want) || strings.Contains(argv[2], "--strict-mcp-config") {
+		t.Errorf("argv %q lacks %q", argv, want)
+	}
+	// Nothing MCP-related goes into the worktree.
+	for _, rel := range []string{".mcp.json", ".claude/mcp.json"} {
+		if _, err := os.Stat(filepath.Join(x.Worktree, rel)); err == nil {
+			t.Errorf("%s written into the worktree", rel)
+		}
+	}
+	if slices.ContainsFunc(e.wt.excluded, func(p string) bool { return strings.Contains(p, "mcp") }) {
+		t.Errorf("excluded %v", e.wt.excluded)
+	}
+}
+
+func TestStartWithoutForgeBinRegistersNoMCPServer(t *testing.T) {
+	e := newEnv(t)
+	e.start(t, "plain")
+	cfg, argv := mcpConfigOf(t, e, "plain")
+	if cfg != "" || strings.Contains(argv[2], "--mcp-config") {
+		t.Errorf("config %q, argv %q", cfg, argv)
+	}
+}
+
+func TestStartRollbackRemovesMCPConfig(t *testing.T) {
+	e := newEnv(t)
+	e.svc.c.ForgeBin = "/opt/bin/forge"
+	ctx := context.Background()
+	// No prompt: only the MCP config makes the session dir.
+	tsess, _ := e.tmux.EnsureSession(ctx, "forge")
+	if _, err := e.tmux.NewWindow(ctx, tsess, "gone", "", []string{"sh"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Start(ctx, StartOpts{Name: "gone", Project: "forge"}); !errors.Is(err, tmux.ErrWindowExists) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(e.svc.SessionDir("gone")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("session dir left behind: %v", err)
 	}
 }

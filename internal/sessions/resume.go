@@ -151,6 +151,14 @@ func (s *Service) Resume(ctx context.Context, x store.Session, o ResumeOpts) (re
 	}
 
 	launch := claude.Launch{Bin: s.c.ClaudeBin, SessionID: x.ClaudeSessionID}
+	if s.c.ForgeBin != "" {
+		// Rewritten on every resume: sessions from before P6.5, a moved
+		// forge binary and a removed session dir all get a working server.
+		launch.MCPConfig = filepath.Join(s.SessionDir(x.Name), claude.MCPConfigFile)
+		if err := claude.WriteMCPConfig(launch.MCPConfig, s.c.ForgeBin, x.Name); err != nil {
+			return Resumed{}, err
+		}
+	}
 	if _, ok := claude.FindTranscript(s.c.ProjectsDir, x.ClaudeSessionID); ok {
 		launch.Resume = true
 	} else {

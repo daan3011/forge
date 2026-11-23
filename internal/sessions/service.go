@@ -374,13 +374,23 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		return Started{}, err
 	}
 	launch := claude.Launch{Bin: s.c.ClaudeBin, SessionID: id}
-	if o.Prompt != "" {
+	if o.Prompt != "" || s.c.ForgeBin != "" {
 		dir := s.SessionDir(o.Name)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return Started{}, fmt.Errorf("session dir: %w", err)
 		}
 		undo = append(undo, func(context.Context) error { return os.RemoveAll(dir) })
-		launch.PromptFile = filepath.Join(dir, promptFileName)
+	}
+	if s.c.ForgeBin != "" {
+		// forge's MCP server for this session only (P6.5): passed with
+		// --mcp-config from the session dir, never in any Claude config.
+		launch.MCPConfig = filepath.Join(s.SessionDir(o.Name), claude.MCPConfigFile)
+		if err := claude.WriteMCPConfig(launch.MCPConfig, s.c.ForgeBin, o.Name); err != nil {
+			return Started{}, err
+		}
+	}
+	if o.Prompt != "" {
+		launch.PromptFile = filepath.Join(s.SessionDir(o.Name), promptFileName)
 		if err := os.WriteFile(launch.PromptFile, []byte(o.Prompt), 0o600); err != nil {
 			return Started{}, fmt.Errorf("write prompt: %w", err)
 		}

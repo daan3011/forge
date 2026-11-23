@@ -3,6 +3,7 @@ package docs
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -12,6 +13,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/editor"
+	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
@@ -29,6 +31,10 @@ type root struct {
 	err  error
 
 	decisions []docfs.Decision // newest first (P4.4)
+
+	// sessions is the read-only "From sessions" group (P6.5): docs live
+	// session worktrees have that this root lacks or has differently.
+	sessions sessionScan
 }
 
 // Tab is the Docs tab (P4.1): a tree of each project's markdown docs with a
@@ -41,6 +47,8 @@ type Tab struct {
 	// edit opens path in $EDITOR and reports editedMsg (tests replace it).
 	edit    func(path string) tea.Cmd
 	watcher docfs.Watcher
+	svc     sessions.API
+	links   tabs.LinkReader
 
 	split  ui.SplitPane
 	width  int
@@ -103,6 +111,8 @@ func newTab(d tabkit.Deps) *Tab {
 	t := &Tab{
 		theme: d.Theme, keys: d.Keys, cfg: cfg, now: time.Now,
 		watcher:  d.DocsWatcher,
+		svc:      d.Sessions,
+		links:    d.Links,
 		split:    ui.NewSplitPane(d.Theme),
 		expanded: map[string]bool{},
 		known:    map[string]bool{},
@@ -122,6 +132,7 @@ func newTab(d tabkit.Deps) *Tab {
 
 type scannedMsg struct {
 	gen   int
+	sess  []sessionScan
 	trees []*docfs.Node
 	errs  []error
 	decs  [][]docfs.Decision
@@ -190,7 +201,7 @@ func (t *Tab) Refresh() tea.Cmd {
 	for i, r := range t.roots {
 		paths[i], names[i] = r.path, r.name
 	}
-	now := t.now
+	now, svc, links, roots := t.now, t.svc, t.links, slices.Clone(t.roots)
 	return func() tea.Msg {
 		msg := scannedMsg{
 			gen: gen, trees: make([]*docfs.Node, len(paths)), errs: make([]error, len(paths)),
@@ -199,13 +210,16 @@ func (t *Tab) Refresh() tea.Cmd {
 		if w != nil {
 			_ = w.Set(paths) // best effort: without it, r still reloads
 		}
-		roots := make([]docfs.IndexRoot, len(paths))
+		idxRoots := make([]docfs.IndexRoot, len(paths))
 		for i, p := range paths {
 			msg.trees[i], msg.errs[i] = docfs.Scan(p)
 			msg.decs[i], _ = docfs.ListDecisions(p) // unreadable: the tree shows the error
-			roots[i] = docfs.IndexRoot{Name: names[i], Tree: msg.trees[i]}
+			idxRoots[i] = docfs.IndexRoot{Name: names[i], Tree: msg.trees[i]}
 		}
-		msg.index = docfs.BuildIndex(roots)
+		msg.index = docfs.BuildIndex(idxRoots)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		msg.sess = scanSessionDocs(ctx, svc, links, roots)
 		msg.at = now()
 		return msg
 	}
@@ -232,6 +246,17 @@ func (t *Tab) scannedIn(msg scannedMsg) {
 		t.roots[i].tree, t.roots[i].err = msg.trees[i], msg.errs[i]
 		if i < len(msg.decs) {
 			t.roots[i].decisions = msg.decs[i]
+		}
+		t.roots[i].sessions = sessionScan{}
+		if i < len(msg.sess) {
+			t.roots[i].sessions = msg.sess[i]
+			if g := msg.sess[i].group; g != nil && !t.known[g.Path] {
+				t.expanded[g.Path] = true // the group starts open
+				for _, c := range g.Children {
+					t.expanded[c.Path] = true
+				}
+			}
+			t.learn(msg.sess[i].group)
 		}
 		if t.all() && !t.known[t.roots[i].path] {
 			t.expanded[t.roots[i].path] = true // project levels start open
@@ -337,6 +362,12 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 // actionKey handles the keys that work in both panes.
 func (t *Tab) actionKey(kp tea.KeyPressMsg) (tea.Cmd, bool) {
 	dk, l := t.keys.Docs, t.keys.List
+	if t.onSessionRow() && !t.searching() &&
+		(key.Matches(kp, dk.New) || key.Matches(kp, dk.Edit) || key.Matches(kp, dk.Rename) ||
+			key.Matches(kp, dk.Delete) || key.Matches(kp, dk.Send) || key.Matches(kp, dk.Mark) ||
+			key.Matches(kp, dk.Supersede)) {
+		return info(readOnlyNote), true
+	}
 	switch {
 	case key.Matches(kp, dk.New):
 		return t.newDoc(), true
@@ -496,6 +527,8 @@ func errCmd(err error) tea.Cmd {
 	return func() tea.Msg { return ui.ErrMsg{Err: err} }
 }
 
+func info(s string) tea.Cmd { return func() tea.Msg { return ui.InfoMsg{Text: s} } }
+
 func success(s string) tea.Cmd { return func() tea.Msg { return ui.SuccessMsg{Text: s} } }
 
 // --- interfaces ------------------------------------------------------------------
@@ -524,6 +557,10 @@ func (t *Tab) SetProject(p *config.Project) {
 // Title implements tabs.Tab.
 func (t *Tab) Title() string { return Title }
 
+// SessionsChanged implements tabs.SessionWatcher: an agent may have written
+// a doc in its worktree (forge mcp), so the "From sessions" group rescans.
+func (t *Tab) SessionsChanged() tea.Cmd { return t.Refresh() }
+
 // CapturingInput implements tabs.InputCapturer.
 func (t *Tab) CapturingInput() bool { return t.dialog != nil || t.search.Active() }
 
@@ -542,9 +579,14 @@ func (t *Tab) ShortHelp() []key.Binding {
 		jump := key.NewBinding(key.WithKeys(), key.WithHelp(dk.Open.Help().Key, "jump to match"))
 		clearSearch := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "clear search"))
 		return []key.Binding{t.keys.List.Down, t.keys.List.Up, clearSearch, jump}
+	case t.focusDetail && t.onSessionRow():
+		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to tree"))
+		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back}
 	case t.focusDetail:
 		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to tree"))
 		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back, dk.Edit}
+	case t.onSessionRow() && !t.decisionsView:
+		return []key.Binding{t.keys.List.Filter, dk.Open}
 	}
 	if len(t.marks) > 0 {
 		return []key.Binding{dk.Mark, dk.Send, t.keys.Input.Cancel, dk.Open}

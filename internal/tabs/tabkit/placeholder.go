@@ -95,6 +95,12 @@ type Deps struct {
 	// Artifacts persists the artifact index (P4.5); nil shows each scan
 	// without remembering it.
 	Artifacts tabs.ArtifactIndex
+	// Proposals are the issues agents proposed through forge mcp (P6.5),
+	// shown on Home; nil shows none.
+	Proposals tabs.ProposalQueue
+	// Links reads forge's links (the Docs tab marks docs agents wrote
+	// through forge mcp); nil marks none.
+	Links tabs.LinkReader
 	// Caches measures and clears forge's stored data for the Context tab's
 	// Cache view (P5.3); nil shows it as unavailable.
 	Caches tabs.CacheControl

@@ -34,6 +34,16 @@ type Config struct {
 	UI             UI                  `yaml:"ui"`
 	Keybinds       map[string][]string `yaml:"keybinds"`
 	CustomCommands []CustomCommand     `yaml:"custom_commands"`
+	MCP            MCP                 `yaml:"mcp"`
+}
+
+// MCP configures `forge mcp`, the MCP server agents in forge sessions use
+// (P6.5).
+type MCP struct {
+	// AutoCreateIssues creates agent-filed issues in Plane straight away;
+	// false (the default) keeps them as proposals on Home to accept, edit
+	// or drop.
+	AutoCreateIssues bool `yaml:"auto_create_issues"`
 }
 
 // Project ties a GitHub repo, a local checkout, a Plane project and a docs
@@ -382,6 +392,14 @@ func DataHome() string {
 		return d
 	}
 	return filepath.Join(homeDir(), ".local", "share")
+}
+
+// StateHome returns $XDG_STATE_HOME, or ~/.local/state.
+func StateHome() string {
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
+		return d
+	}
+	return filepath.Join(homeDir(), ".local", "state")
 }
 
 // NotesDir is where the daily notes live (P6.2): DataHome()/forge/notes,

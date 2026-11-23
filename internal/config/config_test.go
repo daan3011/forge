@@ -232,3 +232,28 @@ func TestCustomCommandFromYAML(t *testing.T) {
 		t.Errorf("dev = %+v", dev)
 	}
 }
+
+func TestMCPFromYAML(t *testing.T) {
+	if Default().MCP.AutoCreateIssues {
+		t.Fatal("auto_create_issues must default to false")
+	}
+	cfg, err := Load(writeConfig(t, "mcp:\n  auto_create_issues: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.MCP.AutoCreateIssues {
+		t.Fatalf("mcp = %+v", cfg.MCP)
+	}
+}
+
+func TestStateHome(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", "/state")
+	if got := StateHome(); got != "/state" {
+		t.Errorf("StateHome = %q", got)
+	}
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("HOME", "/home/me")
+	if got := StateHome(); got != filepath.Join("/home/me", ".local", "state") {
+		t.Errorf("StateHome = %q", got)
+	}
+}

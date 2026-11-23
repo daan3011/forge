@@ -9,6 +9,7 @@ import (
 
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/store"
+	"github.com/daan3011/forge/internal/ui"
 	"github.com/daan3011/forge/internal/ui/anim"
 )
 
@@ -21,6 +22,10 @@ const (
 
 // View implements tabs.Tab.
 func (t *Tab) View() string {
+	if t.dialog != nil {
+		dw, dh := t.dialogSize()
+		return t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), dw, dh))
+	}
 	w, _ := t.split.LeftSize()
 	left := t.table.View()
 	for _, p := range t.problems() {
@@ -92,6 +97,10 @@ func (t *Tab) side() string {
 		}
 		lines = append(lines, "  "+anim.Flame(flameStatus(r.Status), f, s, th)+" "+r.Name+" "+
 			th.SessionStatus(string(r.Status)).Render(string(r.Status))+th.Hint.Render(t.age(r.StatusChangedAt)))
+		if r.Progress != "" {
+			// The agent's latest report_progress line (P6.5).
+			lines = append(lines, "    "+th.Hint.Render(r.Progress+t.age(r.ProgressAt)))
+		}
 	}
 
 	icon, _ = th.SourceIcon("artifact")
