@@ -747,8 +747,53 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - Enter on an agent attaches through the Sessions tab, which lists the active project's sessions only. Home follows the same project filter, so this matches.
     - Enter on a review jumps to the PRs tab; the PR has to be in one of its configured sections. The default sections cover both searches.
     - Plane items show only when the project has a current cycle. The live instance's `states`/`cycles` listing used to fail with a cursor-pagination 400; #47 fixed it (`order_by=created_at`).
-- [ ] P6.2 Scratchpad & daily note
-  - Note (from P1.10): finished sessions = `archived_at` in the day with their `summary` (first line: the PR and its state).
+- [x] P6.2 Scratchpad & daily note: `internal/notes` (files, standup builder, gatherer), `ui.NotePad`, `internal/app/notes.go`.
+  - **Note pane**: `ctrl+s` (`note`, scope main) opens today's note (`config.NotesDir()/YYYY-MM-DD.md`) from anywhere, even while a tab's input has focus. It's a centred overlay (`overlayNote`) that takes every key.
+    - **Reading** (default): the note, wrapped and scrollable with the list keys; `#` lines highlighted. Keys (`NoteKeys`, modal `scopeNote`): `s` standup, `e`/`enter` edit, `E` $EDITOR, `[`/`]` previous/next day (never past today), `y` copy the last standup, `t` today, `esc`/`q` close.
+    - **Editing**: a bubbles `textarea` (no blinking cursor, so nothing ticks); every key types. `esc` leaves the editor and saves; `ctrl+s` saves and closes. The header shows the date, "today" and ● while unsaved.
+    - Unsaved edits are saved before switching days, opening $EDITOR, generating a standup or closing.
+    - **Files**: `notes.Store` reads (a missing note reads as empty) and writes atomically (temp file + rename) in a `tea.Cmd`; `$EDITOR` creates the folder first and the pane reloads after.
+    - **Home**: the side panel rereads the note after any change, through the new `tabs.NoteWatcher` (`NotesChanged`). `home.notePath` and `planeProjects` now use `notes.Path` / `notes.PlaneProjects`.
+  - **Standup** (`s` in the pane; palette "Generate standup"): one command gathers, appends a `## Standup — Mon 23 Nov` section to the shown day's note, copies it (clipboard tool, else OSC 52) and shows a success toast. A hammer spinner runs in the header while it gathers (20 s timeout).
+    - **Done yesterday**: from the previous workday's local midnight (weekends skipped) to the day's. On a Monday the title is "Done since Fri 20 Nov", so weekend work counts. It lists:
+      - my merged PRs (by the new `PR.MergedAt`);
+      - PRs I reviewed (`reviewed-by:@me -author:@me`, by `updatedAt`);
+      - my completed Plane items (by `completed_at`, else `updated_at`; archived ones included);
+      - archived sessions, as the summary's link line plus the agent's last reply (`Agent fix-login — PR o/r#12 MERGED — Title · Done: tests pass`).
+      - A PR both merged and reviewed shows once.
+    - **Today**: my in-progress (started) Plane items, my open PRs (drafts marked) and live agents (starting / working / waiting / idle).
+    - **Blockers** (left out when empty): my open Plane items in a `plane.blocked_states` state or with a `plane.blocked_labels` label (`notes.BlockedBy` → `config.Plane.IsBlocked`), my PRs with failing checks or changes requested, and errored agents. A blocked item or PR isn't repeated under Today.
+    - **Scope**: all projects whatever the project filter. GitHub searches are unscoped (`@me`), Plane covers every linked project (`notes.PlaneProjects`), and sessions come from every project.
+    - **Partial failures**: a failing source is noted under the section (`_(plane unavailable: …)_`). So is a search that matched more than the 100 PRs read.
+  - **Palette**:
+    - Commands: `note` "Daily note", `note_standup` "Generate standup" (opens the pane on today and runs it), `note_copy` "Copy last standup", `note_external` "Edit daily note in $EDITOR".
+    - The pane-only keys are listed in `notRegistered`. The help overlay has a "Daily note" section.
+  - **GitHub**:
+    - `mergedAt` added to `prFields` / `PR.MergedAt`.
+    - Home's `failing`/`open` moved to `PR.Failing()` / `PR.Open()`.
+    - Searches send the window start as RFC 3339 with the local offset, because GitHub reads a bare date as UTC and would cut the morning short east of UTC.
+  - **Tests**:
+    - `PrevWorkday` (weekend, year, DST), store and `Join`.
+    - The `Build` table: every section, window edges, dedupe, each blocker kind, empty sections, summaries.
+    - `Gather` with fakes: the exact queries, Plane filters, a failing project, truncation notes, nil clients.
+    - The query offset. NotePad modes, keys and view.
+    - App flows:
+      - ctrl+s from a focused PR filter, edit and esc saves, Home shows it;
+      - ctrl+s while editing saves and closes;
+      - `[`/`]`/`t`;
+      - edits saved before a day switch;
+      - `E` with a fake editor;
+      - palette "Generate standup" appends, copies and toasts, then `y` and "Copy last standup";
+      - copy without a standup.
+    - Fixed a flaky `TestHomeFlow`: it pressed enter before every source had loaded, and the cursor follows its row across reranks.
+  - **Verified live**: forge in tmux with a temp `XDG_DATA_HOME` holding a copy of forge.db.
+    - ctrl+s opened the pane; inline edit and `E` (scripted `$EDITOR`) saved and reloaded; `[` showed Sunday.
+    - Palette "Generate standup" took about 10 s and listed 76 merged PRs since Fri 20 Nov, exactly what `gh search prs --merged` gives for that local window. Open PRs and a CI-failing PR went under Blockers, and the section was on the clipboard.
+  - **Limits**:
+    - Reviews are bucketed by the PR's `updatedAt`. GitHub search has no review date, so a PR reviewed earlier but updated in the window shows up.
+    - Each search reads at most 100 PRs. More are noted, not listed.
+    - Today and Blockers are the current state, even in a standup generated for a past day.
+    - Plane covers only projects with a saved link.
 - [ ] P6.3 Custom commands
 - [ ] P6.4 Polish & packaging
   - [ ] TODO: `forge doctor` reports the tmux version and which config file the forge server uses (`#{config_files}`), and warns when the user's tmux.conf version (`tmux.ParseConfigVersion`) is older than the embedded one (`tmux.ConfigVersion`).

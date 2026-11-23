@@ -59,7 +59,15 @@ type PR struct {
 	CrossRepo bool      `json:"cross_repo"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// MergedAt is zero for a PR that isn't merged.
+	MergedAt time.Time `json:"merged_at,omitzero"`
 }
+
+// Open reports whether the PR is still open (a draft counts as open).
+func (p PR) Open() bool { return p.State != StateMerged && p.State != StateClosed }
+
+// Failing reports whether the PR's checks failed or errored.
+func (p PR) Failing() bool { return p.CI == CIFailure || p.CI == CIError }
 
 // ID is the link id of the PR: "owner/repo#12".
 func (p PR) ID() string { return p.Repo + "#" + strconv.Itoa(p.Number) }
@@ -110,7 +118,7 @@ func BuildQuery(section, repo string) string {
 // prFields are the PullRequest fields a list row needs, shared by the
 // search and the single-PR refresh (P2.3).
 const prFields = `number title url isDraft state reviewDecision mergeable
-        additions deletions createdAt updatedAt headRefName baseRefName isCrossRepository
+        additions deletions createdAt updatedAt mergedAt headRefName baseRefName isCrossRepository
         author { login }
         repository { nameWithOwner }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }`
@@ -166,6 +174,7 @@ type gqlPull struct {
 	Deletions      int       `json:"deletions"`
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
+	MergedAt       time.Time `json:"mergedAt"`
 	HeadRefName    string    `json:"headRefName"`
 	BaseRefName    string    `json:"baseRefName"`
 	IsCross        bool      `json:"isCrossRepository"`
@@ -213,7 +222,7 @@ func (n gqlPull) pr() (PR, bool) {
 		ReviewDecision: n.ReviewDecision, Mergeable: n.Mergeable,
 		Additions: n.Additions, Deletions: n.Deletions,
 		HeadRef: n.HeadRefName, BaseRef: n.BaseRefName, CrossRepo: n.IsCross,
-		CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
+		CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt, MergedAt: n.MergedAt,
 	}
 	if n.Author != nil {
 		p.Author = n.Author.Login

@@ -18,7 +18,7 @@
       {},
       {"number": 3, "title": "Shipped", "url": "https://github.com/acme/ui/pull/3", "isDraft": false,
        "state": "MERGED", "reviewDecision": "REVIEW_REQUIRED", "mergeable": "UNKNOWN", "additions": 0, "deletions": 9,
-       "createdAt": "2026-09-01T10:00:00Z", "updatedAt": "2026-09-02T10:00:00Z",
+       "createdAt": "2026-09-01T10:00:00Z", "updatedAt": "2026-09-02T10:00:00Z", "mergedAt": "2026-09-02T09:00:00Z",
        "headRefName": "x", "baseRefName": "main",
        "author": {"login": "bob"}, "repository": {"nameWithOwner": "acme/ui"},
        "commits": {"nodes": []}}

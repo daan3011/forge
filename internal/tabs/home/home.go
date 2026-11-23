@@ -105,6 +105,7 @@ var (
 	_ tabs.AutoRefresher   = (*Tab)(nil)
 	_ tabs.SourceRefresher = (*Tab)(nil)
 	_ tabs.SessionWatcher  = (*Tab)(nil)
+	_ tabs.NoteWatcher     = (*Tab)(nil)
 	_ tabs.Animator        = (*Tab)(nil)
 	_ tabs.StatusDetailer  = (*Tab)(nil)
 )
@@ -168,6 +169,10 @@ func (t *Tab) RefreshSource(src refresh.Source) tea.Cmd {
 // SessionsChanged implements tabs.SessionWatcher: a hook ping reloads the
 // agents at once.
 func (t *Tab) SessionsChanged() tea.Cmd { return t.loadSessions() }
+
+// NotesChanged implements tabs.NoteWatcher: the side panel rereads today's
+// note.
+func (t *Tab) NotesChanged() tea.Cmd { return t.loadNote() }
 
 // Sources implements tabs.AutoRefresher.
 func (t *Tab) Sources() []refresh.Source {

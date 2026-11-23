@@ -54,17 +54,11 @@ type inputs struct {
 	issues   []plane.WorkItem
 }
 
-// failing reports whether p's checks failed.
-func failing(p github.PR) bool { return p.CI == github.CIFailure || p.CI == github.CIError }
-
 // mergeReady reports whether p is approved, green and can be merged.
 func mergeReady(p github.PR) bool {
 	return p.ReviewDecision == github.ReviewApproved && p.CI == github.CISuccess &&
 		!p.Draft && p.Mergeable != github.Conflicting
 }
-
-// open reports whether p is still open.
-func open(p github.PR) bool { return p.State != github.StateMerged && p.State != github.StateClosed }
 
 // rank builds the prioritised list: waiting agents, errored agents, review
 // requests, my failing PRs, my approved green PRs, then my Plane items in
@@ -93,14 +87,14 @@ func rank(in inputs) []item {
 		add(item{kind: k, id: "agent:" + r.Name, at: firstSet(r.StatusChangedAt, r.LastActivityAt), agent: r})
 	}
 	for _, p := range in.reviews {
-		if open(p) {
+		if p.Open() {
 			add(item{kind: kindReview, id: "pr:" + p.ID(), at: firstSet(p.CreatedAt, p.UpdatedAt), pr: p})
 		}
 	}
 	for _, p := range in.mine {
 		switch {
-		case !open(p):
-		case failing(p):
+		case !p.Open():
+		case p.Failing():
 			add(item{kind: kindFailing, id: "pr:" + p.ID(), at: p.UpdatedAt, pr: p})
 		case mergeReady(p):
 			add(item{kind: kindApproved, id: "pr:" + p.ID(), at: p.UpdatedAt, pr: p})

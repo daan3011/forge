@@ -430,8 +430,12 @@ func TestHomeFlow(t *testing.T) {
 	h.wait(t, func() bool {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		return strings.Contains(h.text, "fix-login") && strings.Contains(h.text, "PROJ-41")
+		return strings.Contains(h.text, "fix-login") && strings.Contains(h.text, "PROJ-41") &&
+			strings.Contains(h.text, "#212") && strings.Contains(h.text, "#190")
 	})
+	// The sources load in any order and the cursor follows its row across
+	// reranks, so go to the top before acting.
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyHome})
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyDown})
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyDown})

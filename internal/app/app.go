@@ -86,6 +86,8 @@ type Model struct {
 	overlay paletteMode
 	capture ui.CaptureInput // the quick capture line (P3.5)
 	cap     captureState
+	note    ui.NotePad // the daily note pane (P6.2)
+	notes   noteState
 	notices []notice // shown once ever (WithNotice)
 	items   []item   // registry snapshot taken when the palette opened
 	shown   []item   // ranked results
@@ -139,6 +141,7 @@ const (
 	overlayProjects             // ctrl+p: the project switcher
 	overlaySessions             // ctrl+g: the session picker
 	overlayCapture              // ctrl+n: quick capture (not a picker)
+	overlayNote                 // ctrl+s: the daily note pane (not a picker)
 )
 
 // New returns the root model for the given config. It fails if the keybinds
@@ -186,6 +189,7 @@ func newModel(cfg *config.Config, theme *ui.Theme, keys *ui.KeyMap, ts []tabs.Ta
 		help:    ui.NewHelpView(theme, keys),
 		palette: ui.NewCommandPalette(theme, keys),
 		capture: ui.NewCaptureInput(theme, keys, nil),
+		note:    ui.NewNotePad(theme, keys),
 		tabs:    ts,
 		toast:   ui.NewToast(theme),
 		status:  ui.NewStatusBar(theme),
@@ -288,6 +292,8 @@ func (m Model) animating() bool {
 		return true
 	case m.overlay == overlayCapture && m.capture.Busy():
 		return true
+	case m.overlay == overlayNote && m.notes.busy:
+		return true
 	case m.helpOpen || len(m.tabs) == 0:
 		return false
 	}
@@ -340,6 +346,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.SetSize(m.contentSize())
 		}
 		m.help.SetSize(m.width, m.height)
+		m.resizeNote()
 		return m, m.resized()
 
 	case tea.BackgroundColorMsg:
@@ -409,6 +416,21 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case captureCreatedMsg:
 		return m.handleCaptureCreated(msg)
 
+	case noteLoadedMsg:
+		return m.handleNoteLoaded(msg)
+
+	case noteSavedMsg:
+		return m.handleNoteSaved(msg)
+
+	case noteEditedMsg:
+		return m.handleNoteEdited(msg)
+
+	case standupMsg:
+		return m.handleStandup(msg)
+
+	case copyMsg:
+		return m, m.copyText(msg.text, msg.done)
+
 	case tea.FocusMsg:
 		m.focused = true
 		return m, nil
@@ -437,6 +459,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.splash != nil { // any key skips the splash
 		m.splash = nil
 		return m, nil
+	}
+	if m.overlay == overlayNote { // the pane takes every key, so typing works
+		return m.handleNoteKey(msg)
+	}
+	if key.Matches(msg, g.Note) { // from anywhere, even a focused input
+		return m.openNote(m.today())
 	}
 	if key.Matches(msg, g.Palette) {
 		if m.overlay == overlayCommands {
@@ -607,6 +635,10 @@ func (m *Model) openHelp() {
 		t := m.tabs[m.active]
 		sections = append(sections, ui.HelpSection{Title: t.Title(), Groups: t.FullHelp()})
 	}
+	sections = append(sections, ui.HelpSection{
+		Title:  "Daily note",
+		Groups: [][]key.Binding{m.keys.NoteHelp(), m.keys.NoteEditHelp()},
+	})
 	m.help.SetContent(sections)
 	m.help.SetSize(m.width, m.height)
 	m.helpOpen = true
@@ -617,6 +649,9 @@ func (m *Model) openHelp() {
 func (m Model) statusKeys(active tabs.Tab) []key.Binding {
 	if m.overlay == overlayCapture {
 		return m.keys.CaptureHelp()
+	}
+	if m.overlay == overlayNote {
+		return m.note.Help()
 	}
 	if m.overlay != overlayNone {
 		in := m.keys.Input
@@ -956,9 +991,14 @@ func (m Model) render() string {
 
 	layers := []*lipgloss.Layer{lipgloss.NewLayer(screen)}
 	if m.overlay != overlayNone {
-		l := m.paletteLayer()
-		if m.overlay == overlayCapture {
+		var l *lipgloss.Layer
+		switch m.overlay {
+		case overlayCapture:
 			l = m.captureLayer()
+		case overlayNote:
+			l = m.noteLayer()
+		default:
+			l = m.paletteLayer()
 		}
 		if l != nil {
 			layers = append(layers, l)

@@ -148,6 +148,7 @@ keybinds:
   # projects: ["ctrl+p"]       # project switcher; also works while typing
   # goto_session: ["ctrl+g"]   # session picker: attach (resuming if needed)
   # capture: ["ctrl+n"]        # quick capture a Plane issue: title #project !prio @me +label
+  # note: ["ctrl+s"]           # today's note; in the note pane: save and close
   # Lists
   # up: ["k", "up"]
   # down: ["j", "down"]
@@ -317,6 +318,16 @@ keybinds:
   # log_fix_edit: ["alt+f"]
   # log_open: ["o"]                # the job in the browser
   # log_close: ["esc", "q"]
+  # Daily note pane (ctrl+s); the list keys scroll it
+  # note_edit: ["e", "enter"]   # edit inline (esc: done, saves)
+  # note_external: ["E"]        # open in $EDITOR
+  # note_prev_day: ["["]
+  # note_next_day: ["]"]
+  # note_today: ["t"]
+  # note_standup: ["s"]         # append "Done yesterday / Today / Blockers" and copy it
+  # note_copy: ["y"]            # copy the last standup again
+  # note_close: ["esc", "q"]
+
   # Quick capture line (ctrl+n, `forge capture`)
   # capture_submit: ["enter"]                    # create in the background
   # capture_full_form: ["shift+enter", "alt+enter"]  # the full form, prefilled

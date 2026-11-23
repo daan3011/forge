@@ -48,6 +48,12 @@ func TestParseSearch(t *testing.T) {
 		!first.UpdatedAt.Equal(time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)) {
 		t.Errorf("first PR fields = %+v", first)
 	}
+	if !first.MergedAt.IsZero() || first.Open() != true || !first.Failing() {
+		t.Errorf("first PR merged/open/failing = %v %v %v", first.MergedAt, first.Open(), first.Failing())
+	}
+	if m := res.PRs[2]; !m.MergedAt.Equal(time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC)) || m.Open() {
+		t.Errorf("merged PR = %+v", m)
+	}
 	if _, err := ParseSearch(strings.NewReader("{")); err == nil {
 		t.Error("want error for bad JSON")
 	}
