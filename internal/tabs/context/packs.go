@@ -446,7 +446,7 @@ func (t *Tab) packsListView(w, h int) string {
 	}
 	th, p := t.theme, &t.pk
 	if !p.loaded {
-		return th.Hint.Render("Reading packs…")
+		return t.loadingBody("reading packs…", w, h)
 	}
 	if len(p.entries) == 0 {
 		msg := "No context packs yet. " + t.keys.Context.NewPack.Help().Key + " to make one; they live in " + t.displayDir() + "."

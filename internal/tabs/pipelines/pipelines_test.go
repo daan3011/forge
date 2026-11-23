@@ -761,3 +761,30 @@ func TestCellDuration(t *testing.T) {
 		t.Errorf("empty = %q", got)
 	}
 }
+
+// TestLoadStates: loading → failed (with the retry key) → retry → loaded.
+func TestLoadStates(t *testing.T) {
+	gh := sampleRuns()
+	gh.err = errors.New("network down")
+	h := newHarness(gh, nil, "app")
+	_ = h.Refresh() // queued, not landed
+	mustContain(t, h.view(), "heating up…")
+
+	h = newHarness(gh, nil, "app")
+	errs := h.init()
+	if len(errs) != 1 || !strings.Contains(errs[0], "· r to retry") {
+		t.Fatalf("toasts = %q", errs)
+	}
+	mustContain(t, h.view(), "couldn't load runs:", "network down", "r to retry")
+	if h.Animating() {
+		t.Error("a failed list keeps no clock running")
+	}
+	gh.mu.Lock()
+	gh.err = nil
+	gh.mu.Unlock()
+	h.drain(h.Refresh())
+	v := h.view()
+	if strings.Contains(v, "couldn't load runs") || strings.Contains(v, "heating up…") || len(h.table.Rows()) == 0 {
+		t.Fatalf("after retry:\n%s", v)
+	}
+}

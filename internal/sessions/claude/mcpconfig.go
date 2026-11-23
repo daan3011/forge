@@ -75,3 +75,17 @@ func WriteMCPConfig(path, forgeBin, session string) error {
 	}
 	return nil
 }
+
+// ReadMCPConfigBin returns the command forge's server runs in the MCP
+// config at path ("" when the file has no forge server).
+func ReadMCPConfigBin(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var c mcpConfig
+	if err := json.Unmarshal(b, &c); err != nil {
+		return "", fmt.Errorf("claude: %s: %w", path, err)
+	}
+	return c.MCPServers[MCPServerName].Command, nil
+}

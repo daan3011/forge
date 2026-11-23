@@ -101,10 +101,14 @@ type Tab struct {
 	updated      time.Time
 	listGen      int // bumps on project/view change; stale lists are dropped
 	fetching     bool
-	dirty        bool            // a ping arrived during a refresh: refresh again after
-	busy         int             // start/kill/delete actions in flight
-	pending      string          // select this session once it shows up in the list
-	resuming     map[string]bool // sessions with an attach/resume in flight
+	// everListed is set once a list landed; listErr is the last list's
+	// error (nil once one works). They pick the list's empty view.
+	everListed bool
+	listErr    error
+	dirty      bool            // a ping arrived during a refresh: refresh again after
+	busy       int             // start/kill/delete actions in flight
+	pending    string          // select this session once it shows up in the list
+	resuming   map[string]bool // sessions with an attach/resume in flight
 
 	syncing      bool // a PR link sync is running (P1.9)
 	syncErrShown bool // a failed sync was reported once already
@@ -184,8 +188,30 @@ func New(d tabkit.Deps) *Tab {
 	cols := slices.Clone(columns)
 	cols[statusCol].Render = t.renderStatus
 	t.table = ui.NewTable(d.Theme, d.Keys, cols)
-	t.table.SetEmptyView(func(w, h int) string { return anim.EmptyForge(w, h, d.Theme) })
+	t.table.SetEmptyView(t.emptyView)
 	return t
+}
+
+// emptyView is the list body without rows (P6.4): not available, loading,
+// failed, or the cold forge.
+func (t *Tab) emptyView(w, h int) string {
+	th := t.theme
+	switch {
+	case t.svc == nil:
+		return anim.Notice("agent sessions aren't available", "forge doctor checks tmux, git and claude", th, w, h)
+	case t.listErr != nil && !t.fetching:
+		return anim.Failed("couldn't list sessions: "+t.listErr.Error(), ui.RetryKey(t.keys), th, w, h)
+	case t.loading():
+		return anim.Loading("heating up…", t.anim.Frame(), t.anim.Settings(), th, w, h)
+	case t.archived:
+		return anim.EmptyForgeCaption("no archived sessions", w, h, th)
+	}
+	return anim.EmptyForgeCaption("no agents yet · "+t.keys.Sessions.New.Help().Key+" starts one", w, h, th)
+}
+
+// loading reports whether the list waits for its first sessions.
+func (t *Tab) loading() bool {
+	return t.svc != nil && !t.everListed && (t.listErr == nil || t.fetching)
 }
 
 // flameStatus maps a session status to its anim.Flame icon.
@@ -460,9 +486,11 @@ func (t *Tab) listed(msg listedMsg) tea.Cmd {
 		return nil // for a project or view we have since left
 	}
 	t.fetching = false
+	t.listErr = msg.err
 	if msg.err != nil {
-		return errCmd(fmt.Errorf("sessions: %w", msg.err))
+		return errCmd(ui.WithRetry(fmt.Errorf("sessions: %w", msg.err), t.keys))
 	}
+	t.everListed = true
 	t.activeRows, t.archivedRows = msg.rows, msg.archive
 	if t.archived {
 		t.setRows(msg.archive)
@@ -1186,6 +1214,9 @@ func (t *Tab) Animating() bool {
 	s := t.anim.Settings()
 	if t.transcript != nil {
 		return !t.transcript.loaded && s.Motion() // the hammer while reading
+	}
+	if t.loading() && anim.Ticks(s) {
+		return true // the hammer while the list first loads
 	}
 	for _, row := range t.table.VisibleRows() {
 		if r, ok := t.rows[row[0]]; ok && anim.FlameAnimating(flameStatus(r.Status), s) {

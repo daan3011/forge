@@ -28,7 +28,11 @@ func (t *Tab) View() string {
 	}
 	w, _ := t.split.LeftSize()
 	left := t.table.View()
-	for _, p := range t.problems() {
+	probs := t.problems()
+	for i, p := range probs {
+		if i == len(probs)-1 {
+			p += " · " + ui.RetryKey(t.keys) + " to retry"
+		}
 		left += "\n" + t.theme.Hint.Render(ansi.Truncate(" "+p, w, "…"))
 	}
 	return t.split.View(left, t.side(), true)
@@ -37,7 +41,7 @@ func (t *Tab) View() string {
 // emptyView is the list body without rows: loading, or the cold forge.
 func (t *Tab) emptyView(w, h int) string {
 	if !t.settled() {
-		return t.theme.Hint.Render(" heating up…")
+		return anim.Loading("heating up…", t.anim.Frame(), t.anim.Settings(), t.theme, w, h)
 	}
 	if len(t.sources()) == 0 {
 		return anim.EmptyForgeCaption("nothing to watch yet · configure GitHub, Plane or start an agent", w, h, t.theme)

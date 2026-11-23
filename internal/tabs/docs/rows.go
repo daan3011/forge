@@ -8,6 +8,7 @@ import (
 
 	docfs "github.com/daan3011/forge/internal/docs"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // row is one visible line of the tree.
@@ -202,7 +203,7 @@ func (t *Tab) treeView(w, h int) string {
 		if t.decisionsView && t.scanned && len(t.roots) > 0 {
 			return t.decisionsEmptyView(w)
 		}
-		return t.emptyView(w)
+		return t.emptyView(w, h)
 	}
 	end := min(t.top+h, len(t.rows))
 	lines := make([]string, 0, end-t.top)
@@ -282,18 +283,23 @@ func (t *Tab) rowView(r row, selected bool, w int) string {
 	return style.Render(label+strings.Repeat(" ", pad)) + th.Hint.Render(right)
 }
 
-// emptyView explains why there is nothing to show.
-func (t *Tab) emptyView(w int) string {
+// emptyView explains why there is nothing to show, w×h (P6.4).
+func (t *Tab) emptyView(w, h int) string {
 	th := t.theme
-	switch {
-	case len(t.roots) == 0:
-		return th.TableEmpty.Render(ansi.Wrap("No projects configured. Add one under projects: in the config.", w, ""))
-	case !t.scanned:
-		return th.Hint.Render("Scanning docs…")
-	case t.roots[0].err != nil:
-		return th.TableEmpty.Render(ansi.Wrap("Can't read "+t.roots[0].path+": "+t.roots[0].err.Error(), w, ""))
+	if len(t.roots) == 0 {
+		return anim.Notice("No projects configured", "add one under projects: in the config", th, w, h)
 	}
-	msg := "No docs in " + t.roots[0].path
-	return th.TableEmpty.Render(ansi.Wrap(msg, w, "/")) + "\n\n" +
-		th.Hint.Render(t.keys.Docs.New.Help().Key+"  create one")
+	if !t.scanned {
+		return anim.Loading("scanning docs…", t.anim.Frame(), t.anim.Settings(), th, w, h)
+	}
+	var errs []string
+	for _, r := range t.roots {
+		if r.err != nil {
+			errs = append(errs, "can't read "+r.path+": "+r.err.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return anim.Failed(strings.Join(errs, "; "), ui.RetryKey(t.keys), th, w, h)
+	}
+	return anim.Notice("No docs in "+t.roots[0].path, t.keys.Docs.New.Help().Key+"  create one", th, w, h)
 }

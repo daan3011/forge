@@ -651,9 +651,13 @@ func (t *Tab) StatusDetail() string {
 	return ""
 }
 
-// Animating implements tabs.Animator: a running agent's flame flickers.
+// Animating implements tabs.Animator: a running agent's flame flickers,
+// and the hammer swings while the list first loads.
 func (t *Tab) Animating() bool {
 	s := t.anim.Settings()
+	if !t.settled() && len(t.list) == 0 && anim.Ticks(s) {
+		return true // the loading hammer
+	}
 	return slices.ContainsFunc(t.running(), func(r sessions.Row) bool {
 		return anim.FlameAnimating(flameStatus(r.Status), s)
 	})

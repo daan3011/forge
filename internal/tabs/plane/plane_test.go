@@ -708,7 +708,7 @@ func TestNotConfigured(t *testing.T) {
 	if cmd := h.Init(); cmd != nil {
 		t.Error("Init without a client returned a command")
 	}
-	mustContain(t, h.view(), "Plane isn't set up: plane: base_url is not set")
+	mustContain(t, h.view(), "Plane isn't set up", "plane: base_url is not set · forge doctor checks the setup")
 }
 
 func TestAuthError(t *testing.T) {

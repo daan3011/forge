@@ -789,3 +789,33 @@ func TestReindexDocsMsg(t *testing.T) {
 		t.Errorf("reindex did not rescan:\n%s", tab.View())
 	}
 }
+
+// TestLoadStates (P6.4): the first scan shows the hammer (and the status
+// bar spinner), a root that can't be read shows its error with the retry
+// key.
+func TestLoadStates(t *testing.T) {
+	f := newFixture(t)
+	tab := f.tab(0, nil)
+	if v := view(tab); !strings.Contains(v, "scanning docs…") {
+		t.Fatalf("before the scan:\n%s", v)
+	}
+	if !tab.Fetching() {
+		t.Error("Fetching: want true before the first scan")
+	}
+	pump(tab, tab.Refresh())
+	if tab.Fetching() || tab.Animating() {
+		t.Error("scanned: nothing is loading")
+	}
+
+	f = newFixture(t)
+	file := filepath.Join(t.TempDir(), "docs-is-a-file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.cfg.Projects[0].DocsDir = file
+	tab = f.tab(0, nil)
+	pump(tab, tab.Refresh())
+	if v := view(tab); !strings.Contains(v, "can't read") || !strings.Contains(v, "r to retry") {
+		t.Fatalf("unreadable root:\n%s", v)
+	}
+}

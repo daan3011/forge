@@ -432,17 +432,6 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		})
 	}
 
-	if s.c.ForgeBin != "" {
-		// The worktree's removal (undo above) takes the settings file along;
-		// in an external worktree it stays (it is git-ignored and harmless).
-		if err := hooks.Install(wt.Path, s.c.ForgeBin); err != nil {
-			return Started{}, err
-		}
-		if err := s.c.Worktrees.EnsureExcluded(ctx, wt.Path, hooks.SettingsRel); err != nil {
-			return Started{}, fmt.Errorf("git-ignore hook settings: %w", err)
-		}
-	}
-
 	// The worktree's removal (undo above) takes copied docs along. The
 	// prompt was rendered before the worktree existed; docs that had to go
 	// elsewhere (a differing version on the branch) are re-mentioned.
@@ -457,35 +446,23 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 		return Started{}, err
 	}
 	launch := claude.Launch{Bin: s.c.ClaudeBin, SessionID: id}
-	if o.Prompt != "" || s.c.ForgeBin != "" {
+	if o.Prompt != "" || s.c.ForgeBin != "" || s.c.Skills != nil {
 		dir := s.SessionDir(o.Name)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return Started{}, fmt.Errorf("session dir: %w", err)
 		}
 		undo = append(undo, func(context.Context) error { return os.RemoveAll(dir) })
 	}
-	if s.c.ForgeBin != "" {
-		// forge's MCP server for this session only (P6.5): passed with
-		// --mcp-config from the session dir, never in any Claude config.
-		launch.MCPConfig = filepath.Join(s.SessionDir(o.Name), claude.MCPConfigFile)
-		if err := claude.WriteMCPConfig(launch.MCPConfig, s.c.ForgeBin, o.Name); err != nil {
-			return Started{}, err
-		}
+	// Hooks, MCP config and skills. The worktree's removal (undo above)
+	// takes the hook settings along (in an external worktree they stay:
+	// git-ignored and harmless); the session dir's removal the rest.
+	prep, err := s.Prepare(ctx, store.Session{
+		Name: o.Name, Project: p.Name, Repo: p.Repo, Branch: wt.Branch, Worktree: wt.Path,
+	})
+	if err != nil {
+		return Started{}, err
 	}
-	if s.c.Skills != nil {
-		// forge's skills (P6.7) in the session dir, never in the worktree;
-		// the dir's removal (undo above) takes them along.
-		if err := os.MkdirAll(s.SessionDir(o.Name), 0o700); err != nil {
-			return Started{}, fmt.Errorf("session dir: %w", err)
-		}
-		if o.Prompt == "" && s.c.ForgeBin == "" {
-			dir := s.SessionDir(o.Name)
-			undo = append(undo, func(context.Context) error { return os.RemoveAll(dir) })
-		}
-		launch.AddDir, res.SkillsErr = s.syncSkills(store.Session{
-			Name: o.Name, Project: p.Name, Repo: p.Repo, Branch: wt.Branch,
-		})
-	}
+	launch.MCPConfig, launch.AddDir, res.SkillsErr = prep.MCPConfig, prep.AddDir, prep.SkillsErr
 	if o.Prompt != "" {
 		launch.PromptFile = filepath.Join(s.SessionDir(o.Name), promptFileName)
 		if err := os.WriteFile(launch.PromptFile, []byte(o.Prompt), 0o600); err != nil {

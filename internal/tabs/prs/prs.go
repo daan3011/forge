@@ -52,6 +52,7 @@ type section struct {
 	fetching   bool
 	fresh      bool // a fetch for key has landed; ignore older cached data
 	updated    time.Time
+	err        error // the last fetch failed; nil once one succeeds
 }
 
 // Tab is the PRs tab: one GitHub search per configured section, shown as
@@ -368,6 +369,7 @@ func (t *Tab) fetched(msg tabkit.FetchedMsg) tea.Cmd {
 		return nil // fetched for a project we have since left
 	}
 	s.fetching = false
+	s.err = msg.Err
 	if msg.Err != nil {
 		t.authErr = github.IsAuthError(msg.Err)
 		if t.errShown {
@@ -378,7 +380,7 @@ func (t *Tab) fetched(msg tabkit.FetchedMsg) tea.Cmd {
 		if t.authErr {
 			err = errors.New("GitHub: not logged in; run `gh auth login`")
 		}
-		return errCmd(err)
+		return errCmd(ui.WithRetry(err, t.keys))
 	}
 	var res github.SearchResult
 	if err := json.Unmarshal(msg.Value, &res); err != nil {
@@ -654,7 +656,16 @@ func (t *Tab) Animating() bool {
 	if t.diff != nil && !t.diff.loaded && t.dialog == nil && t.anim.Settings().Motion() {
 		return true // the hammer while fetching the diff
 	}
+	if t.loading() && anim.Ticks(t.anim.Settings()) {
+		return true // the hammer while the section first loads
+	}
 	return t.sliding && !t.divider.Settled(t.anim.Frame())
+}
+
+// loading reports whether the current section waits for its first data.
+func (t *Tab) loading() bool {
+	s := t.cur()
+	return s != nil && !s.loaded && (s.err == nil || s.fetching) && t.gh != nil && !t.authErr
 }
 
 // SetSize implements tabs.Tab. The section bar takes the first row.
@@ -762,8 +773,10 @@ func (t *Tab) emptyView(w, h int) string {
 		msg = "GitHub isn't available"
 	case t.authErr:
 		msg = "not logged in to GitHub: run `gh auth login`"
-	case t.cur() != nil && !t.cur().loaded:
-		msg = "heating up…"
+	case t.cur() != nil && !t.cur().loaded && t.cur().err != nil && !t.cur().fetching:
+		return anim.Failed("couldn't load PRs: "+github.Reason(t.cur().err), ui.RetryKey(t.keys), th, w, h)
+	case t.loading():
+		return anim.Loading("heating up…", t.anim.Frame(), t.anim.Settings(), th, w, h)
 	case t.staleOnly && t.cur() != nil && slices.ContainsFunc(t.cur().res.PRs, t.inRepo):
 		msg = "no stale PRs here · " + t.keys.PRs.StaleOnly.Help().Key + " shows all"
 	case t.repo != "" && t.cur() != nil && len(t.cur().res.PRs) > 0:

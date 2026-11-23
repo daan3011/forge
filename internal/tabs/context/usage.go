@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 	"github.com/daan3011/forge/internal/usage"
 )
 
@@ -200,10 +201,10 @@ func (t *Tab) usageListView(w, h int) string {
 	switch {
 	case t.usage == nil:
 		return th.Hint.Render(ansi.Wrap("Token usage needs forge's database; it isn't open in this run.", w, ""))
-	case !t.us.loaded && t.us.err != nil:
-		return th.TableEmpty.Render(ansi.Wrap(t.us.err.Error(), w, "/"))
+	case !t.us.loaded && t.us.err != nil && !t.us.loading:
+		return anim.Failed("couldn't read usage: "+t.us.err.Error(), ui.RetryKey(t.keys), th, w, h)
 	case !t.us.loaded:
-		return th.Hint.Render("Reading Claude Code transcripts…")
+		return t.loadingBody("reading Claude Code transcripts…", w, h)
 	}
 	r := t.us.report
 	header := usageRow("  Project", "Tokens", "Cost", w)

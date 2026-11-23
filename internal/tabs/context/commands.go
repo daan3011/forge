@@ -330,7 +330,7 @@ func (t *Tab) commandsListView(w, h int) string {
 	case t.skills == nil:
 		return th.Hint.Render(ansi.Wrap("forge's slash commands aren't available here.", w, ""))
 	case !c.loaded:
-		return th.Hint.Render("Reading commands…")
+		return t.loadingBody("reading commands…", w, h)
 	}
 	body := max(h-footerLines, 1)
 	var lines []string

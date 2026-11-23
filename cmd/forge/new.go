@@ -90,7 +90,13 @@ func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agent.New(agent.Config{
+	return agent.New(sessionConfig(cfg, st, drv, conf)), nil
+}
+
+// sessionConfig wires the session service over the tmux driver drv
+// (started with the config file conf).
+func sessionConfig(cfg *config.Config, st *store.Store, drv tmux.Driver, conf string) agent.Config {
+	return agent.Config{
 		Tmux:        drv,
 		TmuxConf:    conf,
 		TmuxColors:  tmuxColors(),
@@ -103,7 +109,7 @@ func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
 		ForgeBin:    forgeBin(),
 		Pulls:       githubPulls,
 		Skills:      slashcmd.NewCatalog(),
-	}), nil
+	}
 }
 
 // forgeBin is the absolute path of this forge binary, which the Claude

@@ -601,3 +601,37 @@ func TestStaleOff(t *testing.T) {
 		t.Fatalf("S with markers off: staleOnly %v errs %v", tb.staleOnly, errs)
 	}
 }
+
+// TestLoadStates walks a section through loading → failed → retry →
+// loaded (P6.4): the first failed fetch must not leave "heating up…" up
+// forever, and the toast says how to retry.
+func TestLoadStates(t *testing.T) {
+	gh := sampleGH()
+	gh.err = errors.New("dial tcp: i/o timeout")
+	tb := newTestTab(gh, newKV())
+
+	_ = tb.Init() // fetches queued, not landed
+	mustContain(t, view(tb), "heating up…")
+
+	tb = newTestTab(gh, newKV())
+	errs := drain(tb, tb.Init())
+	if len(errs) != 1 || !strings.Contains(errs[0], "i/o timeout · r to retry") {
+		t.Fatalf("toasts = %q, want one with the retry hint", errs)
+	}
+	v := view(tb)
+	mustContain(t, v, "couldn't load PRs", "r to retry")
+	mustLack(t, v, "heating up…")
+	if tb.Animating() {
+		t.Error("a failed section keeps no clock running")
+	}
+
+	gh.mu.Lock()
+	gh.err = nil
+	gh.mu.Unlock()
+	if errs := drain(tb, tb.Refresh()); len(errs) != 0 {
+		t.Fatalf("retry toasts = %q", errs)
+	}
+	v = view(tb)
+	mustContain(t, v, "feat(examples): tree")
+	mustLack(t, v, "couldn't load PRs", "heating up…")
+}

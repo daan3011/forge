@@ -123,6 +123,11 @@ type Theme struct {
 	LinkText    lipgloss.Style
 	Hint        lipgloss.Style
 
+	// DoctorOK, DoctorWarn and DoctorFail mark `forge doctor` checks.
+	DoctorOK   lipgloss.Style
+	DoctorWarn lipgloss.Style
+	DoctorFail lipgloss.Style
+
 	StatusLeft  lipgloss.Style
 	StatusMid   lipgloss.Style
 	StatusRight lipgloss.Style
@@ -303,6 +308,9 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		Body:        base,
 		LinkText:    lipgloss.NewStyle().Foreground(p.Link).Underline(true),
 		Hint:        lipgloss.NewStyle().Foreground(p.Muted),
+		DoctorOK:    lipgloss.NewStyle().Foreground(p.Success).Bold(true),
+		DoctorWarn:  lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		DoctorFail:  lipgloss.NewStyle().Foreground(p.Error).Bold(true),
 
 		StatusLeft:  lipgloss.NewStyle().Foreground(p.OnAccent).Background(p.Accent).Bold(true).Padding(0, 1),
 		StatusMid:   lipgloss.NewStyle().Foreground(p.Text).Background(p.Surface).Padding(0, 1),

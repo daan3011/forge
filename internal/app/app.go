@@ -4,6 +4,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"slices"
@@ -107,6 +108,7 @@ type Model struct {
 	packsDir     string              // from WithPacks
 	skills       tabkit.SkillCatalog // from WithSkills
 	notesDir     string              // from WithNotes
+	doctor       DoctorFunc          // from WithDoctor
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
 	github       github.PRClient     // from WithGitHub
@@ -454,6 +456,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case customWindowMsg:
 		return m.handleCustomWindow(msg)
 
+	case doctorDoneMsg:
+		m.openOutput(msg.run)
+		return m, nil
 	case customDetachedMsg:
 		return m.handleCustomDetached(msg)
 
@@ -981,12 +986,29 @@ func (m Model) View() tea.View {
 	return v
 }
 
+// MinWidth and MinHeight are the smallest terminal forge lays its tabs
+// out in (P6.4). At 60 wide every split pane still shows both panes
+// (ui.MinLeftWidth + ui.MinRightWidth), so nothing is out of reach.
+const (
+	MinWidth  = 60
+	MinHeight = 16
+)
+
+// tooSmall replaces the screen while the terminal is under the minimum.
+func tooSmall(w, h int, k *ui.KeyMap, th *ui.Theme) string {
+	return anim.Notice(fmt.Sprintf("forge needs at least %d×%d", MinWidth, MinHeight),
+		fmt.Sprintf("now %d×%d · make the window bigger · %s quits", w, h, k.Global.Quit.Help().Key), th, w, h)
+}
+
 func (m Model) render() string {
 	if m.width == 0 || m.height == 0 || len(m.tabs) == 0 {
 		return m.theme.Wordmark.Render("forge")
 	}
 	if m.splash != nil {
 		return m.splash.View(m.anim.Frame(), m.width, m.height, m.theme)
+	}
+	if m.width < MinWidth || m.height < MinHeight {
+		return tooSmall(m.width, m.height, m.keys, m.theme)
 	}
 	if m.helpOpen {
 		return m.help.View()

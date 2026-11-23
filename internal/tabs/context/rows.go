@@ -8,6 +8,7 @@ import (
 
 	"github.com/daan3011/forge/internal/memory"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // row is one line of the list: a group heading or a file.
@@ -149,7 +150,11 @@ func (t *Tab) listView(w, h int) string {
 	}
 	th := t.theme
 	if !t.scanned {
-		return th.Hint.Render(ansi.Wrap("Reading memory files for "+t.projectName()+"…", w, ""))
+		return t.loadingBody("reading memory files for "+t.projectName()+"…", w, h)
+	}
+	if len(t.rows) == 0 {
+		return anim.Notice("No memory files for "+t.projectName(),
+			"CLAUDE.md, CLAUDE.local.md and ~/.claude/CLAUDE.md show up here", th, w, h)
 	}
 	body := max(h-footerLines, 1)
 	var lines []string

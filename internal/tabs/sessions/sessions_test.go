@@ -29,6 +29,7 @@ import (
 type fakeSvc struct {
 	mu       sync.Mutex
 	rows     []agent.Row
+	listErr  error // every List fails with it
 	output   map[string]string
 	starts   []agent.StartOpts
 	kills    []agent.KillOpts
@@ -227,6 +228,9 @@ func (f *fakeSvc) Start(_ context.Context, o agent.StartOpts) (agent.Started, er
 func (f *fakeSvc) List(_ context.Context, project string, archived bool) ([]agent.Row, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	var out []agent.Row
 	for _, r := range f.rows {
 		inArchive := r.Archived() || r.Status == store.StatusArchived
@@ -799,4 +803,66 @@ func drain(cmd tea.Cmd) []tea.Msg {
 		return out
 	}
 	return []tea.Msg{msg}
+}
+
+// TestListLoadStates (P6.4): before the first list the pane says it is
+// loading (not "no agents"), a failed list says so with the retry key,
+// and a retry fills it.
+func TestListLoadStates(t *testing.T) {
+	svc := newFakeSvc(row("alpha", store.StatusIdle))
+	svc.listErr = errors.New("database is locked")
+	tab := newTab(svc)
+	cmd := tab.Refresh()
+	v := ansi.Strip(tab.View())
+	if !strings.Contains(v, "heating up…") || strings.Contains(v, "no agents yet") {
+		t.Fatalf("before the first list:\n%s", v)
+	}
+	var toasts []string
+	for _, m := range drain(cmd) {
+		if _, ok := m.(listedMsg); !ok {
+			continue
+		}
+		_, next := tab.Update(m)
+		for _, m := range drain(next) {
+			if e, ok := m.(ui.ErrMsg); ok {
+				toasts = append(toasts, e.Err.Error())
+			}
+		}
+	}
+	if len(toasts) != 1 || !strings.Contains(toasts[0], "database is locked · r to retry") {
+		t.Fatalf("toasts = %q", toasts)
+	}
+	v = ansi.Strip(tab.View())
+	if !strings.Contains(v, "couldn't list sessions") || !strings.Contains(v, "r to retry") {
+		t.Fatalf("after a failed list:\n%s", v)
+	}
+	if tab.Animating() {
+		t.Error("a failed list keeps no clock running")
+	}
+
+	svc.mu.Lock()
+	svc.listErr = nil
+	svc.mu.Unlock()
+	for _, m := range drain(tab.Refresh()) {
+		if _, ok := m.(listedMsg); ok {
+			tab.Update(m)
+		}
+	}
+	v = ansi.Strip(tab.View())
+	if !strings.Contains(v, "alpha") || strings.Contains(v, "couldn't list") {
+		t.Fatalf("after retry:\n%s", v)
+	}
+
+	empty := newTab(newFakeSvc())
+	for _, m := range drain(empty.Refresh()) {
+		if _, ok := m.(listedMsg); ok {
+			empty.Update(m)
+		}
+	}
+	if v := ansi.Strip(empty.View()); !strings.Contains(v, "no agents yet · n starts one") {
+		t.Fatalf("no sessions:\n%s", v)
+	}
+	if v := ansi.Strip(newTab(nil).View()); !strings.Contains(v, "agent sessions aren't available") {
+		t.Fatalf("no service:\n%s", v)
+	}
 }
