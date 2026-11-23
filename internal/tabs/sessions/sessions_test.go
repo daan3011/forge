@@ -130,6 +130,10 @@ func (f *fakeSvc) ResetTmuxConfig() (string, error) {
 	return f.conf + ".bak.20261120-140509", nil
 }
 
+func (f *fakeSvc) OpenWindow(context.Context, agent.WindowOpts) (agent.WindowResult, error) {
+	return agent.WindowResult{}, errors.New("fakeSvc: OpenWindow not supported")
+}
+
 func (f *fakeSvc) tmuxCounts() (restarts, resets int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

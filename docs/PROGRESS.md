@@ -794,6 +794,47 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - Each search reads at most 100 PRs. More are noted, not listed.
     - Today and Blockers are the current state, even in a standup generated for a past day.
     - Plane covers only projects with a saved link.
-- [ ] P6.3 Custom commands
+- [x] P6.3 Custom commands: `internal/customcmd` (expand + runner), `internal/app/custom.go`, `ui.OutputView`, `Service.OpenWindow`.
+  - **Config** (`custom_commands`): `name`, `command`, `key`, `tabs` (lowercase tab names, `config.TabNames`; empty = every tab), `mode` (`background` default / `exec` / `tmux-window`), `attach` (tmux-window only, default true), `description`.
+    - Validation covers: an unknown mode or tab, `attach` on another mode, a blank key, and the existing name/command checks.
+    - default.yaml documents every field and variable, with three examples.
+  - **Variables**: `{repo}`, `{pr}`, `{branch}`, `{worktree}`, `{issue}`, `{session}`, `{path}`.
+    - `customcmd.Expand` swaps in each value shell-quoted, so placeholders are never quoted in config. It leaves `${VAR}` and brace expansion like `{a,b}` alone.
+    - A variable the selection lacks stops the run with a toast (`review: needs {pr}, which the selection doesn't have`).
+    - The same values are exported as `FORGE_REPO`, `FORGE_PR`, ….
+    - The command runs with `sh -c` in the worktree, else the project checkout.
+  - **Selection**: a new optional `tabs.Selector`, which every tab implements.
+    - Sessions: repo, branch, worktree (also path) and name, plus PR number and issue key from the primary links (`sessions.Row.Vars`). It follows the transcript viewer.
+    - PRs: repo, number and head branch. It follows the diff viewer.
+    - Pipelines: repo and branch. It follows the log viewer.
+    - Plane: the item key, in the list and on the board.
+    - Home: depends on the row kind.
+    - Docs: the path, or the search hit.
+    - Artifacts: the path and its session.
+    - Context: the memory file.
+    - When a tab leaves them empty, the root fills `{repo}` and `{path}` from the active project (or the project matching the selection's repo).
+  - **Keys**: `KeyMap.SetCustom`, called from `app.New`. A custom key must not clash with the main keys, the keys of each tab it's on, or another custom command on a shared tab; a clash is a startup error (`custom_commands[0].key: "x" is already bound to session_kill`).
+    - The root checks custom keys after the global ones, on the active tab only.
+    - Viewers (transcript, diff, log) capture input, so custom keys don't fire there. The palette still works in them and uses the viewer's item.
+  - **Modes**:
+    - **background**: a "running X…" toast, then `X done (12ms)` or the error toast `X exited 2 · ctrl+k → Command output`. The output (stdout and stderr, last 1 MiB, stdin from /dev/null) is kept for the last 10 runs.
+    - **exec**: `tea.ExecProcess`. A non-zero exit gives an error toast; the active tab refreshes afterwards.
+    - **tmux-window**: `Service.OpenWindow` puts the window `cmd-<name>-<session|branch|pr|issue>` in the project's tmux session (`forge` without a project) and runs `sh -c`.
+      - A window that is still running is shown again instead of duplicated. One whose command exited (remain-on-exit) is replaced.
+      - It attaches the same way the Sessions tab does (switch / popup / exec).
+      - `attach: false` starts it detached with a toast naming the window.
+  - **Palette**: one item per command on the active tab (group "Custom commands", key as hint), plus "Command output…".
+    - "Command output…" opens a picker of recent runs (`overlayOutputs`). Picking one opens `ui.OutputView`, a full-screen scrollable view with escapes stripped, scrolled to the end. It has a header (name, exit, time, duration, dir, command) and closes with esc/q.
+    - Help has "Custom commands" (the tab's keyed commands) and "Command output" sections.
+  - **Tests**:
+    - Expand / Env / Shell.Run tables (quoting, `${}`, brace expansion, missing values, exit codes, output cap) and config validation cases.
+    - `SetCustom` conflicts, `OutputView`, `OpenWindow` (new / reuse / dead / detached / default session) and `Row.Vars`.
+    - App flows: palette and help per tab, project fallback for `{repo}`, missing variable, failure → picker → viewer, ring of 10, exec ok/failing, tmux-window attach / detached / reuse, tmux unavailable, a key conflict failing startup, and `TabNames` matching the tabs.
+    - **Done-when** `TestOpenInEditorOnSession`: real session service and git worktree; `ctrl+e` on the Sessions tab runs `code '<worktree>'` in the worktree.
+  - **Verified live**: forge in tmux with a temp config and data dir, and `TMUX_TMPDIR` isolating forge's tmux server. The editor was a stand-in that wrote its argument to a file.
+    - `ctrl+e` on a session wrote that session's worktree path.
+    - A failing command gave the toast, the picker and the viewer.
+    - Exec suspended forge and came back.
+    - `attach: false` started a detached window in the worktree; running it again attached to that same window, and `M-d` returned to forge.
 - [ ] P6.4 Polish & packaging
   - [ ] TODO: `forge doctor` reports the tmux version and which config file the forge server uses (`#{config_files}`), and warns when the user's tmux.conf version (`tmux.ParseConfigVersion`) is older than the embedded one (`tmux.ConfigVersion`).

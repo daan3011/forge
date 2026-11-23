@@ -261,6 +261,12 @@ type Theme struct {
 	NoteHeading     lipgloss.Style // "#" lines while reading
 	NoteText        lipgloss.Style
 	NoteCursorColor color.Color // the editor's cursor
+
+	// Custom command output viewer (P6.3).
+	OutputMeta lipgloss.Style // dir, command, time
+	OutputOK   lipgloss.Style // "exit 0"
+	OutputFail lipgloss.Style // a non-zero exit or start error
+	OutputText lipgloss.Style
 }
 
 // NewTheme builds the theme for a dark or light terminal, applying colour
@@ -418,6 +424,11 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		NoteHeading:     lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
 		NoteText:        base,
 		NoteCursorColor: p.Accent,
+
+		OutputMeta: lipgloss.NewStyle().Foreground(p.Muted),
+		OutputOK:   lipgloss.NewStyle().Foreground(p.Success).Bold(true),
+		OutputFail: lipgloss.NewStyle().Foreground(p.Error).Bold(true),
+		OutputText: base,
 	}
 }
 

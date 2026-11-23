@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -52,6 +53,31 @@ type KeyMap struct {
 	Note NoteKeys
 	Demo DemoKeys
 	Tmux TmuxDemoKeys
+	// Custom are the keys of the user's custom commands (P6.3), set with
+	// SetCustom.
+	Custom []CustomBinding
+}
+
+// CustomKey is a custom command's key as configured: Tabs are lowercase tab
+// names (empty means every tab), Index its position in custom_commands.
+type CustomKey struct {
+	Index int
+	Name  string
+	Key   string
+	Desc  string
+	Tabs  []string
+}
+
+// CustomBinding is a custom command's live binding.
+type CustomBinding struct {
+	Name    string
+	Tabs    []string
+	Binding key.Binding
+}
+
+// onTab reports whether the binding is live on the tab with this title.
+func (c CustomBinding) onTab(title string) bool {
+	return len(c.Tabs) == 0 || slices.ContainsFunc(c.Tabs, func(t string) bool { return strings.EqualFold(t, title) })
 }
 
 // GlobalKeys work on every tab.
@@ -1041,4 +1067,88 @@ func (k *KeyMap) TabIndex(msg tea.KeyPressMsg) int {
 		return -1
 	}
 	return slices.Index(k.Global.GotoTab.Keys(), msg.String())
+}
+
+// SetCustom binds the custom commands that have a key. A custom key is live
+// with the main keys and the keys of each tab it is offered on, so it must
+// not clash with any of them, nor with another custom command on a shared
+// tab. tabNames are every tab (lowercase), for commands offered on all.
+func (k *KeyMap) SetCustom(cmds []CustomKey, tabNames []string) error {
+	owner := map[string]map[string]string{} // scope -> key -> action id
+	for _, a := range k.actions() {
+		if a.scope != scopeMain && !isTabScope(a.scope) {
+			continue
+		}
+		if owner[a.scope] == nil {
+			owner[a.scope] = map[string]string{}
+		}
+		for _, kk := range a.b.Keys() {
+			owner[a.scope][kk] = a.id
+		}
+	}
+	custom := map[string]map[string]string{} // tab -> key -> custom name
+	var errs []error
+	k.Custom = nil
+	for _, c := range cmds {
+		if c.Key == "" {
+			continue
+		}
+		tabs := c.Tabs
+		if len(tabs) == 0 {
+			tabs = tabNames
+		}
+		clash := ""
+		if id, ok := owner[scopeMain][c.Key]; ok {
+			clash = id
+		}
+		for _, t := range tabs {
+			t = strings.ToLower(t)
+			if clash != "" {
+				break
+			}
+			if id, ok := owner["tab:"+t][c.Key]; ok {
+				clash = id
+			} else if other, ok := custom[t][c.Key]; ok {
+				clash = "custom command " + strconv.Quote(other)
+			}
+		}
+		if clash != "" {
+			errs = append(errs, fmt.Errorf("custom_commands[%d].key: %q is already bound to %s", c.Index, c.Key, clash))
+			continue
+		}
+		for _, t := range tabs {
+			t = strings.ToLower(t)
+			if custom[t] == nil {
+				custom[t] = map[string]string{}
+			}
+			custom[t][c.Key] = c.Name
+		}
+		k.Custom = append(k.Custom, CustomBinding{
+			Name: c.Name, Tabs: c.Tabs,
+			Binding: key.NewBinding(key.WithKeys(c.Key), key.WithHelp(helpKey([]string{c.Key}), c.Desc)),
+		})
+	}
+	return errors.Join(errs...)
+}
+
+// CustomFor returns the custom command bindings live on the tab with this
+// title, in config order.
+func (k *KeyMap) CustomFor(title string) []CustomBinding {
+	var out []CustomBinding
+	for _, c := range k.Custom {
+		if c.onTab(title) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// OutputHelp returns the command output viewer's keys (P6.3), for its
+// footer and the help overlay.
+func (k *KeyMap) OutputHelp() []key.Binding {
+	l := k.List
+	return []key.Binding{
+		key.NewBinding(key.WithKeys(k.Input.Cancel.Keys()...), key.WithHelp(k.Input.Cancel.Help().Key, "close")),
+		l.Down, l.Up, l.PageDown, l.PageUp, l.Top, l.Bottom,
+	}
 }

@@ -63,9 +63,9 @@ func (m Model) resized() tea.Cmd {
 }
 
 // occludedNow reports whether anything is drawn over the active tab: the
-// splash, help, the palette or quick capture, or a toast.
+// splash, help, command output, the palette or quick capture, or a toast.
 func (m Model) occludedNow() bool {
-	return m.splash != nil || m.helpOpen || m.overlay != overlayNone || !m.toast.Empty()
+	return m.splash != nil || m.helpOpen || m.outputOpen || m.overlay != overlayNone || !m.toast.Empty()
 }
 
 // syncOccluded tells the active tab when something starts or stops

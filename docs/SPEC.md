@@ -166,7 +166,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | --- | --- | --- |
 | P6.1 | Home screen | One "needs me" list: waiting agents, review requests, red pipelines, today's issues. |
 | P6.2 | Scratchpad & daily note | Quick notes per day; auto "what I did" from merged PRs, closed issues, finished sessions. |
-| P6.3 | Custom commands | Config-defined keybinds running shell commands with `{pr}`, `{branch}`, `{repo}`, `{worktree}`. |
+| P6.3 | Custom commands | Config-defined commands (palette + optional per-tab key) on the selection, with `{repo}`, `{pr}`, `{branch}`, `{worktree}`, `{issue}`, `{session}`, `{path}`; modes background (toast + viewable output), exec (suspend the TUI) and tmux-window (forge socket, attach or detached). |
 | P6.4 | Polish & packaging | Error toasts, empty states, `goreleaser`, install script, README with screenshots. |
 
 ## tmux setup (from a plain install)

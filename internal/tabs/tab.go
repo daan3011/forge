@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/config"
+	"github.com/daan3011/forge/internal/customcmd"
 	"github.com/daan3011/forge/internal/refresh"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/store"
@@ -216,4 +217,17 @@ type EntityProvider interface {
 type SessionGoer interface {
 	EntityProvider
 	AttachSession(id string) tea.Cmd
+}
+
+// Selection is what the tab has selected, as custom command variables
+// (P6.3): {repo}, {pr}, {branch}, {worktree}, {issue}, {session}, {path}.
+// Empty fields are values the selection doesn't have.
+type Selection = customcmd.Vars
+
+// Selector is implemented by tabs whose selection custom commands can use.
+// A viewer that takes over the tab (diff, transcript, log) reports the item
+// it shows. The root model fills Repo and Path from the active project when
+// they are empty.
+type Selector interface {
+	Selection() Selection
 }

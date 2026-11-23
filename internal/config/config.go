@@ -257,14 +257,62 @@ type UI struct {
 	Theme      map[string]string `yaml:"theme"`
 }
 
-// CustomCommand is a user-defined shell command, available in the palette and
-// optionally bound to a key.
+// CustomCommand is a user-defined shell command (P6.3), available in the
+// palette and optionally bound to a key. Command may use the selection
+// variables {repo}, {pr}, {branch}, {worktree}, {issue}, {session} and
+// {path}; each is replaced by its shell-quoted value.
 type CustomCommand struct {
-	Name        string `yaml:"name"`
-	Key         string `yaml:"key"`
-	Command     string `yaml:"command"`
+	Name    string `yaml:"name"`
+	Key     string `yaml:"key"`
+	Command string `yaml:"command"`
+	// Tabs lists the tabs (TabNames) the command is offered on; empty
+	// means every tab.
+	Tabs []string `yaml:"tabs"`
+	// Mode is how the command runs; empty means background.
+	Mode CommandMode `yaml:"mode"`
+	// Attach says whether a tmux-window command is shown right away (nil
+	// means yes). Only valid with mode tmux-window.
+	Attach      *bool  `yaml:"attach"`
 	Description string `yaml:"description"`
 }
+
+// RunMode is Mode, with background for empty.
+func (c CustomCommand) RunMode() CommandMode {
+	if c.Mode == "" {
+		return ModeBackground
+	}
+	return c.Mode
+}
+
+// Attaches reports whether a tmux-window command attaches to its window.
+func (c CustomCommand) Attaches() bool { return c.Attach == nil || *c.Attach }
+
+// OnTab reports whether the command is offered on the tab with this title.
+func (c CustomCommand) OnTab(title string) bool {
+	return len(c.Tabs) == 0 || slices.ContainsFunc(c.Tabs, func(t string) bool { return strings.EqualFold(t, title) })
+}
+
+// CommandMode is how a custom command runs.
+type CommandMode string
+
+// Custom command modes.
+const (
+	// ModeBackground runs the command without a terminal and reports its
+	// exit status in a toast; the output stays viewable.
+	ModeBackground CommandMode = "background"
+	// ModeExec suspends the TUI and runs the command in the terminal.
+	ModeExec CommandMode = "exec"
+	// ModeTmuxWindow runs the command in a new window on forge's tmux
+	// server.
+	ModeTmuxWindow CommandMode = "tmux-window"
+)
+
+// CommandModes are the valid custom_commands mode values.
+var CommandModes = []CommandMode{ModeBackground, ModeExec, ModeTmuxWindow}
+
+// TabNames are the tab names custom_commands tabs accepts: the tab titles,
+// lowercased.
+var TabNames = []string{"home", "prs", "pipelines", "plane", "sessions", "docs", "artifacts", "context"}
 
 // Duration is a time.Duration written as a string like "60s" or "5m".
 type Duration struct{ time.Duration }

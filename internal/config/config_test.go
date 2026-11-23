@@ -216,3 +216,19 @@ func TestUsagePricesMerge(t *testing.T) {
 		t.Errorf("usage = %+v", cfg.Usage)
 	}
 }
+
+// TestCustomCommandFromYAML: the P6.3 fields load, with background, attach
+// and every tab as defaults.
+func TestCustomCommandFromYAML(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "custom_commands:\n  - name: edit\n    command: code {worktree}\n    tabs: [Sessions]\n  - name: dev\n    command: npm run dev\n    mode: tmux-window\n    attach: false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit, dev := cfg.CustomCommands[0], cfg.CustomCommands[1]
+	if edit.RunMode() != ModeBackground || !edit.Attaches() || !edit.OnTab("Sessions") || !edit.OnTab("sessions") || edit.OnTab("PRs") {
+		t.Errorf("edit = %+v", edit)
+	}
+	if dev.RunMode() != ModeTmuxWindow || dev.Attaches() || !dev.OnTab("Docs") {
+		t.Errorf("dev = %+v", dev)
+	}
+}

@@ -211,6 +211,20 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(cc.Command) == "" {
 			add(k+".command", "is required")
 		}
+		if cc.Key != "" && strings.TrimSpace(cc.Key) == "" {
+			add(k+".key", "must not be blank")
+		}
+		if cc.Mode != "" && !slices.Contains(CommandModes, cc.Mode) {
+			add(k+".mode", "must be one of background, exec, tmux-window; got %q", cc.Mode)
+		}
+		if cc.Attach != nil && cc.RunMode() != ModeTmuxWindow {
+			add(k+".attach", "only applies to mode tmux-window")
+		}
+		for j, t := range cc.Tabs {
+			if !slices.Contains(TabNames, strings.ToLower(t)) {
+				add(fmt.Sprintf("%s.tabs[%d]", k, j), "unknown tab %q; known: %s", t, strings.Join(TabNames, ", "))
+			}
+		}
 	}
 
 	if len(es) == 0 {
