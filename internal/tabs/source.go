@@ -189,3 +189,10 @@ func SelectEntity(tab, id string) tea.Cmd {
 type SessionWatcher interface {
 	SessionsChanged() tea.Cmd
 }
+
+// NoteWatcher is implemented by tabs that show the daily note (Home). The
+// root model calls NotesChanged after the note pane, $EDITOR or a standup
+// changed a note.
+type NoteWatcher interface {
+	NotesChanged() tea.Cmd
+}

@@ -127,7 +127,9 @@ func TestPushRecent(t *testing.T) {
 // while it is open (the pipelines tab's tests), and its rerun / cancel /
 // fix keys are the pipeline_rerun_failed / pipeline_rerun /
 // pipeline_cancel / pipeline_fix / pipeline_fix_edit commands. The quick
-// capture line's keys edit and submit the line (capture opens it).
+// capture line's keys edit and submit the line (capture opens it). The
+// note pane's keys only work inside it (note, note_standup, note_copy and
+// note_external are commands).
 var notRegistered = []string{
 	"force_quit", "palette",
 	"up", "down", "top", "bottom", "page_down", "page_up",
@@ -145,6 +147,7 @@ var notRegistered = []string{
 	"capture_left", "capture_right", "capture_home", "capture_end",
 	"capture_delete_word", "capture_delete_forward",
 	"file_picker_toggle", "file_picker_toggle_all",
+	"note_edit", "note_prev_day", "note_next_day", "note_today", "note_close",
 }
 
 // TestEveryActionIsACommand guards the "every user action is a palette

@@ -252,6 +252,15 @@ type Theme struct {
 	CaptureSuggestSel  lipgloss.Style // the candidate tab put in
 	CaptureError       lipgloss.Style
 	CaptureInfo        lipgloss.Style
+
+	// Daily note pane (P6.2).
+	NoteBox         lipgloss.Style // the box around the pane
+	NoteTitle       lipgloss.Style // the date
+	NoteMuted       lipgloss.Style // "today", hints, empty text
+	NoteDirty       lipgloss.Style // ● for unsaved changes
+	NoteHeading     lipgloss.Style // "#" lines while reading
+	NoteText        lipgloss.Style
+	NoteCursorColor color.Color // the editor's cursor
 }
 
 // NewTheme builds the theme for a dark or light terminal, applying colour
@@ -401,6 +410,14 @@ func NewTheme(isDark bool, overrides map[string]string) *Theme {
 		CaptureSuggestSel:  lipgloss.NewStyle().Foreground(p.Highlight).Background(p.Surface).Bold(true),
 		CaptureError:       lipgloss.NewStyle().Foreground(p.Error),
 		CaptureInfo:        lipgloss.NewStyle().Foreground(p.Muted),
+
+		NoteBox:         lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(0, 1),
+		NoteTitle:       lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		NoteMuted:       lipgloss.NewStyle().Foreground(p.Muted),
+		NoteDirty:       lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		NoteHeading:     lipgloss.NewStyle().Foreground(p.Highlight).Bold(true),
+		NoteText:        base,
+		NoteCursorColor: p.Accent,
 	}
 }
 

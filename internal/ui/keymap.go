@@ -48,8 +48,10 @@ type KeyMap struct {
 	// FilePicker drives the fuzzy file picker (P5.2), together with the
 	// Input keys; everything else types into its query.
 	FilePicker FilePickerKeys
-	Demo       DemoKeys
-	Tmux       TmuxDemoKeys
+	// Note drives the daily note pane (P6.2), the ctrl+s overlay.
+	Note NoteKeys
+	Demo DemoKeys
+	Tmux TmuxDemoKeys
 }
 
 // GlobalKeys work on every tab.
@@ -68,6 +70,9 @@ type GlobalKeys struct {
 	GotoSession key.Binding
 	// Capture opens the quick capture line (P3.5).
 	Capture key.Binding
+	// Note opens today's note (P6.2); also works while a text input has
+	// focus. In the note pane it saves and closes.
+	Note key.Binding
 }
 
 // ListKeys drive the list/detail layout every tab uses. Tab-specific groups
@@ -333,6 +338,21 @@ type CaptureKeys struct {
 	DeleteFwd    key.Binding
 }
 
+// NoteKeys are active while the daily note pane is open and not editing,
+// together with the list movement keys (scrolling). While editing, the
+// input Cancel key leaves the editor and the global Note key closes the
+// pane; every other key types.
+type NoteKeys struct {
+	Edit     key.Binding // edit inline
+	External key.Binding // open in $EDITOR
+	PrevDay  key.Binding
+	NextDay  key.Binding
+	Today    key.Binding
+	Standup  key.Binding // append the standup and copy it
+	Copy     key.Binding // copy the last standup
+	Close    key.Binding
+}
+
 // DemoKeys drive the hidden `forge demo anim` showcase. They are not
 // configurable and not palette commands: the demo is its own program.
 type DemoKeys struct {
@@ -374,6 +394,7 @@ func DefaultKeyMap() *KeyMap {
 
 			GotoSession: bind("go to session", "ctrl+g"),
 			Capture:     bind("quick capture", "ctrl+n"),
+			Note:        bind("daily note", "ctrl+s"),
 		},
 		List: ListKeys{
 			Up:         bind("up", "k", "up"),
@@ -586,6 +607,16 @@ func DefaultKeyMap() *KeyMap {
 			DeleteWord:   bind("delete word", "ctrl+w", "alt+backspace"),
 			DeleteFwd:    bind("delete char under cursor", "delete"),
 		},
+		Note: NoteKeys{
+			Edit:     bind("edit", "e", "enter"),
+			External: bind("$EDITOR", "E"),
+			PrevDay:  bind("prev day", "["),
+			NextDay:  bind("next day", "]"),
+			Today:    bind("today", "t"),
+			Standup:  bind("standup", "s"),
+			Copy:     bind("copy standup", "y"),
+			Close:    bind("close", "esc", "q"),
+		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
 			Burst:   bind("spark burst", "space"),
@@ -637,6 +668,9 @@ const (
 	// scopeFilePicker is modal too: the fuzzy file picker (P5.2), live
 	// with the input keys.
 	scopeFilePicker = "filepicker"
+	// scopeNote is modal too: the daily note pane (P6.2), live with the
+	// list movement keys.
+	scopeNote = "note"
 )
 
 // isTabScope reports whether scope belongs to one tab (and is active
@@ -646,7 +680,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
 	pp, lg, pl, cp, dc, ar := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs, &k.Artifacts
-	cx, fp, hm := &k.Context, &k.FilePicker, &k.Home
+	cx, fp, hm, nt := &k.Context, &k.FilePicker, &k.Home, &k.Note
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -660,6 +694,7 @@ func (k *KeyMap) actions() []action {
 		{"projects", scopeMain, &g.Projects},
 		{"goto_session", scopeMain, &g.GotoSession},
 		{"capture", scopeMain, &g.Capture},
+		{"note", scopeMain, &g.Note},
 		{"up", scopeMain, &l.Up},
 		{"down", scopeMain, &l.Down},
 		{"top", scopeMain, &l.Top},
@@ -829,6 +864,14 @@ func (k *KeyMap) actions() []action {
 		{"capture_end", scopeCapture, &cp.End},
 		{"capture_delete_word", scopeCapture, &cp.DeleteWord},
 		{"capture_delete_forward", scopeCapture, &cp.DeleteFwd},
+		{"note_edit", scopeNote, &nt.Edit},
+		{"note_external", scopeNote, &nt.External},
+		{"note_prev_day", scopeNote, &nt.PrevDay},
+		{"note_next_day", scopeNote, &nt.NextDay},
+		{"note_today", scopeNote, &nt.Today},
+		{"note_standup", scopeNote, &nt.Standup},
+		{"note_copy", scopeNote, &nt.Copy},
+		{"note_close", scopeNote, &nt.Close},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},
@@ -950,7 +993,7 @@ func helpKey(keys []string) string {
 // GlobalHelp returns the bindings that work on every tab, for the help overlay.
 func (k *KeyMap) GlobalHelp() []key.Binding {
 	g := k.Global
-	return []key.Binding{g.Palette, g.Projects, g.GotoSession, g.Capture, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
+	return []key.Binding{g.Palette, g.Projects, g.GotoSession, g.Capture, g.Note, g.GotoTab, g.NextTab, g.PrevTab, g.Refresh, g.RefreshAll, g.Help, g.Quit, g.ForceQuit}
 }
 
 // CaptureHelp returns the quick capture line's keys, for the status bar
@@ -958,6 +1001,21 @@ func (k *KeyMap) GlobalHelp() []key.Binding {
 func (k *KeyMap) CaptureHelp() []key.Binding {
 	c := k.Capture
 	return []key.Binding{c.Submit, c.FullForm, c.Complete, k.Input.Cancel}
+}
+
+// NoteHelp returns the note pane's keys while reading, for its hint line,
+// the status bar and the help overlay.
+func (k *KeyMap) NoteHelp() []key.Binding {
+	n := k.Note
+	return []key.Binding{n.Standup, n.Edit, n.External, n.PrevDay, n.NextDay, n.Copy, n.Today, n.Close}
+}
+
+// NoteEditHelp returns the note pane's keys while editing.
+func (k *KeyMap) NoteEditHelp() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(key.WithKeys(k.Input.Cancel.Keys()...), key.WithHelp(k.Input.Cancel.Help().Key, "done")),
+		key.NewBinding(key.WithKeys(k.Global.Note.Keys()...), key.WithHelp(k.Global.Note.Help().Key, "save & close")),
+	}
 }
 
 // HuhKeyMap is the key map for Huh forms embedded in forge: Huh's defaults,

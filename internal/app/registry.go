@@ -108,6 +108,32 @@ func (m Model) paletteItems() []item {
 			},
 		})
 	}
+	// The daily note (P6.2); the pane's other keys only work inside it.
+	items = append(items,
+		item{
+			id: "note", title: "Daily note", group: groupCommands, hint: hint(g.Note),
+			detail: "today's scratchpad · [ ] other days",
+			run:    func(m Model) (Model, tea.Cmd) { return m.openNote(m.today()) },
+		},
+		item{
+			id: "note_standup", title: "Generate standup", group: groupCommands,
+			detail: "done yesterday / today / blockers → today's note + clipboard",
+			run: func(m Model) (Model, tea.Cmd) {
+				m.notes.standup = true
+				return m.openNote(m.today())
+			},
+		},
+		item{
+			id: "note_copy", title: "Copy last standup", group: groupCommands,
+			detail: "from today's note",
+			run:    func(m Model) (Model, tea.Cmd) { return m, m.copyLastStandup(m.today()) },
+		},
+		item{
+			id: "note_external", title: "Edit daily note in $EDITOR", group: groupCommands,
+			detail: "today's note",
+			run:    func(m Model) (Model, tea.Cmd) { return m.editNote(m.today()) },
+		},
+	)
 	if m.templatesDir != "" {
 		dir := m.templatesDir
 		items = append(items, item{

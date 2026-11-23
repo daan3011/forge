@@ -7,13 +7,13 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/daan3011/forge/internal/github"
+	"github.com/daan3011/forge/internal/notes"
 	"github.com/daan3011/forge/internal/plane"
 	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/store"
@@ -163,15 +163,7 @@ func (t *Tab) planeProjects() []string {
 		}
 		return []string{t.project.PlaneProjectID}
 	}
-	var out []string
-	seen := map[string]bool{}
-	for _, p := range t.cfg.Projects {
-		if p.PlaneProjectID != "" && !seen[p.PlaneProjectID] {
-			seen[p.PlaneProjectID] = true
-			out = append(out, p.PlaneProjectID)
-		}
-	}
-	return out
+	return notes.PlaneProjects(t.cfg.Projects)
 }
 
 // loadPlane finds me (cached first), then each project's current cycle and
@@ -254,7 +246,7 @@ func (t *Tab) loadPins() tea.Cmd {
 
 // notePath is today's note.
 func (t *Tab) notePath() string {
-	return filepath.Join(t.notesDir, t.now().Format("2006-01-02")+".md")
+	return notes.Path(t.notesDir, notes.Day(t.now()))
 }
 
 func (t *Tab) loadNote() tea.Cmd {
