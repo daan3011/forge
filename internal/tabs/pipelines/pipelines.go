@@ -67,13 +67,18 @@ type repoRuns struct {
 // Tab is the Pipelines tab (P2.6): GitHub Actions runs for the active
 // project's repo, or every configured repo.
 type Tab struct {
-	theme   *ui.Theme
-	keys    *ui.KeyMap
-	store   tabs.KVStore
-	gh      github.RunsClient
-	browser browser.Opener
-	cfg     *config.Config
-	now     func() time.Time
+	theme *ui.Theme
+	// anim drives the loading hammer (P6.4).
+	anim *anim.Engine
+	// detailLoading is set by the last View when the run detail or the
+	// log showed the loading hammer, so Animating keeps it moving.
+	detailLoading bool
+	keys          *ui.KeyMap
+	store         tabs.KVStore
+	gh            github.RunsClient
+	browser       browser.Opener
+	cfg           *config.Config
+	now           func() time.Time
 	// tick arms timers (tea.Tick; tests replace it).
 	tick func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 
@@ -139,7 +144,7 @@ func newTab(d tabkit.Deps) *Tab {
 		cfg = config.Default()
 	}
 	t := &Tab{
-		theme: d.Theme, keys: d.Keys, store: d.Store, gh: d.Runs, browser: d.Browser, cfg: cfg,
+		theme: d.Theme, anim: d.Engine(), keys: d.Keys, store: d.Store, gh: d.Runs, browser: d.Browser, cfg: cfg,
 		now: time.Now, tick: tea.Tick,
 		split:  ui.NewSplitPane(d.Theme),
 		filter: ui.NewFilter(d.Theme, d.Keys),
@@ -411,7 +416,7 @@ func (t *Tab) fetched(msg tabkit.FetchedMsg) tea.Cmd {
 		if t.authErr {
 			err = errors.New("GitHub: not logged in; run `gh auth login`")
 		}
-		return tea.Batch(errCmd(err), fast)
+		return tea.Batch(errCmd(ui.WithRetry(err, t.keys)), fast)
 	}
 	var runs []github.Run
 	if err := json.Unmarshal(msg.Value, &runs); err != nil {
@@ -949,6 +954,20 @@ func (t *Tab) Fetching() bool {
 // Sources implements tabs.AutoRefresher.
 func (t *Tab) Sources() []refresh.Source { return []refresh.Source{refresh.GitHub} }
 
+// loading reports whether the list waits for its first runs.
+func (t *Tab) loading() bool {
+	return len(t.repos) > 0 && t.gh != nil && !t.authErr &&
+		(!t.loaded() || t.asking) && (t.fetchErr == nil || t.Fetching())
+}
+
+// Animating implements tabs.Animator: the hammer while the list loads.
+func (t *Tab) Animating() bool {
+	if !anim.Ticks(t.anim.Settings()) {
+		return false
+	}
+	return t.detailLoading || (t.loading() && len(t.table.Rows()) == 0)
+}
+
 // RefreshWhenHidden implements tabs.AutoRefresher: no, GitHub calls are
 // rate limited.
 func (t *Tab) RefreshWhenHidden() bool { return false }
@@ -985,6 +1004,7 @@ func (t *Tab) StatusDetail() string {
 
 // View implements tabs.Tab.
 func (t *Tab) View() string {
+	t.detailLoading = false // set again if the detail or log draws the hammer
 	if t.dialog != nil {
 		w, h := t.dialogSize()
 		return t.theme.PaneFocused.Render(ui.Box(t.dialog.View(), w, h))
@@ -1050,10 +1070,10 @@ func (t *Tab) emptyView(w, h int) string {
 		msg = "GitHub isn't available"
 	case t.authErr:
 		msg = "not logged in to GitHub: run `gh auth login`"
-	case !t.loaded() && t.fetchErr != nil:
-		msg = "couldn't load runs: " + github.Reason(t.fetchErr)
-	case !t.loaded() || t.asking:
-		msg = "heating up…"
+	case !t.loaded() && t.fetchErr != nil && !t.Fetching():
+		return anim.Failed("couldn't load runs: "+github.Reason(t.fetchErr), ui.RetryKey(t.keys), th, w, h)
+	case t.loading():
+		return anim.Loading("heating up…", t.anim.Frame(), t.anim.Settings(), th, w, h)
 	case t.filt.any() || t.override != "":
 		msg = "no runs match · " + t.keys.Pipelines.ClearFilters.Help().Key + " clears filters"
 	}

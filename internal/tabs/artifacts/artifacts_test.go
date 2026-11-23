@@ -376,7 +376,7 @@ func TestEmptyState(t *testing.T) {
 	f.cfg.Artifacts.Watch = []string{"**/*.nothing"}
 	tab := f.tab(-1, nil)
 	tab.spec = artfs.NewSpec(f.cfg.Artifacts.Watch)
-	if v := view(tab); !strings.Contains(v, "Scanning") {
+	if v := view(tab); !strings.Contains(v, "scanning for artifacts…") {
 		t.Errorf("before scan:\n%s", v)
 	}
 	refresh(t, tab)

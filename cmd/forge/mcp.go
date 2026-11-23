@@ -154,8 +154,16 @@ func (w logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// version is the module version forge was built at, "dev" otherwise.
+// buildVersion is set by the release build (-ldflags -X
+// main.buildVersion=...).
+var buildVersion string
+
+// version is the release forge was built as, else the module version it
+// was installed at (go install), else "dev".
 func version() string {
+	if buildVersion != "" {
+		return buildVersion
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
 		return bi.Main.Version
 	}

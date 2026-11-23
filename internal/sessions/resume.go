@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/daan3011/forge/internal/sessions/claude"
-	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/store"
@@ -142,34 +141,18 @@ func (s *Service) Resume(ctx context.Context, x store.Session, o ResumeOpts) (re
 		}
 	}
 
-	if s.c.ForgeBin != "" {
-		// Sessions from before P1.4, or started by a forge binary that has
-		// since moved, get working hooks.
-		if err := hooks.Install(x.Worktree, s.c.ForgeBin); err != nil {
-			return Resumed{}, err
-		}
-		if err := s.c.Worktrees.EnsureExcluded(ctx, x.Worktree, hooks.SettingsRel); err != nil {
-			return Resumed{}, fmt.Errorf("git-ignore hook settings: %w", err)
-		}
+	// Rewritten on every resume: sessions from before P1.4 / P6.5 / P6.7, a
+	// moved forge binary and a removed session dir all get working hooks,
+	// MCP server and skills (--add-dir isn't restored by --resume).
+	prep, err := s.Prepare(ctx, x)
+	if err != nil {
+		return Resumed{}, err
 	}
-
-	launch := claude.Launch{Bin: s.c.ClaudeBin, SessionID: x.ClaudeSessionID}
-	if s.c.ForgeBin != "" {
-		// Rewritten on every resume: sessions from before P6.5, a moved
-		// forge binary and a removed session dir all get a working server.
-		launch.MCPConfig = filepath.Join(s.SessionDir(x.Name), claude.MCPConfigFile)
-		if err := claude.WriteMCPConfig(launch.MCPConfig, s.c.ForgeBin, x.Name); err != nil {
-			return Resumed{}, err
-		}
+	launch := claude.Launch{
+		Bin: s.c.ClaudeBin, SessionID: x.ClaudeSessionID,
+		MCPConfig: prep.MCPConfig, AddDir: prep.AddDir,
 	}
-	if s.c.Skills != nil {
-		// Rewritten on every resume, like the MCP config: --add-dir isn't
-		// restored by --resume, and sessions from before P6.7 get theirs.
-		if err := os.MkdirAll(s.SessionDir(x.Name), 0o700); err != nil {
-			return Resumed{}, fmt.Errorf("session dir: %w", err)
-		}
-		launch.AddDir, res.SkillsErr = s.syncSkills(x)
-	}
+	res.SkillsErr = prep.SkillsErr
 	if _, ok := claude.FindTranscript(s.c.ProjectsDir, x.ClaudeSessionID); ok {
 		launch.Resume = true
 	} else {

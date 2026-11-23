@@ -24,6 +24,7 @@ import (
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // Title is the tab's title, which also routes its messages.
@@ -44,10 +45,12 @@ type sessionLister interface {
 // project checkout and session worktree, grouped by project, newest first.
 type Tab struct {
 	theme *ui.Theme
-	keys  *ui.KeyMap
-	cfg   *config.Config
-	spec  artfs.Spec
-	now   func() time.Time
+	// anim drives the loading hammer (P6.4).
+	anim *anim.Engine
+	keys *ui.KeyMap
+	cfg  *config.Config
+	spec artfs.Spec
+	now  func() time.Time
 
 	sessions sessionLister
 	index    tabs.ArtifactIndex
@@ -102,7 +105,7 @@ func newTab(d tabkit.Deps) *Tab {
 		cfg = config.Default()
 	}
 	t := &Tab{
-		theme: d.Theme, keys: d.Keys, cfg: cfg, now: time.Now,
+		theme: d.Theme, anim: d.Engine(), keys: d.Keys, cfg: cfg, now: time.Now,
 		spec:    artfs.NewSpec(cfg.Artifacts.Watch),
 		index:   d.Artifacts,
 		watcher: d.ArtifactWatcher,
@@ -434,6 +437,12 @@ func (t *Tab) LastUpdated() time.Time { return t.updated }
 
 // Fetching implements tabs.Fetcher.
 func (t *Tab) Fetching() bool { return t.scanning }
+
+// Animating implements tabs.Animator: the hammer while the first scan
+// runs.
+func (t *Tab) Animating() bool {
+	return !t.scanned && len(t.rows) == 0 && anim.Ticks(t.anim.Settings())
+}
 
 // StatusDetail implements tabs.StatusDetailer.
 func (t *Tab) StatusDetail() string {

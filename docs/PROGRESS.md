@@ -836,8 +836,26 @@ Feature IDs match docs/SPEC.md. Tick a box when its feature is done.
     - A failing command gave the toast, the picker and the viewer.
     - Exec suspended forge and came back.
     - `attach: false` started a detached window in the worktree; running it again attached to that same window, and `M-d` returned to forge.
-- [ ] P6.4 Polish & packaging
-  - [ ] TODO: `forge doctor` reports the tmux version and which config file the forge server uses (`#{config_files}`), and warns when the user's tmux.conf version (`tmux.ParseConfigVersion`) is older than the embedded one (`tmux.ConfigVersion`).
+- [ ] P6.4 Polish & packaging. Built and tested; **the "done when" still needs a real release**: tag a version, then check that a fresh machine installs it and `forge doctor` is green. Files: `internal/doctor`, `cmd/forge/doctor.go`, `internal/ui/anim/state.go`, `internal/sessions/prepare.go`, `internal/demo`, `.goreleaser.yaml`, `install.sh`, `README.md`, `docs/demo.tape`.
+  - **Tab states** (`anim.Loading` / `anim.Failed` / `anim.Notice`, centred and exactly w×h):
+    - Every tab shows the hammer while its first data loads, and so do the PRs, Pipelines (jobs and log) and Plane detail panes (`anim.LoadingLines`). The clock ticks only while a hammer is visible (`anim.Ticks`: full or reduced; off is static).
+    - A first load that fails says "couldn't load …: reason · r to retry". Fetch-error toasts end in "· r to retry" (`ui.WithRetry`, with the key from the keymap).
+    - Fixed: PRs stayed on "heating up…" forever after a failed first fetch (per-section `err`). Sessions showed "nothing on the anvil" before its first list; it now shows loading, failed, "no agents yet · n starts one", or "agent sessions aren't available".
+    - Docs and Context gained `Fetching()` (status bar spinner). Docs shows the errors of every root. Context Memory has an empty message.
+  - **Small terminals**: below `app.MinWidth`×`app.MinHeight` (60×16) the screen says how big it must be (q still quits). At 60 wide every split pane still shows both panes (ui.MinLeftWidth + ui.MinRightWidth = 54), so no detail is out of reach. `TestEveryTabFits` adds 60×16; `internal/demo`'s `TestDemoTabs` renders every tab with fixture data at 80×24 and 120×40 and checks the content.
+  - **`forge doctor`**: forge on PATH, config, database, git, gh (+ login via `Viewer`), tmux (fail below 3.2, warn below 3.3), forge's tmux.conf version against `tmux.ConfigVersion`, claude (+ `--version`; a symlink into a temp dir or a broken one fails with the relink command), delta / chafa / rsvg-convert (warn), Plane (`Me`; skipped when no workspace is set), and per active session: hooks (`hooks.Registered`), `mcp.json` (`claude.ReadMCPConfigBin`) and the skills manifest, all pointing at the current binary.
+    - Checks run concurrently, 5s each. It exits 1 on any failure; `--json` gives machine-readable output.
+    - It never writes without `--fix`. `--fix` writes a missing default config and tmux.conf, and re-prepares stale sessions through `Service.Prepare`, which Start and Resume now use as well.
+    - It is also the palette's "Run doctor", which shows the report in the output view.
+    - "tmux server": when forge's server is running, it shows the config files the server loaded (`Exec.ServerConfigFiles`, `display -p '#{config_files}'`). It warns, with `forge tmux restart` as the fix, when forge's tmux.conf isn't among them (paths compared after resolving symlinks). This closes the P1.1 note.
+  - **Packaging**:
+    - goreleaser v2 (`CGO_ENABLED=0`, linux/darwin × amd64/arm64, tar.gz with `checksums.txt`, `-X main.buildVersion`; `forge --version`).
+    - `release.yml` on `v*` tags.
+    - CI adds a gitleaks job over the full history, plus `shellcheck install.sh` and `goreleaser check`.
+    - `install.sh` (POSIX sh) picks the latest tag via the `releases/latest` redirect, verifies the SHA-256, installs to `~/.local/bin` atomically, then runs `forge doctor || true`. `FORGE_VERSION`, `FORGE_INSTALL_DIR` and `FORGE_BASE_URL` override it.
+    - Checked against snapshot archives on macOS, and in a clean `ubuntu:24.04` container. Bare: the install succeeds and doctor lists the fixes. With git, tmux and gh: everything is green except gh login and claude, which need real credentials.
+  - **Demo**: hidden `forge demo app` runs the full TUI on fictional in-memory data, with `HOME`/`XDG_*` pointed into a temp dir. `make gif` records `docs/forge.gif` from `docs/demo.tape` (vhs).
+  - Secret scan before the first release: `gitleaks git --log-opts=--all` over all 63 non-merge commits found nothing (2026-11-24).
 - [x] P6.5 forge MCP server: `internal/mcpserver`, `cmd/forge/mcp.go`, `internal/proposals`, `internal/store/proposals.go`, migration 0010, `internal/sessions/claude/mcpconfig.go`.
   - **Registration**: per session, with `claude --mcp-config <session dir>/mcp.json`, on start and on every resume. Checked by hand first: interactive start and `--resume` both connect with no approval prompt.
     - The file is `{"mcpServers": {"forge": {"type": "stdio", "command": <forge binary>, "args": ["mcp"], "env": {"FORGE_SESSION": <name>}}}}`, written atomically with mode 0600. It is rewritten on each resume, which covers sessions from before P6.5, a moved binary and a removed session dir.

@@ -122,3 +122,29 @@ func (t *Toast) box(it toastItem, maxWidth int) string {
 	text = lipgloss.NewStyle().Width(min(lipgloss.Width(text), inner)).Render(text)
 	return style.Render(text)
 }
+
+// retryErr is a load error whose toast says how to load again.
+type retryErr struct {
+	err error
+	key string
+}
+
+func (e retryErr) Error() string { return e.err.Error() + " · " + e.key + " to retry" }
+func (e retryErr) Unwrap() error { return e.err }
+
+// WithRetry marks a failed load for its toast: "<err> · r to retry", with
+// the refresh key from k. errors.Is / As still see err.
+func WithRetry(err error, k *KeyMap) error {
+	if err == nil || k == nil {
+		return err
+	}
+	return retryErr{err: err, key: RetryKey(k)}
+}
+
+// RetryKey is the key that loads the active tab again (refresh).
+func RetryKey(k *KeyMap) string {
+	if k == nil {
+		return ""
+	}
+	return k.Global.Refresh.Help().Key
+}

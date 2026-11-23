@@ -554,7 +554,7 @@ func (t *Tab) cacheListView(w, h int) string {
 	case t.caches == nil:
 		return th.Hint.Render(ansi.Wrap("Cache controls need forge's database; it isn't open in this run.", w, ""))
 	case !t.cs.loaded:
-		return th.Hint.Render("Measuring what forge stores…")
+		return t.loadingBody("measuring what forge stores…", w, h)
 	}
 	var header string
 	var lines []string

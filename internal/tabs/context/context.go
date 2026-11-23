@@ -18,6 +18,7 @@ import (
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // Title is the tab's title, which also routes its messages.
@@ -36,9 +37,11 @@ type worktreeLister interface {
 // editing and which worktrees inherit which files.
 type Tab struct {
 	theme *ui.Theme
-	keys  *ui.KeyMap
-	cfg   *config.Config
-	now   func() time.Time
+	// anim drives the loading hammer (P6.4).
+	anim *anim.Engine
+	keys *ui.KeyMap
+	cfg  *config.Config
+	now  func() time.Time
 	// edit opens path in $EDITOR and reports editedMsg (tests replace it).
 	edit    func(path string) tea.Cmd
 	git     worktreeLister
@@ -110,7 +113,7 @@ func newTab(d tabkit.Deps) *Tab {
 	home, _ := os.UserHomeDir()
 	git := worktree.NewExec()
 	t := &Tab{
-		theme: d.Theme, keys: d.Keys, cfg: cfg, now: time.Now,
+		theme: d.Theme, anim: d.Engine(), keys: d.Keys, cfg: cfg, now: time.Now,
 		git:      git,
 		lister:   git,
 		packsDir: d.PacksDir,
@@ -679,4 +682,39 @@ func (t *Tab) panes() string {
 		right = t.matrixView(rw, rh)
 	}
 	return t.split.View(t.listView(lw, lh), right, !t.focusDetail)
+}
+
+// loadingBody is a section's body while its data loads: the hammer.
+func (t *Tab) loadingBody(label string, w, h int) string {
+	return anim.Loading(label, t.anim.Frame(), t.anim.Settings(), t.theme, w, h)
+}
+
+// loadingShown reports whether the current section shows loadingBody.
+func (t *Tab) loadingShown() bool {
+	switch t.view {
+	case viewPacks:
+		return !t.pk.loaded
+	case viewCache:
+		return t.caches != nil && !t.cs.loaded
+	case viewUsage:
+		return t.usage != nil && !t.us.loaded && (t.us.err == nil || t.us.loading)
+	case viewCommands:
+		return t.skills != nil && !t.cm.loaded
+	}
+	return !t.scanned
+}
+
+// Fetching implements tabs.Fetcher: the status bar spinner while the
+// current section loads or is measured again.
+func (t *Tab) Fetching() bool {
+	switch {
+	case t.view == viewCache && t.cs.loading, t.view == viewUsage && t.us.loading:
+		return true
+	}
+	return t.loadingShown()
+}
+
+// Animating implements tabs.Animator: the hammer while a section loads.
+func (t *Tab) Animating() bool {
+	return t.loadingShown() && anim.Ticks(t.anim.Settings())
 }

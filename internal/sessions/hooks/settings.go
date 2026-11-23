@@ -34,15 +34,25 @@ func Command(forgeBin, event string) string {
 // isForgeCommand reports whether cmd is a forge hook registration for any
 // event, whatever binary path it was written with.
 func isForgeCommand(cmd string) bool {
+	_, ok := forgeCommandBin(cmd)
+	return ok
+}
+
+// forgeCommandBin returns the binary of a forge hook registration, and
+// false when cmd isn't one.
+func forgeCommandBin(cmd string) (string, bool) {
 	bin, event, ok := strings.Cut(strings.TrimSpace(cmd), " hook ")
 	if !ok || !slices.Contains(Events, event) {
-		return false
+		return "", false
 	}
 	bin = strings.TrimSpace(bin)
 	if u, ok := strings.CutPrefix(bin, "'"); ok {
 		bin = strings.ReplaceAll(strings.TrimSuffix(u, "'"), `'\''`, "'")
 	}
-	return filepath.Base(bin) == "forge"
+	if filepath.Base(bin) != "forge" {
+		return "", false
+	}
+	return bin, true
 }
 
 // Install registers forge's hooks for every event in Events in
@@ -191,4 +201,41 @@ func writeAtomic(path string, data []byte) error {
 		return fmt.Errorf("hooks: write settings: %w", err)
 	}
 	return nil
+}
+
+// Registered reads <dir>/.claude/settings.local.json and returns, per hook
+// event, the forge binary its forge registration calls (events without one
+// are absent). A missing file is no registrations, not an error.
+func Registered(dir string) (map[string]string, error) {
+	out := map[string]string{}
+	path := filepath.Join(dir, SettingsRel)
+	b, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return out, nil
+	case err != nil:
+		return nil, fmt.Errorf("hooks: %w", err)
+	case len(bytes.TrimSpace(b)) == 0:
+		return out, nil
+	}
+	var top struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(b, &top); err != nil {
+		return nil, fmt.Errorf("hooks: %s: %w", path, err)
+	}
+	for ev, groups := range top.Hooks {
+		for _, g := range groups {
+			for _, h := range g.Hooks {
+				if bin, ok := forgeCommandBin(h.Command); ok {
+					out[ev] = bin
+				}
+			}
+		}
+	}
+	return out, nil
 }

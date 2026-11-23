@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -21,6 +22,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/delta"
 	"github.com/daan3011/forge/internal/docs"
+	"github.com/daan3011/forge/internal/doctor"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/notify"
@@ -73,6 +75,10 @@ type deps struct {
 	homeDir func() string
 	// mcpTransport replaces stdio for `forge mcp`.
 	mcpTransport func() mcp.Transport
+	// doctorFake edits the doctor's environment after it is built from the
+	// machine; doctorPrepare replaces re-preparing a session in --fix.
+	doctorFake    func(*doctor.Env)
+	doctorPrepare func(context.Context, store.Session) error
 }
 
 func (d deps) sessions(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -106,6 +112,7 @@ func newRootCmd(d deps) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "forge",
 		Short:         "One TUI for PRs, CI, Plane, agent sessions, docs and artifacts",
+		Version:       version(),
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: false,
@@ -190,6 +197,12 @@ func newRootCmd(d deps) *cobra.Command {
 				defer func() { _ = w.Close() }()
 				opts = append(opts, app.WithArtifactWatcher(w))
 			}
+			opts = append(opts, app.WithDoctor(func(ctx context.Context) (string, bool) {
+				var b strings.Builder
+				checks := d.runDoctor(ctx)
+				_ = doctor.Render(&b, checks, doctor.Styles{})
+				return b.String(), doctor.Failed(checks)
+			}))
 			if n, ok := tmuxNotice(); ok {
 				opts = append(opts, n)
 			}
@@ -220,6 +233,7 @@ func newRootCmd(d deps) *cobra.Command {
 		newPlaneCmd(d),
 		newMCPCmd(d),
 		newTemplatesCmd(d),
+		newDoctorCmd(d),
 		newDemoCmd(),
 	)
 	return root

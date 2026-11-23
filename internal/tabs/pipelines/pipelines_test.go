@@ -21,6 +21,7 @@ import (
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 var now = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
@@ -759,5 +760,72 @@ func TestCellDuration(t *testing.T) {
 	}
 	if _, got := cellDuration("", now); got != "—" {
 		t.Errorf("empty = %q", got)
+	}
+}
+
+// TestLoadStates: loading → failed (with the retry key) → retry → loaded.
+func TestLoadStates(t *testing.T) {
+	gh := sampleRuns()
+	gh.err = errors.New("network down")
+	h := newHarness(gh, nil, "app")
+	_ = h.Refresh() // queued, not landed
+	mustContain(t, h.view(), "heating up…")
+
+	h = newHarness(gh, nil, "app")
+	errs := h.init()
+	if len(errs) != 1 || !strings.Contains(errs[0], "· r to retry") {
+		t.Fatalf("toasts = %q", errs)
+	}
+	mustContain(t, h.view(), "couldn't load runs:", "network down", "r to retry")
+	if h.Animating() {
+		t.Error("a failed list keeps no clock running")
+	}
+	gh.mu.Lock()
+	gh.err = nil
+	gh.mu.Unlock()
+	h.drain(h.Refresh())
+	v := h.view()
+	if strings.Contains(v, "couldn't load runs") || strings.Contains(v, "heating up…") || len(h.table.Rows()) == 0 {
+		t.Fatalf("after retry:\n%s", v)
+	}
+}
+
+// TestDetailLoadingHammer (P6.4): a run's jobs and a job's log show the
+// hammer while they load, and the clock runs only meanwhile.
+func TestDetailLoadingHammer(t *testing.T) {
+	h := newHarness(sampleRuns(), nil, "app")
+	h.anim = anim.NewEngine(anim.Full())
+	tick := h.tick
+	h.tick = func(d time.Duration, fn func(time.Time) tea.Msg) tea.Cmd {
+		if d == detailDebounce {
+			return nil // jobs never fetched
+		}
+		return tick(d, fn)
+	}
+	h.init()
+	mustContain(t, h.view(), "acme/app · ci #3", "heating up…")
+	if !h.Animating() {
+		t.Error("the jobs hammer must keep the clock running")
+	}
+
+	h = newHarness(sampleRuns(), nil, "app")
+	h.anim = anim.NewEngine(anim.Full())
+	h.init()
+	mustLack(t, h.view(), "heating up…")
+	if h.Animating() {
+		t.Error("jobs loaded: no clock")
+	}
+}
+
+func TestLogLoadingHammer(t *testing.T) {
+	h := atFailedRun(t, failedRuns(t), newKV())
+	h.anim = anim.NewEngine(anim.Full())
+	h.Update(press("l")) // the log fetch is never run
+	if h.log == nil {
+		t.Fatal("viewer not open")
+	}
+	mustContain(t, h.view(), "fetching the log…")
+	if !h.Animating() {
+		t.Error("the log hammer must keep the clock running")
 	}
 }

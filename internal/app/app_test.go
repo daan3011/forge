@@ -185,7 +185,7 @@ func TestBackgroundSwitchesTheme(t *testing.T) {
 // TestEveryTabFits renders every tab at several sizes, with the split moved to
 // both extremes, and checks the screen is exactly the terminal size.
 func TestEveryTabFits(t *testing.T) {
-	sizes := [][2]int{{80, 24}, {120, 40}, {200, 50}}
+	sizes := [][2]int{{MinWidth, MinHeight}, {80, 24}, {120, 40}, {200, 50}}
 	for _, sz := range sizes {
 		var model tea.Model = mustNew(t, config.Default())
 		model, _ = model.Update(tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
@@ -207,6 +207,29 @@ func TestEveryTabFits(t *testing.T) {
 			assertScreen(t, model.(Model).render(), sz[0], sz[1])
 			model, _ = model.Update(press("?"))
 		}
+	}
+}
+
+// TestTooSmall (P6.4): under the minimum the screen says how big it must
+// be, still at exactly the terminal size, and q still quits.
+func TestTooSmall(t *testing.T) {
+	for _, sz := range [][2]int{{MinWidth - 1, 24}, {80, MinHeight - 1}, {40, 10}} {
+		var model tea.Model = mustNew(t, config.Default())
+		model, _ = model.Update(tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
+		view := model.(Model).render()
+		assertScreen(t, view, sz[0], sz[1])
+		plain := ansi.Strip(view)
+		if !strings.Contains(plain, "forge needs at least 60×16") || !strings.Contains(plain, fmt.Sprintf("now %d×%d", sz[0], sz[1])) {
+			t.Fatalf("%dx%d:\n%s", sz[0], sz[1], plain)
+		}
+		if _, cmd := model.Update(press("q")); cmd == nil {
+			t.Errorf("%dx%d: q does nothing", sz[0], sz[1])
+		}
+	}
+	var model tea.Model = mustNew(t, config.Default())
+	model, _ = model.Update(tea.WindowSizeMsg{Width: MinWidth, Height: MinHeight})
+	if strings.Contains(ansi.Strip(model.(Model).render()), "forge needs at least") {
+		t.Error("the minimum size itself is big enough")
 	}
 }
 

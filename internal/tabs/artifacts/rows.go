@@ -12,6 +12,7 @@ import (
 	artfs "github.com/daan3011/forge/internal/artifacts"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // row is one line of the list: a project header (all projects) or an
@@ -255,7 +256,7 @@ func (t *Tab) listView(w, h int) string {
 			msg := "No artifacts match " + t.filterLabel() + " (" + t.keys.Artifacts.ClearFilters.Help().Key + " clears)."
 			return t.theme.TableEmpty.Render(ansi.Wrap(msg, w, " "))
 		}
-		return t.emptyView(w)
+		return t.emptyView(w, h)
 	}
 	end := min(t.top+h, len(t.rows))
 	lines := make([]string, 0, end-t.top)
@@ -354,23 +355,20 @@ func padLeft(s string, w int) string {
 	return strings.Repeat(" ", max(w-ansi.StringWidth(s), 0)) + s
 }
 
-// emptyView explains why there is nothing to show.
-func (t *Tab) emptyView(w int) string {
+// emptyView explains why there is nothing to show, w×h (P6.4).
+func (t *Tab) emptyView(w, h int) string {
 	th := t.theme
 	switch {
 	case !t.scanned:
-		return th.Hint.Render("Scanning for artifacts…")
+		return anim.Loading("scanning for artifacts…", t.anim.Frame(), t.anim.Settings(), th, w, h)
 	case len(t.projects()) == 0 && len(t.spec.Absolute) == 0:
-		return th.TableEmpty.Render(ansi.Wrap("No projects configured. Add one under projects: in the config.", w, ""))
+		return anim.Notice("No projects configured", "add one under projects: in the config", th, w, h)
+	case t.scanErr != nil:
+		return anim.Failed("couldn't scan for artifacts: "+t.scanErr.Error(), ui.RetryKey(t.keys), th, w, h)
 	}
 	globs := append(append([]string(nil), t.spec.Relative...), t.spec.Absolute...)
-	msg := "No artifacts yet. Watching " + strings.Join(globs, ", ") +
-		" in every checkout and session worktree."
-	out := th.TableEmpty.Render(ansi.Wrap(msg, w, " ,"))
-	if t.scanErr != nil {
-		out += "\n\n" + th.Hint.Render(ansi.Wrap(t.scanErr.Error(), w, " /"))
-	}
-	return out
+	return anim.Notice("No artifacts yet",
+		"watching "+strings.Join(globs, ", ")+" in every checkout and session worktree", th, w, h)
 }
 
 // detailView shows the selected artifact's facts.

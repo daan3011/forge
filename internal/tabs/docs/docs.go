@@ -17,6 +17,7 @@ import (
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // Title is the tab's title, which also routes its messages.
@@ -41,9 +42,11 @@ type root struct {
 // Glamour preview, $EDITOR editing, new / rename / trash and live reload.
 type Tab struct {
 	theme *ui.Theme
-	keys  *ui.KeyMap
-	cfg   *config.Config
-	now   func() time.Time
+	// anim drives the loading hammer (P6.4).
+	anim *anim.Engine
+	keys *ui.KeyMap
+	cfg  *config.Config
+	now  func() time.Time
 	// edit opens path in $EDITOR and reports editedMsg (tests replace it).
 	edit    func(path string) tea.Cmd
 	watcher docfs.Watcher
@@ -109,7 +112,7 @@ func newTab(d tabkit.Deps) *Tab {
 		cfg = config.Default()
 	}
 	t := &Tab{
-		theme: d.Theme, keys: d.Keys, cfg: cfg, now: time.Now,
+		theme: d.Theme, anim: d.Engine(), keys: d.Keys, cfg: cfg, now: time.Now,
 		watcher:  d.DocsWatcher,
 		svc:      d.Sessions,
 		links:    d.Links,
@@ -677,4 +680,14 @@ func docCount(n int) string {
 		return "1 doc"
 	}
 	return fmt.Sprintf("%d docs", n)
+}
+
+// Fetching implements tabs.Fetcher: the status bar spinner while the
+// first scan runs.
+func (t *Tab) Fetching() bool { return !t.scanned && len(t.roots) > 0 }
+
+// Animating implements tabs.Animator: the hammer while the first scan
+// runs and nothing is listed.
+func (t *Tab) Animating() bool {
+	return t.Fetching() && len(t.rows) == 0 && anim.Ticks(t.anim.Settings())
 }

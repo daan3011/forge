@@ -57,3 +57,31 @@ func TestWriteMCPConfig(t *testing.T) {
 		t.Error("no binary: want an error")
 	}
 }
+
+func TestReadMCPConfigBin(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, MCPConfigFile)
+	if err := WriteMCPConfig(p, "/usr/local/bin/forge", "s1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadMCPConfigBin(p); err != nil || got != "/usr/local/bin/forge" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if _, err := ReadMCPConfigBin(filepath.Join(dir, "missing.json")); err == nil {
+		t.Error("missing file: want an error")
+	}
+	bad := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(bad, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadMCPConfigBin(bad); err == nil {
+		t.Error("bad json: want an error")
+	}
+	other := filepath.Join(dir, "other.json")
+	if err := os.WriteFile(other, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadMCPConfigBin(other); err != nil || got != "" {
+		t.Errorf("no forge server: got %q, %v", got, err)
+	}
+}

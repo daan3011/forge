@@ -11,6 +11,7 @@ import (
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // detail is the right pane: header, tab strip and the active tab, scrolled.
@@ -124,19 +125,21 @@ func (t *Tab) detailStrip(e *detailEntry, w int, pos string) string {
 	return strip
 }
 
-// pending is the line shown where details aren't there yet.
-func (t *Tab) pending(p github.PR) string {
+// pending is what's shown where details aren't there yet: the error, or
+// the loading hammer (P6.4).
+func (t *Tab) pending(p github.PR, w int) []string {
 	if err := t.failedFor(p); err != nil {
 		msg := "couldn't load details: " + err.Error()
 		if github.IsAuthError(err) {
 			msg = "not logged in to GitHub: run `gh auth login`"
 		}
-		return t.theme.DiffDel.Render(msg)
+		return []string{t.theme.DiffDel.Render(msg)}
 	}
 	if t.gh == nil {
-		return t.theme.Hint.Render("GitHub isn't available")
+		return []string{t.theme.Hint.Render("GitHub isn't available")}
 	}
-	return t.theme.TableEmpty.Render("heating up…")
+	t.detailLoading = true
+	return anim.LoadingLines("heating up…", t.anim.Frame(), t.anim.Settings(), t.theme, w)
 }
 
 // --- overview ------------------------------------------------------------------
@@ -158,7 +161,7 @@ func (t *Tab) overviewView(p github.PR, e *detailEntry, w int) []string {
 		lines = append(lines, body...)
 	}
 	if e == nil {
-		lines = append(lines, "", t.pending(p))
+		lines = append(append(lines, ""), t.pending(p, w)...)
 	} else {
 		if len(e.d.Labels) > 0 {
 			chips := make([]string, len(e.d.Labels))
@@ -457,7 +460,7 @@ func (t *Tab) markdown(rendered, plain string, ready bool, w int, empty string) 
 func (t *Tab) checksView(p github.PR, e *detailEntry, w int) []string {
 	th := t.theme
 	if e == nil {
-		return []string{t.pending(p)}
+		return t.pending(p, w)
 	}
 	if len(e.d.Checks) == 0 {
 		return []string{th.Hint.Render("no checks reported for the head commit")}
@@ -491,7 +494,7 @@ func checkDuration(c github.Check, now time.Time) string {
 func (t *Tab) activityView(p github.PR, e *detailEntry, w int) []string {
 	th := t.theme
 	if e == nil {
-		return []string{t.pending(p)}
+		return t.pending(p, w)
 	}
 	if len(e.d.Activity) == 0 {
 		return []string{th.Hint.Render("no comments or reviews yet")}

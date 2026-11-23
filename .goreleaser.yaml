@@ -1,0 +1,50 @@
+# goreleaser v2: `make release-snapshot` builds locally; pushing a v* tag
+# releases through .github/workflows/release.yml.
+version: 2
+
+project_name: forge
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: forge
+    main: ./cmd/forge
+    binary: forge
+    env:
+      - CGO_ENABLED=0 # modernc.org/sqlite is pure Go
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.buildVersion={{.Version}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: forge
+    formats: [tar.gz]
+    name_template: "forge_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge pull request"
+      - "^docs:"
+
+release:
+  github:
+    owner: daan3011
+    name: forge
+  prerelease: auto

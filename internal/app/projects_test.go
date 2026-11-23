@@ -207,7 +207,7 @@ func TestStartupProject(t *testing.T) {
 			// The Context tab names the project it was given while it loads.
 			want := strings.ReplaceAll(tt.want, "<all>", "all projects")
 			m.tabs[7].SetSize(100, 30)
-			if view := ansi.Strip(m.tabs[7].View()); !strings.Contains(view, "Reading memory files for "+want) {
+			if view := ansi.Strip(m.tabs[7].View()); !strings.Contains(view, "reading memory files for "+want) {
 				t.Fatalf("tab did not get %s:\n%s", want, view)
 			}
 		})

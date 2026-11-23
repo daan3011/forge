@@ -11,6 +11,7 @@ import (
 
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/ui"
+	"github.com/daan3011/forge/internal/ui/anim"
 )
 
 // The detail pane shows the selected run's jobs and steps. Its header
@@ -236,7 +237,8 @@ func (t *Tab) jobLines(r github.Run, w int) []string {
 		case t.gh == nil:
 			return []string{th.Hint.Render("GitHub isn't available")}
 		}
-		return []string{th.TableEmpty.Render("heating up…")}
+		t.detailLoading = true
+		return anim.LoadingLines("heating up…", t.anim.Frame(), t.anim.Settings(), th, w)
 	}
 	if len(e.jobs) == 0 {
 		return []string{th.Hint.Render("no jobs yet")}
