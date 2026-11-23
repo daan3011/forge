@@ -13,6 +13,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/editor"
 	"github.com/daan3011/forge/internal/memory"
+	"github.com/daan3011/forge/internal/sessions"
 	"github.com/daan3011/forge/internal/sessions/worktree"
 	"github.com/daan3011/forge/internal/tabs"
 	"github.com/daan3011/forge/internal/tabs/tabkit"
@@ -47,6 +48,11 @@ type Tab struct {
 	// actions. lister lists a checkout's files for the picker.
 	packsDir string
 	lister   fileLister
+	// skills are forge's slash commands (P6.7); nil hides them. syncAll
+	// re-syncs every session's skills; nil can't.
+	skills  tabkit.SkillCatalog
+	syncAll func(stdctx.Context) ([]sessions.SyncResult, error)
+	cm      cmdState
 
 	split  ui.SplitPane
 	width  int
@@ -108,6 +114,8 @@ func newTab(d tabkit.Deps) *Tab {
 		git:      git,
 		lister:   git,
 		packsDir: d.PacksDir,
+		skills:   d.Skills,
+		syncAll:  d.SyncSkills,
 		caches:   d.Caches,
 		usage:    d.Usage,
 		home:     home,
@@ -185,6 +193,8 @@ func (t *Tab) Refresh() tea.Cmd {
 		cache = t.loadCache()
 	case viewUsage:
 		cache = t.loadUsage(true)
+	case viewCommands:
+		cache = t.loadCommands()
 	}
 	return tea.Batch(func() tea.Msg {
 		msg := scanned(root, home, managed, git)
@@ -284,6 +294,15 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.planned(msg)
 	case cacheDoneMsg:
 		return t.applied(msg)
+	case commandsLoadedMsg:
+		t.commandsLoaded(msg)
+		return nil
+	case overrideReadyMsg:
+		return t.overrideReady(msg)
+	case commandResetMsg:
+		return t.commandReset(msg)
+	case skillsSyncedMsg:
+		return t.skillsSynced(msg)
 	}
 	if t.pk.dialog != nil {
 		return t.updatePackDialog(msg)
@@ -318,6 +337,10 @@ func (t *Tab) update(msg tea.Msg) tea.Cmd {
 		return t.toggleCache()
 	case key.Matches(kp, ck.Usage):
 		return t.toggleUsage()
+	case key.Matches(kp, ck.Commands):
+		return t.toggleCommands()
+	case t.view == viewCommands:
+		return t.commandKey(kp)
 	case t.view == viewUsage:
 		return t.usageKey(kp)
 	case t.view == viewPacks:
@@ -419,13 +442,14 @@ func (t *Tab) SetSize(width, height int) {
 	t.setCacheCursor(t.cs.cursor)
 	t.setProjectCursor(t.cs.pcursor)
 	t.setUsageCursor(t.us.cursor)
+	t.setCommandCursor(t.cm.cursor)
 	if t.pk.dialog != nil && t.pk.dialog.form != nil {
 		w, h := t.dialogSize()
 		_, _ = t.pk.dialog.form.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	}
 }
 
-// sectionBarLines is the Memory | Packs | Cache | Usage bar above the panes.
+// sectionBarLines is the Memory | Packs | Cache | Usage | Commands bar.
 const sectionBarLines = 1
 
 // CapturingInput implements tabs.InputCapturer: a pack or cache form, or
@@ -441,6 +465,7 @@ func (t *Tab) SetProject(p *config.Project) {
 	t.rows, t.cursor, t.top, t.selPath = nil, 0, 0, ""
 	t.focusDetail = false
 	t.pk.loaded, t.pk.entries, t.pk.errs, t.pk.offset = false, nil, nil, 0
+	t.cm.loaded, t.cm.items, t.cm.errs, t.cm.offset = false, nil, nil, 0
 }
 
 // SetVisible implements tabs.VisibilityAware: memory files change outside
@@ -456,6 +481,8 @@ func (t *Tab) SetVisible(visible bool) tea.Cmd {
 		return t.loadCache()
 	case t.view == viewUsage:
 		return t.loadUsage(true)
+	case t.view == viewCommands:
+		return t.loadCommands()
 	}
 	return nil
 }
@@ -473,6 +500,12 @@ func (t *Tab) StatusDetail() string {
 	}
 	if t.view == viewUsage {
 		return t.usageStatus()
+	}
+	if t.view == viewCommands {
+		if s, ok := t.selectedCommand(); ok {
+			return "/" + s.Name + " · " + s.Label()
+		}
+		return ""
 	}
 	if t.view == viewPacks {
 		e, ok := t.selectedPack()
@@ -508,6 +541,8 @@ func (t *Tab) ShortHelp() []key.Binding {
 		return []key.Binding{ck.Back, ck.ClearCache, ck.PruneCache, ck.Cache}
 	case t.view == viewCache:
 		return []key.Binding{ck.Cache, ck.Open, ck.ClearCache, ck.PruneCache, ck.RemoveOrphans, ck.Vacuum}
+	case t.view == viewCommands:
+		return []key.Binding{ck.Commands, ck.Edit, ck.ResetCommand, ck.SyncCommands}
 	case t.view == viewUsage:
 		pick := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.List.Up.Help().Key+"/"+t.keys.List.Down.Help().Key, "pick project"))
 		rescan := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Global.Refresh.Help().Key, "rescan"))
@@ -517,7 +552,7 @@ func (t *Tab) ShortHelp() []key.Binding {
 		back := key.NewBinding(key.WithKeys(), key.WithHelp(t.keys.Input.Cancel.Help().Key, "back to list"))
 		return []key.Binding{t.keys.List.Down, t.keys.List.Up, back, ck.Edit}
 	}
-	return []key.Binding{ck.Packs, ck.Cache, ck.Usage, ck.Worktrees, ck.Open, ck.Edit}
+	return []key.Binding{ck.Packs, ck.Cache, ck.Usage, ck.Commands, ck.Worktrees, ck.Open, ck.Edit}
 }
 
 // FullHelp implements tabs.Tab.
@@ -526,9 +561,10 @@ func (t *Tab) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{l.Up, l.Down, l.Top, l.Bottom, l.PageDown, l.PageUp},
 		{ck.Open, ck.Back, t.keys.Input.Cancel, ck.DetailDown, ck.DetailUp, l.ShrinkPane, l.GrowPane},
-		{ck.Edit, ck.Worktrees, ck.Packs, ck.Cache, ck.Usage},
+		{ck.Edit, ck.Worktrees, ck.Packs, ck.Cache, ck.Usage, ck.Commands},
 		{ck.NewPack, ck.AddFiles, ck.DeletePack, ck.SendPack},
 		{ck.ClearCache, ck.PruneCache, ck.RemoveOrphans, ck.Vacuum},
+		{ck.ResetCommand, ck.SyncCommands},
 	}
 }
 
@@ -537,7 +573,7 @@ func (t *Tab) Commands() []tabs.Command {
 	l, ck := t.keys.List, t.keys.Context
 	do := func(f func()) func() tea.Cmd { return func() tea.Cmd { f(); return nil } }
 	return []tabs.Command{
-		{ID: "context_edit", Title: "Context: edit memory file / pack in $EDITOR", Key: ck.Edit, Run: t.editCurrent},
+		{ID: "context_edit", Title: "Context: edit memory file / pack / command override in $EDITOR", Key: ck.Edit, Run: t.editCurrent},
 		{ID: "context_worktrees", Title: "Context: toggle worktree inheritance", Key: ck.Worktrees, Run: do(t.toggleMatrix)},
 		{ID: "context_packs", Title: "Context: switch memory files / packs", Key: ck.Packs, Run: t.togglePacks},
 		{ID: "context_new_pack", Title: "Context: new context pack", Key: ck.NewPack, Run: t.inPacks(t.newPack)},
@@ -550,6 +586,9 @@ func (t *Tab) Commands() []tabs.Command {
 		{ID: "context_cache_orphans", Title: "Context: remove orphaned worktrees", Key: ck.RemoveOrphans, Run: t.inCache(t.removeOrphans)},
 		{ID: "context_cache_vacuum", Title: "Context: vacuum the database", Key: ck.Vacuum, Run: t.inCache(t.vacuum)},
 		{ID: "context_usage", Title: "Context: switch memory files / token usage", Key: ck.Usage, Run: t.toggleUsage},
+		{ID: "context_commands", Title: "Context: switch memory files / slash commands", Key: ck.Commands, Run: t.toggleCommands},
+		{ID: "context_commands_reset", Title: "Context: reset the slash command to its built-in", Key: ck.ResetCommand, Run: t.inCommands(t.resetCommand)},
+		{ID: "context_commands_sync", Title: "Context: re-sync slash commands into all running sessions", Key: ck.SyncCommands, Run: t.syncSkills},
 		{ID: "context_open", Title: "Context: focus the rendered file", Key: ck.Open, Run: do(t.focus)},
 		{ID: "context_back", Title: "Context: back to the file list", Key: ck.Back, Run: do(func() { t.focusDetail = false })},
 		{ID: "context_detail_down", Title: "Context: scroll file down", Key: ck.DetailDown, Run: do(func() { t.scrollDetail(1) })},
@@ -564,6 +603,12 @@ func (t *Tab) Commands() []tabs.Command {
 // editCurrent edits the selected pack in the Packs view, else the
 // selected memory file.
 func (t *Tab) editCurrent() tea.Cmd {
+	if t.view == viewCommands {
+		return t.editCommand()
+	}
+	if t.view == viewCommands {
+		return t.editCommand()
+	}
 	if t.view == viewPacks {
 		return t.editPack()
 	}
@@ -594,11 +639,20 @@ func (t *Tab) View() string {
 	if t.pk.loaded {
 		packCount = len(t.pk.entries)
 	}
-	bar := ui.SectionBar(t.theme, []string{"Memory", "Packs", "Cache", "Usage"}, []int{-1, packCount, -1, -1}, int(t.view), t.width)
+	cmdCount := -1
+	if t.cm.loaded {
+		cmdCount = len(t.cm.items)
+	}
+	bar := ui.SectionBar(t.theme, []string{"Memory", "Packs", "Cache", "Usage", "Commands"}, []int{-1, packCount, -1, -1, cmdCount}, int(t.view), t.width)
 	return bar + "\n" + t.panes()
 }
 
 func (t *Tab) panes() string {
+	if t.view == viewCommands {
+		lw, lh := t.split.LeftSize()
+		rw, rh := t.split.RightSize()
+		return t.split.View(t.commandsListView(lw, lh), t.commandDetailView(rw, rh), true)
+	}
 	if t.view == viewUsage {
 		lw, lh := t.split.LeftSize()
 		rw, rh := t.split.RightSize()

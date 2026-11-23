@@ -112,7 +112,7 @@ func (d deps) mcpServer(ctx context.Context, logger *slog.Logger) (*mcpserver.Se
 	packDir, _ := packs.Dir()
 	sender := d.liveSender()
 	srv, err := mcpserver.New(ctx, mcpserver.Deps{
-		Store: st, Plane: pc, PlaneErr: perr, Config: cfg,
+		Store: st, Plane: pc, PlaneErr: perr, Config: cfg, GitHub: githubPulls,
 		SessionName: d.env(agent.EnvSessionName), Cwd: d.cwd(),
 		PacksDir: packDir, Version: version(), Now: d.clock, Logger: logger,
 		Ping: func(ctx context.Context, p live.Ping) {

@@ -25,7 +25,8 @@ var priorities = []string{"urgent", "high", "medium", "low", "none"}
 
 // CreateIssueIn is create_issue's input.
 type CreateIssueIn struct {
-	Title       string   `json:"title" jsonschema:"Short imperative issue title, e.g. 'Add retries to the Plane client'. At most 255 characters."`
+	Title       string   `json:"title,omitempty" jsonschema:"Short imperative issue title, e.g. 'Add retries to the Plane client'. At most 255 characters. Required unless capture is given."`
+	Capture     string   `json:"capture,omitempty" jsonschema:"The user's one-line capture text, verbatim, e.g. 'Add retries to Plane client #forge !high +bug'. forge parses it: the words become the title (when title is empty), !priority sets the priority (by prefix: !h is high), +label adds labels and #project files it in that forge project. Pass it unchanged; don't parse it yourself."`
 	Description string   `json:"description,omitempty" jsonschema:"Markdown body: the problem, why it matters, and what done looks like. Mention files or functions involved."`
 	Priority    string   `json:"priority,omitempty" jsonschema:"One of urgent, high, medium, low, none. Leave empty when unsure."`
 	Labels      []string `json:"labels,omitempty" jsonschema:"Plane label names, e.g. ['bug']. Unknown labels are dropped when the issue is created."`
@@ -81,17 +82,21 @@ func (s *Server) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in Cre
 	if err != nil {
 		return nil, CreateIssueOut{}, err
 	}
+	project, notes, err := s.applyCapture(ctx, &in, x.Project)
+	if err != nil {
+		return nil, CreateIssueOut{}, err
+	}
 	in.Title = strings.TrimSpace(in.Title)
 	if err := errors.Join(checkIssueText(in.Title, in.Description), checkPriority(in.Priority)); err != nil {
 		return nil, CreateIssueOut{}, err
 	}
 	p := store.Proposal{
-		SessionID: x.ID, SessionName: x.Name, Project: x.Project, Title: in.Title,
+		SessionID: x.ID, SessionName: x.Name, Project: project, Title: in.Title,
 		Description: in.Description, Priority: in.Priority, Labels: in.Labels,
 	}
 	if s.d.Plane != nil {
 		// Best effort now; accepting resolves it again.
-		if pp, err := proposals.PlaneProject(ctx, s.proposalDeps(), x.Project); err == nil {
+		if pp, err := proposals.PlaneProject(ctx, s.proposalDeps(), project); err == nil {
 			p.PlaneProjectID = pp.ID
 		}
 	}
@@ -106,7 +111,7 @@ func (s *Server) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in Cre
 		return nil, CreateIssueOut{
 			Issue: proposalOut(p),
 			Message: fmt.Sprintf("Proposed as %s. The user will accept, edit or drop it on forge's Home screen; "+
-				"it is not in Plane yet. Mention %s in your summary.", p.Handle(), p.Handle()),
+				"it is not in Plane yet. Mention %s in your summary.", p.Handle(), p.Handle()) + notes,
 		}, nil
 	}
 	acc, err := proposals.Accept(ctx, s.proposalDeps(), p.ID)
@@ -121,6 +126,7 @@ func (s *Server) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in Cre
 	if len(acc.UnknownLabels) > 0 {
 		msg += " Unknown labels left off: " + strings.Join(acc.UnknownLabels, ", ") + "."
 	}
+	msg += notes
 	return nil, CreateIssueOut{Issue: out, Message: msg}, nil
 }
 

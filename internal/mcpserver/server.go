@@ -43,6 +43,10 @@ type Deps struct {
 	PacksDir string
 	Version  string
 	Now      func() time.Time
+	// GitHub serves get_ci_failure; nil when gh isn't available, and
+	// GitHubErr then says why.
+	GitHub    GitHub
+	GitHubErr error
 	// Ping tells a running forge TUI that something changed; nil does
 	// nothing.
 	Ping func(ctx context.Context, p live.Ping)
@@ -136,6 +140,7 @@ func (s *Server) MCP() *mcp.Server {
 	s.addDocTools(srv)
 	s.addArtifactTools(srv)
 	s.addSessionTools(srv)
+	s.addCITools(srv)
 	return srv
 }
 
@@ -147,8 +152,9 @@ func (s *Server) Run(ctx context.Context, t mcp.Transport) error {
 const instructions = `forge tools for this agent session. Use them to hand work back to the user's forge dashboard:
 file follow-up work with create_issue (it becomes a proposal the user triages), record decisions with
 log_decision, keep notes in the project docs with write_doc, pin useful outputs with pin_artifact, and
-report_progress at milestones. Call get_context_pack at the start for session context. Everything you
-write is attributed to this session, its branch and its PR.`
+report_progress at milestones. get_ci_failure gives the error lines of a failing CI run. Call
+get_context_pack at the start for session context. Everything you write is attributed to this session,
+its branch and its PR.`
 
 // session returns the session or ErrNoSession.
 func (s *Server) session() (*store.Session, error) {

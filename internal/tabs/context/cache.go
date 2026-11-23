@@ -30,6 +30,7 @@ const (
 	viewPacks
 	viewCache
 	viewUsage
+	viewCommands
 )
 
 // cacheTimeout bounds measuring (it walks worktrees) and each action.

@@ -261,6 +261,11 @@ type ContextKeys struct {
 	Vacuum        key.Binding // vacuum the database
 	// Usage view (P5.4).
 	Usage key.Binding // switch between memory files and token usage
+	// Commands view (P6.7): forge's slash commands (skills). Edit edits
+	// the selected command's override.
+	Commands     key.Binding // switch between memory files and commands
+	ResetCommand key.Binding // delete the override: back to the built-in
+	SyncCommands key.Binding // re-sync every running session's skills
 }
 
 // FilePickerKeys drive the fuzzy file picker (P5.2). Next / Prev, Accept
@@ -555,6 +560,10 @@ func DefaultKeyMap() *KeyMap {
 			Vacuum:        bind("vacuum database", "V"),
 
 			Usage: bind("memory / usage", "u"),
+
+			Commands:     bind("memory / commands", "m"),
+			ResetCommand: bind("reset to built-in", "X"),
+			SyncCommands: bind("re-sync sessions", "S"),
 		},
 		FilePicker: FilePickerKeys{
 			Toggle:    bind("mark file", "tab"),
@@ -846,6 +855,9 @@ func (k *KeyMap) actions() []action {
 		{"context_cache_orphans", scopeContext, &cx.RemoveOrphans},
 		{"context_cache_vacuum", scopeContext, &cx.Vacuum},
 		{"context_usage", scopeContext, &cx.Usage},
+		{"context_commands", scopeContext, &cx.Commands},
+		{"context_commands_reset", scopeContext, &cx.ResetCommand},
+		{"context_commands_sync", scopeContext, &cx.SyncCommands},
 		{"file_picker_toggle", scopeFilePicker, &fp.Toggle},
 		{"file_picker_toggle_all", scopeFilePicker, &fp.ToggleAll},
 		{"transcript_up", scopeTranscript, &tr.Up},

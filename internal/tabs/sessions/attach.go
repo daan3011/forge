@@ -243,6 +243,9 @@ func resumeNote(msg resumedMsg) string {
 	if r.FetchErr != nil {
 		notes = append(notes, "couldn't fetch origin; branched from the local base")
 	}
+	if r.SkillsErr != nil {
+		notes = append(notes, "some forge slash commands couldn't be written ("+r.SkillsErr.Error()+")")
+	}
 	if r.Fresh {
 		s := "no conversation to resume: started afresh"
 		if msg.opts.ResendPrompt {

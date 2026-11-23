@@ -79,6 +79,9 @@ type Resumed struct {
 	BranchRecreated   bool
 	// FetchErr is set when a recreated branch couldn't fetch its base.
 	FetchErr error
+	// SkillsErr is set when forge's skills couldn't all be written; the
+	// session runs anyway.
+	SkillsErr error
 }
 
 // Resume brings a dead session back: it opens a new tmux window in the
@@ -158,6 +161,14 @@ func (s *Service) Resume(ctx context.Context, x store.Session, o ResumeOpts) (re
 		if err := claude.WriteMCPConfig(launch.MCPConfig, s.c.ForgeBin, x.Name); err != nil {
 			return Resumed{}, err
 		}
+	}
+	if s.c.Skills != nil {
+		// Rewritten on every resume, like the MCP config: --add-dir isn't
+		// restored by --resume, and sessions from before P6.7 get theirs.
+		if err := os.MkdirAll(s.SessionDir(x.Name), 0o700); err != nil {
+			return Resumed{}, fmt.Errorf("session dir: %w", err)
+		}
+		launch.AddDir, res.SkillsErr = s.syncSkills(x)
 	}
 	if _, ok := claude.FindTranscript(s.c.ProjectsDir, x.ClaudeSessionID); ok {
 		launch.Resume = true

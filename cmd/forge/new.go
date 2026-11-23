@@ -23,6 +23,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/sessions/transcript"
 	"github.com/daan3011/forge/internal/sessions/worktree"
+	"github.com/daan3011/forge/internal/slashcmd"
 	"github.com/daan3011/forge/internal/store"
 	sessionstab "github.com/daan3011/forge/internal/tabs/sessions"
 	"github.com/daan3011/forge/internal/templates"
@@ -101,6 +102,7 @@ func newSessionService(cfg *config.Config, st *store.Store) (agent.API, error) {
 		DataDir:     filepath.Join(config.DataHome(), "forge"),
 		ForgeBin:    forgeBin(),
 		Pulls:       githubPulls,
+		Skills:      slashcmd.NewCatalog(),
 	}), nil
 }
 
@@ -246,6 +248,9 @@ preamble and @path mentions of its files start the first prompt.`,
 			}
 			if res.FetchErr != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: couldn't fetch origin; branched from the local base:", res.FetchErr)
+			}
+			if res.SkillsErr != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", res.SkillsErr)
 			}
 			x := res.Session
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "started %s on %s in %s\nattach: tmux -L %s attach -t %s\n",

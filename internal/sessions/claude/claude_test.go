@@ -68,6 +68,16 @@ func TestArgv(t *testing.T) {
 			l:    Launch{SessionID: id, Resume: true, MCPConfig: "/d/mcp.json"},
 			want: []string{"sh", "-c", "exec 'claude' --mcp-config '/d/mcp.json' --resume " + id},
 		},
+		{
+			name: "skills dir and mcp config",
+			l:    Launch{SessionID: id, PromptFile: "/d/p.md", AddDir: "/data/sessions/fix ci/forge", MCPConfig: "/d/mcp.json"},
+			want: []string{"sh", "-c", "exec 'claude' --add-dir '/data/sessions/fix ci/forge' --mcp-config '/d/mcp.json' --session-id " + id + ` -- "$(cat '/d/p.md')"`},
+		},
+		{
+			name: "skills dir on resume",
+			l:    Launch{SessionID: id, Resume: true, AddDir: "/d/forge"},
+			want: []string{"sh", "-c", "exec 'claude' --add-dir '/d/forge' --resume " + id},
+		},
 		{name: "bad id", l: Launch{SessionID: "x; rm -rf /"}, wantErr: true},
 		{name: "bad id on resume", l: Launch{SessionID: "x; rm -rf /", Resume: true}, wantErr: true},
 		{name: "uppercase id", l: Launch{SessionID: strings.ToUpper(id)}, wantErr: true},

@@ -102,29 +102,10 @@ func hasFailing(d github.PRDetail) bool {
 	return false
 }
 
-// FixTargets are the PR's failing checks as failure targets, up to
-// cifix.MaxJobs: Actions jobs with their run and job ids, other checks
-// (commit statuses, third-party apps) by name and URL.
+// FixTargets are the PR's failing checks as failure targets (see
+// cifix.PRTargets).
 func FixTargets(p github.PR, d github.PRDetail) []cifix.Target {
-	var out []cifix.Target
-	for _, c := range d.Checks {
-		if c.State != github.CheckFail {
-			continue
-		}
-		run := cifix.Run{
-			Repo: p.Repo, Workflow: c.Workflow, Branch: p.HeadRef,
-			HeadSHA: d.HeadSHA, CommitMsg: d.HeadMessage,
-		}
-		tg := cifix.Target{Run: run, Job: c.Name, URL: c.URL}
-		if runID, jobID, ok := c.CheckIDs(); ok {
-			tg.Run.ID, tg.JobID = runID, jobID
-		}
-		out = append(out, tg)
-		if len(out) == cifix.MaxJobs {
-			break
-		}
-	}
-	return out
+	return cifix.PRTargets(p.Repo, p.HeadRef, d)
 }
 
 func (t *Tab) fixGathered(msg fixGatheredMsg) tea.Cmd {
