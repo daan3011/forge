@@ -46,10 +46,9 @@ type Ping struct {
 	Changed         bool   `json:"changed,omitempty"`
 }
 
-// DefaultPath is $XDG_DATA_HOME/forge/forge.sock, or
-// ~/.local/share/forge/forge.sock.
+// DefaultPath is config.DataDir()/forge.sock.
 func DefaultPath() string {
-	return filepath.Join(config.DataHome(), "forge", "forge.sock")
+	return filepath.Join(config.DataDir(), "forge.sock")
 }
 
 // Sender delivers pings; `forge hook` takes one so tests can fake it.

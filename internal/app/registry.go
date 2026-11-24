@@ -148,6 +148,7 @@ func (m Model) paletteItems() []item {
 	}
 
 	items = append(items, m.doctorItems()...)
+	items = append(items, m.setupItems()...)
 
 	// Commands of the active tab.
 	if len(m.tabs) > 0 {

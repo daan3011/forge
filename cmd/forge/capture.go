@@ -17,6 +17,7 @@ import (
 	"github.com/daan3011/forge/internal/capture"
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/plane"
+	"github.com/daan3011/forge/internal/sessions/tmux"
 	"github.com/daan3011/forge/internal/store"
 	planetab "github.com/daan3011/forge/internal/tabs/plane"
 	"github.com/daan3011/forge/internal/ui"
@@ -49,7 +50,7 @@ A token that names nothing is an error with the closest match. Without a
 title, forge shows a one-line input with completion (tab); enter creates,
 shift+enter (or alt+enter) opens the full form. Bind it in ~/.tmux.conf:
 
-  bind -n M-c display-popup -E -w 76 -h 8 "forge capture"`,
+  ` + tmux.CaptureSnippet,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cs, err := d.captureSetup(cmd.Context(), cmd.ErrOrStderr())

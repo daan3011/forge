@@ -109,6 +109,7 @@ type Model struct {
 	skills       tabkit.SkillCatalog // from WithSkills
 	notesDir     string              // from WithNotes
 	doctor       DoctorFunc          // from WithDoctor
+	setupCmd     SetupCmd            // from WithSetup
 	providers    *templates.Registry // from WithTemplates
 	browser      browser.Opener      // from WithBrowser
 	github       github.PRClient     // from WithGitHub
@@ -459,6 +460,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doctorDoneMsg:
 		m.openOutput(msg.run)
 		return m, nil
+	case setupDoneMsg:
+		return m.setupDone(msg)
 	case customDetachedMsg:
 		return m.handleCustomDetached(msg)
 

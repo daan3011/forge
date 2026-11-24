@@ -51,8 +51,11 @@ type KeyMap struct {
 	FilePicker FilePickerKeys
 	// Note drives the daily note pane (P6.2), the ctrl+s overlay.
 	Note NoteKeys
-	Demo DemoKeys
-	Tmux TmuxDemoKeys
+	// Setup drives the guided setup (P6.6, `forge setup`), its own
+	// full-screen program.
+	Setup SetupKeys
+	Demo  DemoKeys
+	Tmux  TmuxDemoKeys
 	// Custom are the keys of the user's custom commands (P6.3), set with
 	// SetCustom.
 	Custom []CustomBinding
@@ -388,6 +391,28 @@ type NoteKeys struct {
 	Close    key.Binding
 }
 
+// SetupKeys drive the guided setup (P6.6). It runs as its own program, so
+// these are its only keys; while a form or the key test has focus every key
+// goes there instead.
+type SetupKeys struct {
+	Next       key.Binding // accept the step and go on
+	Skip       key.Binding
+	Rerun      key.Binding // check again / run the step again
+	Up         key.Binding
+	Down       key.Binding
+	Focus      key.Binding // between the step list and the step
+	Login      key.Binding // gh auth login
+	Edit       key.Binding // edit the step's settings (Plane)
+	Test       key.Binding // start the tmux popup test / the smoke test
+	Reset      key.Binding // rewrite an outdated tmux.conf (backed up)
+	Copy       key.Binding // copy the capture snippet
+	Attach     key.Binding // attach to the smoke session
+	AddRoot    key.Binding // add a project root (folder picker)
+	RemoveRoot key.Binding
+	FixLink    key.Binding // pick a project's Plane project
+	Quit       key.Binding
+}
+
 // DemoKeys drive the hidden `forge demo anim` showcase. They are not
 // configurable and not palette commands: the demo is its own program.
 type DemoKeys struct {
@@ -659,6 +684,24 @@ func DefaultKeyMap() *KeyMap {
 			Copy:     bind("copy standup", "y"),
 			Close:    bind("close", "esc", "q"),
 		},
+		Setup: SetupKeys{
+			Next:       bind("continue", "enter"),
+			Skip:       bind("skip", "s"),
+			Rerun:      bind("check again", "r"),
+			Up:         bind("up", "k", "up"),
+			Down:       bind("down", "j", "down"),
+			Focus:      bind("steps / step", "tab"),
+			Login:      bind("gh auth login", "l"),
+			Edit:       bind("edit", "e"),
+			Test:       bind("run test", "t"),
+			Reset:      bind("reset tmux.conf", "R"),
+			Copy:       bind("copy", "c"),
+			Attach:     bind("attach", "a"),
+			AddRoot:    bind("add root", "+"),
+			RemoveRoot: bind("remove root", "-"),
+			FixLink:    bind("fix Plane link", "f"),
+			Quit:       bind("quit", "q", "ctrl+c"),
+		},
 		Demo: DemoKeys{
 			Replay:  bind("replay splash", "r"),
 			Burst:   bind("spark burst", "space"),
@@ -713,6 +756,8 @@ const (
 	// scopeNote is modal too: the daily note pane (P6.2), live with the
 	// list movement keys.
 	scopeNote = "note"
+	// scopeSetup is the guided setup (P6.6), its own program.
+	scopeSetup = "setup"
 )
 
 // isTabScope reports whether scope belongs to one tab (and is active
@@ -722,7 +767,7 @@ func isTabScope(scope string) bool { return strings.HasPrefix(scope, "tab:") }
 func (k *KeyMap) actions() []action {
 	g, l, in, ss, pr, tr, df := &k.Global, &k.List, &k.Input, &k.Sessions, &k.PRs, &k.Transcript, &k.Diff
 	pp, lg, pl, cp, dc, ar := &k.Pipelines, &k.Log, &k.Plane, &k.Capture, &k.Docs, &k.Artifacts
-	cx, fp, hm, nt := &k.Context, &k.FilePicker, &k.Home, &k.Note
+	cx, fp, hm, nt, su := &k.Context, &k.FilePicker, &k.Home, &k.Note, &k.Setup
 	return []action{
 		{"quit", scopeMain, &g.Quit},
 		{"force_quit", scopeMain, &g.ForceQuit},
@@ -920,6 +965,22 @@ func (k *KeyMap) actions() []action {
 		{"note_standup", scopeNote, &nt.Standup},
 		{"note_copy", scopeNote, &nt.Copy},
 		{"note_close", scopeNote, &nt.Close},
+		{"setup_next", scopeSetup, &su.Next},
+		{"setup_skip", scopeSetup, &su.Skip},
+		{"setup_rerun", scopeSetup, &su.Rerun},
+		{"setup_up", scopeSetup, &su.Up},
+		{"setup_down", scopeSetup, &su.Down},
+		{"setup_focus", scopeSetup, &su.Focus},
+		{"setup_login", scopeSetup, &su.Login},
+		{"setup_edit", scopeSetup, &su.Edit},
+		{"setup_test", scopeSetup, &su.Test},
+		{"setup_reset", scopeSetup, &su.Reset},
+		{"setup_copy", scopeSetup, &su.Copy},
+		{"setup_attach", scopeSetup, &su.Attach},
+		{"setup_add_root", scopeSetup, &su.AddRoot},
+		{"setup_remove_root", scopeSetup, &su.RemoveRoot},
+		{"setup_fix_link", scopeSetup, &su.FixLink},
+		{"setup_quit", scopeSetup, &su.Quit},
 		{"cancel", scopeInput, &in.Cancel},
 		{"accept", scopeInput, &in.Accept},
 		{"delete_back", scopeInput, &in.DeleteBack},

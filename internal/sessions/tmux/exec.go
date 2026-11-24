@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/daan3011/forge/internal/envguard"
 	"github.com/daan3011/forge/internal/shell"
 )
 
@@ -27,6 +29,9 @@ type execRunner struct{}
 func (execRunner) run(ctx context.Context, bin string, args []string, stdin string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, bin, args...)
+	// A server started here hands its environment to every agent window:
+	// never temp-dir XDG folders (see envguard).
+	cmd.Env = envguard.Strip(os.Environ())
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
@@ -162,6 +167,29 @@ func (e *Exec) KillServer(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// SocketPath is where tmux keeps the socket called name:
+// $TMUX_TMPDIR (else /tmp)/tmux-<uid>/<name>.
+func SocketPath(name string) string {
+	dir := os.Getenv("TMUX_TMPDIR")
+	if dir == "" {
+		dir = "/tmp"
+	}
+	return filepath.Join(dir, fmt.Sprintf("tmux-%d", os.Getuid()), name)
+}
+
+// Discard kills a throwaway server and removes its socket file, which
+// kill-server leaves behind. Never use it on the forge socket.
+func (e *Exec) Discard(ctx context.Context) error {
+	if e.socket == DefaultSocket {
+		return errors.New("tmux: refusing to discard forge's own server")
+	}
+	err := e.KillServer(ctx)
+	if rmErr := os.Remove(SocketPath(e.socket)); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+		err = errors.Join(err, rmErr)
+	}
+	return err
 }
 
 // EnsureSession implements Driver.
@@ -392,8 +420,8 @@ func (e *Exec) CapturePane(ctx context.Context, t Target, lines int) (string, er
 var popupMinVersion = Version{Major: 3, Minor: 2}
 
 // OuterMdWarning is Attachment.Warning when the outer tmux binds M-d itself.
-const OuterMdWarning = "your ~/.tmux.conf binds M-d; your tmux will catch it before forge's popup. " +
-	"Remove that binding (e.g. `unbind -n M-d`) and reload your tmux config."
+const OuterMdWarning = "your ~/.tmux.conf binds " + DetachKey + "; your tmux will catch it before forge's popup. " +
+	"Remove that binding (e.g. `unbind -n " + DetachKey + "`) and reload your tmux config."
 
 // attachMode decides how to show a window: switch the client when forge runs
 // inside its own server, a popup of the outer tmux when inside another one
@@ -446,7 +474,7 @@ func (e *Exec) attachCmd(ctx context.Context, t Target) *exec.Cmd {
 	// From inside the user's own tmux (only on tmux < 3.2, else it's a popup)
 	// attaching would be refused as nesting; forge's server is a different
 	// one, so drop the markers.
-	cmd.Env = withoutTmuxEnv(os.Environ())
+	cmd.Env = withoutTmuxEnv(envguard.Strip(os.Environ()))
 	return cmd
 }
 
@@ -472,12 +500,12 @@ func (e *Exec) popup(ctx context.Context, t Target) Attachment {
 // outerBindsMd reports whether the outer tmux binds M-d in its root table,
 // which would catch the key before the popup's forge client sees it.
 func (e *Exec) outerBindsMd(ctx context.Context) bool {
-	out, err := e.outer(ctx, "list-keys", "-T", "root", "M-d")
+	out, err := e.outer(ctx, "list-keys", "-T", "root", DetachKey)
 	if err != nil {
 		return false
 	}
 	for line := range strings.SplitSeq(out, "\n") {
-		if strings.Contains(line, "M-d") {
+		if strings.Contains(line, DetachKey) {
 			return true
 		}
 	}

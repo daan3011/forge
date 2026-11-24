@@ -66,7 +66,7 @@ func newCaches(cfg *config.Config, st *store.Store, svc agent.API) *cachectl.Con
 		Sessions:     sessions,
 		Projects:     cfg.Projects,
 		WorktreeRoot: cfg.Sessions.WorktreeRoot,
-		DataDir:      filepath.Join(config.DataHome(), "forge"),
+		DataDir:      config.DataDir(),
 		Dirty:        cachectl.DirtyFromGit(g),
 	})
 }
@@ -105,7 +105,7 @@ func sessionConfig(cfg *config.Config, st *store.Store, drv tmux.Driver, conf st
 		Projects:    cfg.Projects,
 		Recent:      st.Projects(),
 		Transcripts: transcript.StorePersister(st.Cache()),
-		DataDir:     filepath.Join(config.DataHome(), "forge"),
+		DataDir:     config.DataDir(),
 		ForgeBin:    forgeBin(),
 		Pulls:       githubPulls,
 		Skills:      slashcmd.NewCatalog(),

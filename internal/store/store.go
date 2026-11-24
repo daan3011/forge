@@ -48,10 +48,10 @@ func WithClock(now func() time.Time) Option {
 	return func(s *Store) { s.now = now }
 }
 
-// DefaultPath returns $XDG_DATA_HOME/forge/forge.db, or
-// ~/.local/share/forge/forge.db.
+// DefaultPath returns config.DataDir()/forge.db: $FORGE_DATA_DIR/forge.db,
+// $XDG_DATA_HOME/forge/forge.db or ~/.local/share/forge/forge.db.
 func DefaultPath() string {
-	return filepath.Join(config.DataHome(), "forge", "forge.db")
+	return filepath.Join(config.DataDir(), "forge.db")
 }
 
 // Open opens (creating if needed) the database at path and applies any

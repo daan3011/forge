@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/daan3011/forge/internal/sessions/alert"
 	"github.com/daan3011/forge/internal/sessions/live"
 	"github.com/daan3011/forge/internal/sessions/tmux"
+	"github.com/daan3011/forge/internal/setup/wizard"
 	"github.com/daan3011/forge/internal/slashcmd"
 	"github.com/daan3011/forge/internal/store"
 	"github.com/daan3011/forge/internal/templates"
@@ -79,6 +81,10 @@ type deps struct {
 	// machine; doctorPrepare replaces re-preparing a session in --fix.
 	doctorFake    func(*doctor.Env)
 	doctorPrepare func(context.Context, store.Session) error
+	// setupProgram replaces running the setup wizard on the terminal;
+	// isTTY replaces the terminal check of the first-launch setup.
+	setupProgram func(*wizard.Model) error
+	isTTY        func() bool
 }
 
 func (d deps) sessions(cfg *config.Config, st *store.Store) (agent.API, error) {
@@ -129,6 +135,15 @@ func newRootCmd(d deps) *cobra.Command {
 				return err
 			}
 			defer func() { _ = st.Close() }()
+			ran, err := d.firstRunSetup(cmd.Context(), cfg, path, created, st, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			if ran { // setup may have changed the config
+				if cfg, err = config.Load(path); err != nil {
+					return err
+				}
+			}
 			here := d.resolveProjects(cmd.Context(), cfg, st, cmd.ErrOrStderr())
 			svc, err := d.sessions(cfg, st)
 			if err != nil {
@@ -203,8 +218,18 @@ func newRootCmd(d deps) *cobra.Command {
 				_ = doctor.Render(&b, checks, doctor.Styles{})
 				return b.String(), doctor.Failed(checks)
 			}))
+			opts = append(opts, app.WithSetup(func(step string) *exec.Cmd {
+				args := []string{"setup"}
+				if step != "" {
+					args = append(args, step)
+				}
+				return exec.CommandContext(context.Background(), forgeBin(), args...) //nolint:gosec // forge's own binary
+			}))
 			if n, ok := tmuxNotice(); ok {
 				opts = append(opts, n)
+			}
+			if show, _ := setupNotice(cmd.Context(), st); show && !ran {
+				opts = append(opts, app.WithNotice("setup-available", setupNoticeText))
 			}
 			model, err := app.New(cfg, opts...)
 			if err != nil {
@@ -234,6 +259,7 @@ func newRootCmd(d deps) *cobra.Command {
 		newMCPCmd(d),
 		newTemplatesCmd(d),
 		newDoctorCmd(d),
+		newSetupCmd(d),
 		newDemoCmd(),
 	)
 	return root

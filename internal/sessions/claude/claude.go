@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/daan3011/forge/internal/envguard"
 	"github.com/daan3011/forge/internal/shell"
 )
 
@@ -56,7 +57,8 @@ type Launch struct {
 	AddDir string
 }
 
-// Argv returns the command to run in the agent's window:
+// Argv returns the command to run in the agent's window, after the
+// envguard.Shell prefix:
 //
 //	sh -c 'exec <bin> --session-id <id> -- "$(cat <file>)"'
 //	sh -c 'exec <bin> --resume <id>'                         (Resume)
@@ -77,7 +79,8 @@ func (l Launch) Argv() ([]string, error) {
 	if bin == "" {
 		bin = DefaultBin
 	}
-	head := "exec " + shell.Quote(bin)
+	// The guard drops temp-dir XDG variables the tmux server may carry.
+	head := envguard.Shell + "exec " + shell.Quote(bin)
 	if l.AddDir != "" {
 		head += " --add-dir " + shell.Quote(l.AddDir)
 	}

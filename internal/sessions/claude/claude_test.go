@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/daan3011/forge/internal/envguard"
 )
 
 const id = "0b5f3c3e-8a1d-4c2b-9f00-1234567890ab"
@@ -94,6 +96,7 @@ func TestArgv(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			tt.want[2] = envguard.Shell + tt.want[2]
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Argv =\n%q\nwant\n%q", got, tt.want)
 			}
@@ -153,5 +156,46 @@ func TestArgvDeliversPromptVerbatim(t *testing.T) {
 				t.Errorf("args =\n%q\nwant\n%q", args, want)
 			}
 		})
+	}
+}
+
+// TestArgvDropsTempXDG runs the launch through a real sh with a stand-in
+// claude that records its environment: a temp-dir XDG_DATA_HOME (as a
+// tmux server started from a test shell would carry) never reaches it,
+// while forge's own FORGE_DATA_DIR does.
+func TestArgvDropsTempXDG(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	dir := t.TempDir()
+	out := filepath.Join(dir, "env")
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nenv > \"$FORGE_ENV_OUT\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argv, err := Launch{Bin: bin, SessionID: id}.Argv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), argv[0], argv[1:]...)
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"), "FORGE_ENV_OUT=" + out,
+		"XDG_DATA_HOME=" + filepath.Join(os.TempDir(), "forge-test", "data"),
+		"XDG_CONFIG_HOME=/private/tmp/forge-test/config",
+		"FORGE_DATA_DIR=/clean/data",
+	}
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, b)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := string(raw)
+	if strings.Contains(env, "XDG_DATA_HOME=") || strings.Contains(env, "XDG_CONFIG_HOME=") {
+		t.Errorf("temp-dir XDG variables reached claude:\n%s", env)
+	}
+	if !strings.Contains(env, "FORGE_DATA_DIR=/clean/data") {
+		t.Errorf("FORGE_DATA_DIR missing:\n%s", env)
 	}
 }

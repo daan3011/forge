@@ -129,7 +129,8 @@ func TestPushRecent(t *testing.T) {
 // pipeline_cancel / pipeline_fix / pipeline_fix_edit commands. The quick
 // capture line's keys edit and submit the line (capture opens it). The
 // note pane's keys only work inside it (note, note_standup, note_copy and
-// note_external are commands).
+// note_external are commands). The setup keys only work inside the setup
+// wizard, its own program; "Run setup" and "Run setup: <step>" open it.
 var notRegistered = []string{
 	"force_quit", "palette",
 	"up", "down", "top", "bottom", "page_down", "page_up",
@@ -148,6 +149,9 @@ var notRegistered = []string{
 	"capture_delete_word", "capture_delete_forward",
 	"file_picker_toggle", "file_picker_toggle_all",
 	"note_edit", "note_prev_day", "note_next_day", "note_today", "note_close",
+	"setup_next", "setup_skip", "setup_rerun", "setup_up", "setup_down", "setup_focus",
+	"setup_login", "setup_edit", "setup_test", "setup_reset", "setup_copy", "setup_attach",
+	"setup_add_root", "setup_remove_root", "setup_fix_link", "setup_quit",
 }
 
 // TestEveryActionIsACommand guards the "every user action is a palette
