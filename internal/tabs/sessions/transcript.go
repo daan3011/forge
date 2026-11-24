@@ -334,6 +334,11 @@ func (t *Tab) transcriptFollow() tea.Cmd {
 	return nil
 }
 
+// ViewerCommands are the transcript viewer's palette commands, for the key
+// inventory (`forge keys --dump`): the palette offers them only while the
+// viewer is open.
+func (t *Tab) ViewerCommands() []tabs.Command { return t.transcriptCommands() }
+
 // transcriptCommands are the viewer's palette commands, offered while it is
 // open.
 func (t *Tab) transcriptCommands() []tabs.Command {

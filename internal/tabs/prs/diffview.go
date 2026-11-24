@@ -683,6 +683,11 @@ func (t *Tab) diffHelp() []key.Binding {
 	return []key.Binding{k.NextFile, k.PrevFile, k.Down, k.Up, k.Approve, k.RequestChanges, k.Comment, k.Close}
 }
 
+// ViewerCommands are the diff viewer's palette commands, for the key
+// inventory (`forge keys --dump`): the palette offers them only while the
+// viewer is open.
+func (t *Tab) ViewerCommands() []tabs.Command { return t.diffCommands() }
+
 func (t *Tab) diffCommands() []tabs.Command {
 	k := t.keys.Diff
 	return []tabs.Command{

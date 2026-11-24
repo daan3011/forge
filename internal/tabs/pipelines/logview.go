@@ -708,6 +708,11 @@ func (t *Tab) logHelp() []key.Binding {
 	return []key.Binding{k.ToggleFull, k.Search, k.NextMatch, k.NextJob, k.RerunFailed, k.Open, k.Close}
 }
 
+// ViewerCommands are the job log viewer's palette commands, for the key
+// inventory (`forge keys --dump`): the palette offers them only while the
+// viewer is open.
+func (t *Tab) ViewerCommands() []tabs.Command { return t.logCommands() }
+
 func (t *Tab) logCommands() []tabs.Command {
 	k := t.keys.Log
 	return []tabs.Command{

@@ -1,0 +1,2711 @@
+[
+  {
+    "id": "quit",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "q"
+    ],
+    "description": "quit",
+    "palette": "Quit forge"
+  },
+  {
+    "id": "force_quit",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+c"
+    ],
+    "description": "force quit"
+  },
+  {
+    "id": "help",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "?"
+    ],
+    "description": "help",
+    "palette": "Show keys"
+  },
+  {
+    "id": "next_tab",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "tab"
+    ],
+    "description": "next tab",
+    "palette": "Next tab"
+  },
+  {
+    "id": "prev_tab",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "shift+tab"
+    ],
+    "description": "prev tab",
+    "palette": "Previous tab"
+  },
+  {
+    "id": "goto_tab",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ],
+    "description": "go to tab",
+    "palette": "Tabs: \u003ctab name\u003e"
+  },
+  {
+    "id": "refresh",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "r"
+    ],
+    "description": "refresh",
+    "palette": "Refresh tab"
+  },
+  {
+    "id": "refresh_all",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "R"
+    ],
+    "description": "refresh all",
+    "palette": "Refresh all tabs"
+  },
+  {
+    "id": "palette",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+k"
+    ],
+    "description": "commands"
+  },
+  {
+    "id": "projects",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+p"
+    ],
+    "description": "switch project",
+    "palette": "Switch project…"
+  },
+  {
+    "id": "goto_session",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+g"
+    ],
+    "description": "go to session",
+    "palette": "Go to session…"
+  },
+  {
+    "id": "capture",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+n"
+    ],
+    "description": "quick capture",
+    "palette": "Quick capture issue…"
+  },
+  {
+    "id": "note",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+s"
+    ],
+    "description": "daily note",
+    "palette": "Daily note"
+  },
+  {
+    "id": "up",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "k",
+      "up"
+    ],
+    "description": "up"
+  },
+  {
+    "id": "down",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "j",
+      "down"
+    ],
+    "description": "down"
+  },
+  {
+    "id": "top",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "g",
+      "home"
+    ],
+    "description": "top"
+  },
+  {
+    "id": "bottom",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "G",
+      "end"
+    ],
+    "description": "bottom"
+  },
+  {
+    "id": "page_down",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+d"
+    ],
+    "description": "half page down"
+  },
+  {
+    "id": "page_up",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "ctrl+u"
+    ],
+    "description": "half page up"
+  },
+  {
+    "id": "filter",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "/"
+    ],
+    "description": "filter",
+    "palette": "Filter PRs"
+  },
+  {
+    "id": "grow_pane",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "\u003e"
+    ],
+    "description": "widen list",
+    "palette": "Widen list"
+  },
+  {
+    "id": "shrink_pane",
+    "kind": "global",
+    "scope": "main",
+    "keys": [
+      "\u003c"
+    ],
+    "description": "narrow list",
+    "palette": "Narrow list"
+  },
+  {
+    "id": "session_new",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "n"
+    ],
+    "description": "new session",
+    "palette": "New session…"
+  },
+  {
+    "id": "session_kill",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "x"
+    ],
+    "description": "kill session",
+    "palette": "Kill session…"
+  },
+  {
+    "id": "session_delete",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "D"
+    ],
+    "description": "delete session",
+    "palette": "Delete archived session…"
+  },
+  {
+    "id": "session_archive_view",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "a"
+    ],
+    "description": "archived view",
+    "palette": "Show archived sessions"
+  },
+  {
+    "id": "session_archive",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "A"
+    ],
+    "description": "archive / restore",
+    "palette": "Archive session"
+  },
+  {
+    "id": "session_attach",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "enter"
+    ],
+    "description": "attach",
+    "palette": "Attach session (resume if needed)"
+  },
+  {
+    "id": "session_resume",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "b"
+    ],
+    "description": "background resume",
+    "palette": "Resume session in the background"
+  },
+  {
+    "id": "session_transcript",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "t"
+    ],
+    "description": "transcript",
+    "palette": "Open session transcript"
+  },
+  {
+    "id": "session_open_pr",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "o"
+    ],
+    "description": "open linked PR",
+    "palette": "Open linked PR in browser"
+  },
+  {
+    "id": "session_open_issue",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "O"
+    ],
+    "description": "open linked issue",
+    "palette": "Open linked issue in browser"
+  },
+  {
+    "id": "session_attach_pack",
+    "kind": "tab",
+    "scope": "sessions",
+    "keys": [
+      "P"
+    ],
+    "description": "attach context pack",
+    "palette": "Attach context pack to session…"
+  },
+  {
+    "id": "pr_next_section",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "l",
+      "right"
+    ],
+    "description": "next section",
+    "palette": "PRs: next section"
+  },
+  {
+    "id": "pr_prev_section",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "h",
+      "left"
+    ],
+    "description": "prev section",
+    "palette": "PRs: previous section"
+  },
+  {
+    "id": "pr_repo_filter",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "f"
+    ],
+    "description": "filter by repo",
+    "palette": "PRs: filter by repo…"
+  },
+  {
+    "id": "pr_stale_only",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "S"
+    ],
+    "description": "stale only",
+    "palette": "PRs: show stale only"
+  },
+  {
+    "id": "pr_detail_next",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "]"
+    ],
+    "description": "next detail tab",
+    "palette": "PRs: next detail tab"
+  },
+  {
+    "id": "pr_detail_prev",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "["
+    ],
+    "description": "prev detail tab",
+    "palette": "PRs: previous detail tab"
+  },
+  {
+    "id": "pr_detail_down",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "J"
+    ],
+    "description": "scroll detail down",
+    "palette": "PRs: scroll detail down"
+  },
+  {
+    "id": "pr_detail_up",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "K"
+    ],
+    "description": "scroll detail up",
+    "palette": "PRs: scroll detail up"
+  },
+  {
+    "id": "pr_open",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "o"
+    ],
+    "description": "open in browser",
+    "palette": "PR: open in browser"
+  },
+  {
+    "id": "pr_copy_url",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "y"
+    ],
+    "description": "copy URL",
+    "palette": "PR: copy URL"
+  },
+  {
+    "id": "pr_checkout",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "c"
+    ],
+    "description": "check out",
+    "palette": "PR: check out locally"
+  },
+  {
+    "id": "pr_update_branch",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "u"
+    ],
+    "description": "update branch",
+    "palette": "PR: update branch"
+  },
+  {
+    "id": "pr_merge",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "m"
+    ],
+    "description": "merge",
+    "palette": "PR: merge…"
+  },
+  {
+    "id": "pr_auto_merge",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "M"
+    ],
+    "description": "auto-merge",
+    "palette": "PR: enable auto-merge…"
+  },
+  {
+    "id": "pr_toggle_draft",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "d"
+    ],
+    "description": "toggle draft",
+    "palette": "PR: toggle draft / ready"
+  },
+  {
+    "id": "pr_session",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "s"
+    ],
+    "description": "start session",
+    "palette": "PR: start a forge session"
+  },
+  {
+    "id": "pr_diff",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "v"
+    ],
+    "description": "review diff",
+    "palette": "PR: review diff"
+  },
+  {
+    "id": "pr_runs",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "p"
+    ],
+    "description": "pipeline runs",
+    "palette": "PR: show pipeline runs"
+  },
+  {
+    "id": "pr_fix",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "F"
+    ],
+    "description": "fix failing checks",
+    "palette": "CI: fix this (failing checks)"
+  },
+  {
+    "id": "pr_fix_edit",
+    "kind": "tab",
+    "scope": "prs",
+    "keys": [
+      "alt+f"
+    ],
+    "description": "fix (edit prompt)",
+    "palette": "CI: fix this (edit prompt)…"
+  },
+  {
+    "id": "home_open",
+    "kind": "tab",
+    "scope": "home",
+    "keys": [
+      "enter"
+    ],
+    "description": "do it",
+    "palette": "Home: do it (attach / open diff / show item)"
+  },
+  {
+    "id": "home_fix",
+    "kind": "tab",
+    "scope": "home",
+    "keys": [
+      "F"
+    ],
+    "description": "fix CI",
+    "palette": "Home: fix failing CI of the selected PR"
+  },
+  {
+    "id": "home_merge",
+    "kind": "tab",
+    "scope": "home",
+    "keys": [
+      "m"
+    ],
+    "description": "merge",
+    "palette": "Home: merge the selected PR (asks first)"
+  },
+  {
+    "id": "home_browse",
+    "kind": "tab",
+    "scope": "home",
+    "keys": [
+      "o"
+    ],
+    "description": "open in browser",
+    "palette": "Home: open in browser"
+  },
+  {
+    "id": "home_accept",
+    "kind": "tab",
+    "scope": "home",
+    "keys": [
+      "a"
+    ],
+    "description": "accept proposal",
+    "palette": "Home: accept the proposed issue (create it in Plane)"
+  },
+  {
+    "id": "home_edit",
+    "kind": "tab",
+    "scope": "home",
+    "keys": [
+      "e"
+    ],
+    "description": "edit proposal",
+    "palette": "Home: edit the proposed issue"
+  },
+  {
+    "id": "home_drop",
+    "kind": "tab",
+    "scope": "home",
+    "keys": [
+      "x"
+    ],
+    "description": "drop proposal",
+    "palette": "Home: drop the proposed issue (asks first)"
+  },
+  {
+    "id": "pipeline_filters",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "f"
+    ],
+    "description": "filters",
+    "palette": "Pipelines: filters…"
+  },
+  {
+    "id": "pipeline_mine",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "m"
+    ],
+    "description": "mine only",
+    "palette": "Pipelines: show only mine"
+  },
+  {
+    "id": "pipeline_clear_filters",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "x"
+    ],
+    "description": "clear filters",
+    "palette": "Pipelines: clear filters"
+  },
+  {
+    "id": "pipeline_detail_down",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "J"
+    ],
+    "description": "scroll detail down",
+    "palette": "Pipelines: scroll detail down"
+  },
+  {
+    "id": "pipeline_detail_up",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "K"
+    ],
+    "description": "scroll detail up",
+    "palette": "Pipelines: scroll detail up"
+  },
+  {
+    "id": "pipeline_open",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "o"
+    ],
+    "description": "open in browser",
+    "palette": "Run: open in browser"
+  },
+  {
+    "id": "pipeline_logs",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "l"
+    ],
+    "description": "job logs",
+    "palette": "Run: view failed job logs"
+  },
+  {
+    "id": "pipeline_rerun_failed",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "t"
+    ],
+    "description": "rerun failed jobs",
+    "palette": "Run: rerun failed jobs"
+  },
+  {
+    "id": "pipeline_rerun",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "ctrl+r"
+    ],
+    "description": "rerun whole run",
+    "palette": "Run: rerun whole run…"
+  },
+  {
+    "id": "pipeline_cancel",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "X"
+    ],
+    "description": "cancel run",
+    "palette": "Run: cancel…"
+  },
+  {
+    "id": "pipeline_fix",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "F"
+    ],
+    "description": "fix this",
+    "palette": "CI: fix this"
+  },
+  {
+    "id": "pipeline_fix_edit",
+    "kind": "tab",
+    "scope": "pipelines",
+    "keys": [
+      "alt+f"
+    ],
+    "description": "fix (edit prompt)",
+    "palette": "CI: fix this (edit prompt)…"
+  },
+  {
+    "id": "plane_filters",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "f"
+    ],
+    "description": "filters",
+    "palette": "Plane: filters…"
+  },
+  {
+    "id": "plane_mine",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "m"
+    ],
+    "description": "mine only",
+    "palette": "Plane: show everyone's"
+  },
+  {
+    "id": "plane_clear_filters",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "x"
+    ],
+    "description": "clear filters",
+    "palette": "Plane: clear filters"
+  },
+  {
+    "id": "plane_detail_down",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "J"
+    ],
+    "description": "scroll detail down",
+    "palette": "Plane: scroll detail down"
+  },
+  {
+    "id": "plane_detail_up",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "K"
+    ],
+    "description": "scroll detail up",
+    "palette": "Plane: scroll detail up"
+  },
+  {
+    "id": "plane_open",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "o"
+    ],
+    "description": "open in browser",
+    "palette": "Issue: open in browser"
+  },
+  {
+    "id": "plane_copy_url",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "y"
+    ],
+    "description": "copy URL",
+    "palette": "Issue: copy URL"
+  },
+  {
+    "id": "plane_board",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "b"
+    ],
+    "description": "board / list",
+    "palette": "Plane: show board"
+  },
+  {
+    "id": "plane_col_left",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "h",
+      "left"
+    ],
+    "description": "prev column",
+    "palette": "Board: previous column"
+  },
+  {
+    "id": "plane_col_right",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "l",
+      "right"
+    ],
+    "description": "next column",
+    "palette": "Board: next column"
+  },
+  {
+    "id": "plane_move_prev",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "H"
+    ],
+    "description": "move to prev state",
+    "palette": "Issue: move to previous state"
+  },
+  {
+    "id": "plane_move_next",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "L"
+    ],
+    "description": "move to next state",
+    "palette": "Issue: move to next state"
+  },
+  {
+    "id": "plane_collapse_column",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "z"
+    ],
+    "description": "collapse column",
+    "palette": "Board: collapse / expand column"
+  },
+  {
+    "id": "plane_collapse_empty",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "Z"
+    ],
+    "description": "collapse empty columns",
+    "palette": "Board: collapse / expand empty columns"
+  },
+  {
+    "id": "plane_open_card",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "enter"
+    ],
+    "description": "open card",
+    "palette": "Board: open card"
+  },
+  {
+    "id": "plane_new",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "n"
+    ],
+    "description": "new issue",
+    "palette": "Issue: new…"
+  },
+  {
+    "id": "plane_edit",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "e"
+    ],
+    "description": "edit",
+    "palette": "Issue: edit…"
+  },
+  {
+    "id": "plane_comment",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "c"
+    ],
+    "description": "comment",
+    "palette": "Issue: comment…"
+  },
+  {
+    "id": "plane_session",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "s"
+    ],
+    "description": "start session",
+    "palette": "Issue: start a forge session"
+  },
+  {
+    "id": "plane_cycle",
+    "kind": "tab",
+    "scope": "plane",
+    "keys": [
+      "C"
+    ],
+    "description": "current cycle",
+    "palette": "Plane: current cycle only"
+  },
+  {
+    "id": "docs_new",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "n"
+    ],
+    "description": "new doc",
+    "palette": "Docs: new doc…"
+  },
+  {
+    "id": "docs_edit",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "e"
+    ],
+    "description": "edit in $EDITOR",
+    "palette": "Docs: edit in $EDITOR"
+  },
+  {
+    "id": "docs_rename",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "m"
+    ],
+    "description": "rename / move",
+    "palette": "Docs: rename / move…"
+  },
+  {
+    "id": "docs_delete",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "D"
+    ],
+    "description": "delete (to .trash)",
+    "palette": "Docs: delete (move to .trash)…"
+  },
+  {
+    "id": "docs_open",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "enter",
+      "l",
+      "right"
+    ],
+    "description": "open / expand",
+    "palette": "Docs: open doc / expand folder"
+  },
+  {
+    "id": "docs_back",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "h",
+      "left"
+    ],
+    "description": "back / collapse",
+    "palette": "Docs: back to tree / collapse folder"
+  },
+  {
+    "id": "docs_detail_down",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "J"
+    ],
+    "description": "scroll detail down",
+    "palette": "Docs: scroll doc down"
+  },
+  {
+    "id": "docs_detail_up",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "K"
+    ],
+    "description": "scroll detail up",
+    "palette": "Docs: scroll doc up"
+  },
+  {
+    "id": "docs_mark",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "space"
+    ],
+    "description": "mark for agent",
+    "palette": "Docs: mark / unmark for agent"
+  },
+  {
+    "id": "docs_send",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "s"
+    ],
+    "description": "send to agent",
+    "palette": "Docs: send to agent (new or running session)…"
+  },
+  {
+    "id": "docs_decision",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "a"
+    ],
+    "description": "log decision",
+    "palette": "Docs: log a decision (ADR)…"
+  },
+  {
+    "id": "docs_decisions",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "d"
+    ],
+    "description": "decisions view",
+    "palette": "Docs: toggle decisions view"
+  },
+  {
+    "id": "docs_supersede",
+    "kind": "tab",
+    "scope": "docs",
+    "keys": [
+      "S"
+    ],
+    "description": "mark superseded",
+    "palette": "Docs: mark decision superseded…"
+  },
+  {
+    "id": "artifacts_open",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "o"
+    ],
+    "description": "open",
+    "palette": "Artifacts: open in default app / browser"
+  },
+  {
+    "id": "artifacts_copy_path",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "y"
+    ],
+    "description": "copy path",
+    "palette": "Artifacts: copy path"
+  },
+  {
+    "id": "artifacts_keep",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "c"
+    ],
+    "description": "keep a copy",
+    "palette": "Artifacts: keep a copy in .forge/artifacts"
+  },
+  {
+    "id": "artifacts_pin",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "p"
+    ],
+    "description": "pin / unpin",
+    "palette": "Artifacts: pin / unpin"
+  },
+  {
+    "id": "artifacts_tags",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "t"
+    ],
+    "description": "edit tags",
+    "palette": "Artifacts: edit tags"
+  },
+  {
+    "id": "artifacts_rename",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "m"
+    ],
+    "description": "rename",
+    "palette": "Artifacts: rename (display title)"
+  },
+  {
+    "id": "artifacts_filters",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "f"
+    ],
+    "description": "filters",
+    "palette": "Artifacts: filter by tag / pinned"
+  },
+  {
+    "id": "artifacts_pinned_only",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "P"
+    ],
+    "description": "pinned only",
+    "palette": "Artifacts: toggle pinned only"
+  },
+  {
+    "id": "artifacts_clear_filters",
+    "kind": "tab",
+    "scope": "artifacts",
+    "keys": [
+      "x"
+    ],
+    "description": "clear filters",
+    "palette": "Artifacts: clear filters"
+  },
+  {
+    "id": "context_edit",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "e"
+    ],
+    "description": "edit in $EDITOR",
+    "palette": "Context: edit memory file / pack / command override in $EDITOR"
+  },
+  {
+    "id": "context_worktrees",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "i"
+    ],
+    "description": "worktree inheritance",
+    "palette": "Context: toggle worktree inheritance"
+  },
+  {
+    "id": "context_open",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "enter",
+      "l",
+      "right"
+    ],
+    "description": "focus file",
+    "palette": "Context: focus the rendered file"
+  },
+  {
+    "id": "context_back",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "h",
+      "left"
+    ],
+    "description": "back to list",
+    "palette": "Context: back to the file list"
+  },
+  {
+    "id": "context_detail_down",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "J"
+    ],
+    "description": "scroll detail down",
+    "palette": "Context: scroll file down"
+  },
+  {
+    "id": "context_detail_up",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "K"
+    ],
+    "description": "scroll detail up",
+    "palette": "Context: scroll file up"
+  },
+  {
+    "id": "context_packs",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "p"
+    ],
+    "description": "memory / packs",
+    "palette": "Context: switch memory files / packs"
+  },
+  {
+    "id": "context_new_pack",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "n"
+    ],
+    "description": "new pack",
+    "palette": "Context: new context pack"
+  },
+  {
+    "id": "context_add_files",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "a"
+    ],
+    "description": "pick files",
+    "palette": "Context: pick the pack's files"
+  },
+  {
+    "id": "context_delete_pack",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "D"
+    ],
+    "description": "delete pack",
+    "palette": "Context: delete context pack"
+  },
+  {
+    "id": "context_send_pack",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "s"
+    ],
+    "description": "send pack to session",
+    "palette": "Context: send pack to a session"
+  },
+  {
+    "id": "context_cache",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "c"
+    ],
+    "description": "memory / cache",
+    "palette": "Context: switch memory files / cache"
+  },
+  {
+    "id": "context_cache_clear",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "x"
+    ],
+    "description": "clear",
+    "palette": "Context: clear the selected cache"
+  },
+  {
+    "id": "context_cache_prune",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "P"
+    ],
+    "description": "prune older than…",
+    "palette": "Context: prune cache entries older than N days"
+  },
+  {
+    "id": "context_cache_orphans",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "o"
+    ],
+    "description": "remove orphaned worktrees",
+    "palette": "Context: remove orphaned worktrees"
+  },
+  {
+    "id": "context_cache_vacuum",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "V"
+    ],
+    "description": "vacuum database",
+    "palette": "Context: vacuum the database"
+  },
+  {
+    "id": "context_usage",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "u"
+    ],
+    "description": "memory / usage",
+    "palette": "Context: switch memory files / token usage"
+  },
+  {
+    "id": "context_commands",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "m"
+    ],
+    "description": "memory / commands",
+    "palette": "Context: switch memory files / slash commands"
+  },
+  {
+    "id": "context_commands_reset",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "X"
+    ],
+    "description": "reset to built-in",
+    "palette": "Context: reset the slash command to its built-in"
+  },
+  {
+    "id": "context_commands_sync",
+    "kind": "tab",
+    "scope": "context",
+    "keys": [
+      "S"
+    ],
+    "description": "re-sync sessions",
+    "palette": "Context: re-sync slash commands into all running sessions"
+  },
+  {
+    "id": "file_picker_toggle",
+    "kind": "modal",
+    "scope": "filepicker",
+    "keys": [
+      "tab"
+    ],
+    "description": "mark file"
+  },
+  {
+    "id": "file_picker_toggle_all",
+    "kind": "modal",
+    "scope": "filepicker",
+    "keys": [
+      "ctrl+a"
+    ],
+    "description": "mark all shown"
+  },
+  {
+    "id": "transcript_up",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "k",
+      "up"
+    ],
+    "description": "prev entry"
+  },
+  {
+    "id": "transcript_down",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "j",
+      "down"
+    ],
+    "description": "next entry"
+  },
+  {
+    "id": "transcript_page_up",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "ctrl+u",
+      "pgup"
+    ],
+    "description": "page up"
+  },
+  {
+    "id": "transcript_page_down",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "ctrl+d",
+      "pgdown"
+    ],
+    "description": "page down"
+  },
+  {
+    "id": "transcript_top",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "g",
+      "home"
+    ],
+    "description": "first entry"
+  },
+  {
+    "id": "transcript_bottom",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "G",
+      "end"
+    ],
+    "description": "last entry"
+  },
+  {
+    "id": "transcript_toggle",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "enter"
+    ],
+    "description": "expand tool call",
+    "palette": "Transcript: expand / collapse tool call"
+  },
+  {
+    "id": "transcript_toggle_all",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "e"
+    ],
+    "description": "expand all",
+    "palette": "Transcript: expand / collapse all tool calls"
+  },
+  {
+    "id": "transcript_follow",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "f"
+    ],
+    "description": "follow",
+    "palette": "Transcript: follow new entries"
+  },
+  {
+    "id": "transcript_close",
+    "kind": "overlay",
+    "scope": "transcript",
+    "keys": [
+      "esc",
+      "q"
+    ],
+    "description": "close",
+    "palette": "Transcript: close"
+  },
+  {
+    "id": "diff_up",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "k",
+      "up"
+    ],
+    "description": "scroll up"
+  },
+  {
+    "id": "diff_down",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "j",
+      "down"
+    ],
+    "description": "scroll down"
+  },
+  {
+    "id": "diff_page_up",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "ctrl+u",
+      "pgup"
+    ],
+    "description": "page up"
+  },
+  {
+    "id": "diff_page_down",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "ctrl+d",
+      "pgdown",
+      "space"
+    ],
+    "description": "page down"
+  },
+  {
+    "id": "diff_top",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "g",
+      "home"
+    ],
+    "description": "top"
+  },
+  {
+    "id": "diff_bottom",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "G",
+      "end"
+    ],
+    "description": "bottom"
+  },
+  {
+    "id": "diff_next_file",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "n"
+    ],
+    "description": "next file",
+    "palette": "Diff: next file"
+  },
+  {
+    "id": "diff_prev_file",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "p"
+    ],
+    "description": "prev file",
+    "palette": "Diff: previous file"
+  },
+  {
+    "id": "diff_approve",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "a"
+    ],
+    "description": "approve",
+    "palette": "PR: approve…"
+  },
+  {
+    "id": "diff_request_changes",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "x"
+    ],
+    "description": "request changes",
+    "palette": "PR: request changes…"
+  },
+  {
+    "id": "diff_comment",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "C"
+    ],
+    "description": "comment",
+    "palette": "PR: comment…"
+  },
+  {
+    "id": "diff_open",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "o"
+    ],
+    "description": "open in browser",
+    "palette": "PR: open in browser"
+  },
+  {
+    "id": "diff_close",
+    "kind": "overlay",
+    "scope": "diff",
+    "keys": [
+      "esc",
+      "q"
+    ],
+    "description": "close",
+    "palette": "Diff: close"
+  },
+  {
+    "id": "log_up",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "k",
+      "up"
+    ],
+    "description": "scroll up"
+  },
+  {
+    "id": "log_down",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "j",
+      "down"
+    ],
+    "description": "scroll down"
+  },
+  {
+    "id": "log_page_up",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "ctrl+u",
+      "pgup"
+    ],
+    "description": "page up"
+  },
+  {
+    "id": "log_page_down",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "ctrl+d",
+      "pgdown",
+      "space"
+    ],
+    "description": "page down"
+  },
+  {
+    "id": "log_top",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "g",
+      "home"
+    ],
+    "description": "top"
+  },
+  {
+    "id": "log_bottom",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "G",
+      "end"
+    ],
+    "description": "bottom"
+  },
+  {
+    "id": "log_toggle_full",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "e"
+    ],
+    "description": "full log / errors",
+    "palette": "Log: full log / errors only"
+  },
+  {
+    "id": "log_search",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "/"
+    ],
+    "description": "search",
+    "palette": "Log: search"
+  },
+  {
+    "id": "log_next_match",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "n"
+    ],
+    "description": "next match",
+    "palette": "Log: next match"
+  },
+  {
+    "id": "log_prev_match",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "N"
+    ],
+    "description": "prev match",
+    "palette": "Log: previous match"
+  },
+  {
+    "id": "log_next_job",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "]"
+    ],
+    "description": "next failed job",
+    "palette": "Log: next failed job"
+  },
+  {
+    "id": "log_prev_job",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "["
+    ],
+    "description": "prev failed job",
+    "palette": "Log: previous failed job"
+  },
+  {
+    "id": "log_rerun_failed",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "t",
+      "R"
+    ],
+    "description": "rerun failed jobs",
+    "palette": "Run: rerun failed jobs"
+  },
+  {
+    "id": "log_rerun",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "ctrl+r"
+    ],
+    "description": "rerun whole run",
+    "palette": "Run: rerun whole run…"
+  },
+  {
+    "id": "log_cancel",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "X"
+    ],
+    "description": "cancel run",
+    "palette": "Run: cancel…"
+  },
+  {
+    "id": "log_fix",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "F"
+    ],
+    "description": "fix this",
+    "palette": "CI: fix this"
+  },
+  {
+    "id": "log_fix_edit",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "alt+f"
+    ],
+    "description": "fix (edit prompt)",
+    "palette": "CI: fix this (edit prompt)…"
+  },
+  {
+    "id": "log_open",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "o"
+    ],
+    "description": "open job in browser",
+    "palette": "Log: open job in browser"
+  },
+  {
+    "id": "log_close",
+    "kind": "overlay",
+    "scope": "log",
+    "keys": [
+      "esc",
+      "q"
+    ],
+    "description": "close",
+    "palette": "Log: close"
+  },
+  {
+    "id": "capture_submit",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "enter"
+    ],
+    "description": "create"
+  },
+  {
+    "id": "capture_full_form",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "shift+enter",
+      "alt+enter"
+    ],
+    "description": "full form"
+  },
+  {
+    "id": "capture_complete",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "tab"
+    ],
+    "description": "complete"
+  },
+  {
+    "id": "capture_complete_prev",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "shift+tab"
+    ],
+    "description": "prev completion"
+  },
+  {
+    "id": "capture_left",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "left",
+      "ctrl+b"
+    ],
+    "description": "left"
+  },
+  {
+    "id": "capture_right",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "right",
+      "ctrl+f"
+    ],
+    "description": "right"
+  },
+  {
+    "id": "capture_home",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "home",
+      "ctrl+a"
+    ],
+    "description": "start of line"
+  },
+  {
+    "id": "capture_end",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "end",
+      "ctrl+e"
+    ],
+    "description": "end of line"
+  },
+  {
+    "id": "capture_delete_word",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "ctrl+w",
+      "alt+backspace"
+    ],
+    "description": "delete word"
+  },
+  {
+    "id": "capture_delete_forward",
+    "kind": "modal",
+    "scope": "capture",
+    "keys": [
+      "delete"
+    ],
+    "description": "delete char under cursor"
+  },
+  {
+    "id": "note_edit",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "e",
+      "enter"
+    ],
+    "description": "edit"
+  },
+  {
+    "id": "note_external",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "E"
+    ],
+    "description": "$EDITOR",
+    "palette": "Edit daily note in $EDITOR"
+  },
+  {
+    "id": "note_prev_day",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "["
+    ],
+    "description": "prev day"
+  },
+  {
+    "id": "note_next_day",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "]"
+    ],
+    "description": "next day"
+  },
+  {
+    "id": "note_today",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "t"
+    ],
+    "description": "today"
+  },
+  {
+    "id": "note_standup",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "s"
+    ],
+    "description": "standup",
+    "palette": "Generate standup"
+  },
+  {
+    "id": "note_copy",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "y"
+    ],
+    "description": "copy standup",
+    "palette": "Copy last standup"
+  },
+  {
+    "id": "note_close",
+    "kind": "overlay",
+    "scope": "note",
+    "keys": [
+      "esc",
+      "q"
+    ],
+    "description": "close"
+  },
+  {
+    "id": "setup_next",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "enter"
+    ],
+    "description": "continue"
+  },
+  {
+    "id": "setup_skip",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "s"
+    ],
+    "description": "skip"
+  },
+  {
+    "id": "setup_rerun",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "r"
+    ],
+    "description": "check again"
+  },
+  {
+    "id": "setup_up",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "k",
+      "up"
+    ],
+    "description": "up"
+  },
+  {
+    "id": "setup_down",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "j",
+      "down"
+    ],
+    "description": "down"
+  },
+  {
+    "id": "setup_focus",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "tab"
+    ],
+    "description": "steps / step"
+  },
+  {
+    "id": "setup_login",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "l"
+    ],
+    "description": "gh auth login"
+  },
+  {
+    "id": "setup_edit",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "e"
+    ],
+    "description": "edit"
+  },
+  {
+    "id": "setup_test",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "t"
+    ],
+    "description": "run test"
+  },
+  {
+    "id": "setup_reset",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "R"
+    ],
+    "description": "reset tmux.conf"
+  },
+  {
+    "id": "setup_copy",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "c"
+    ],
+    "description": "copy"
+  },
+  {
+    "id": "setup_attach",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "a"
+    ],
+    "description": "attach"
+  },
+  {
+    "id": "setup_add_root",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "+"
+    ],
+    "description": "add root"
+  },
+  {
+    "id": "setup_remove_root",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "-"
+    ],
+    "description": "remove root"
+  },
+  {
+    "id": "setup_fix_link",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "f"
+    ],
+    "description": "fix Plane link"
+  },
+  {
+    "id": "setup_quit",
+    "kind": "program",
+    "scope": "setup",
+    "keys": [
+      "q",
+      "ctrl+c"
+    ],
+    "description": "quit"
+  },
+  {
+    "id": "cancel",
+    "kind": "modal",
+    "scope": "input",
+    "keys": [
+      "esc"
+    ],
+    "description": "cancel"
+  },
+  {
+    "id": "accept",
+    "kind": "modal",
+    "scope": "input",
+    "keys": [
+      "enter"
+    ],
+    "description": "accept"
+  },
+  {
+    "id": "delete_back",
+    "kind": "modal",
+    "scope": "input",
+    "keys": [
+      "backspace"
+    ],
+    "description": "delete char"
+  },
+  {
+    "id": "clear_input",
+    "kind": "modal",
+    "scope": "input",
+    "keys": [
+      "ctrl+u"
+    ],
+    "description": "clear input"
+  },
+  {
+    "id": "next",
+    "kind": "modal",
+    "scope": "input",
+    "keys": [
+      "down",
+      "ctrl+n"
+    ],
+    "description": "next"
+  },
+  {
+    "id": "prev",
+    "kind": "modal",
+    "scope": "input",
+    "keys": [
+      "up",
+      "ctrl+p"
+    ],
+    "description": "prev"
+  },
+  {
+    "id": "form_cancel",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "esc"
+    ],
+    "description": "cancel",
+    "fixed": true
+  },
+  {
+    "id": "form_next_field",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "enter",
+      "tab"
+    ],
+    "description": "next",
+    "fixed": true
+  },
+  {
+    "id": "form_prev_field",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "shift+tab"
+    ],
+    "description": "back",
+    "fixed": true
+  },
+  {
+    "id": "form_submit",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "enter"
+    ],
+    "description": "submit",
+    "fixed": true
+  },
+  {
+    "id": "form_accept_suggestion",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "ctrl+e"
+    ],
+    "description": "complete",
+    "fixed": true
+  },
+  {
+    "id": "form_text_newline",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "alt+enter",
+      "ctrl+j"
+    ],
+    "description": "new line",
+    "fixed": true
+  },
+  {
+    "id": "form_text_editor",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "ctrl+e"
+    ],
+    "description": "open editor",
+    "fixed": true
+  },
+  {
+    "id": "form_select_up",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "up",
+      "k",
+      "ctrl+k",
+      "ctrl+p"
+    ],
+    "description": "up",
+    "fixed": true
+  },
+  {
+    "id": "form_select_down",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "down",
+      "j",
+      "ctrl+j",
+      "ctrl+n"
+    ],
+    "description": "down",
+    "fixed": true
+  },
+  {
+    "id": "form_select_filter",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "/"
+    ],
+    "description": "filter",
+    "fixed": true
+  },
+  {
+    "id": "form_multiselect_toggle",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "space",
+      "x"
+    ],
+    "description": "toggle",
+    "fixed": true
+  },
+  {
+    "id": "form_multiselect_all",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "ctrl+a"
+    ],
+    "description": "select all",
+    "fixed": true
+  },
+  {
+    "id": "form_confirm_toggle",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "h",
+      "l",
+      "right",
+      "left"
+    ],
+    "description": "toggle",
+    "fixed": true
+  },
+  {
+    "id": "form_confirm_accept",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "y",
+      "Y"
+    ],
+    "description": "Yes",
+    "fixed": true
+  },
+  {
+    "id": "form_confirm_reject",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "n",
+      "N"
+    ],
+    "description": "No",
+    "fixed": true
+  },
+  {
+    "id": "form_confirm_submit",
+    "kind": "modal",
+    "scope": "form",
+    "keys": [
+      "enter"
+    ],
+    "description": "submit",
+    "fixed": true
+  },
+  {
+    "id": "demo_anim_replay",
+    "kind": "program",
+    "scope": "demo anim",
+    "keys": [
+      "r"
+    ],
+    "description": "replay splash",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_anim_burst",
+    "kind": "program",
+    "scope": "demo anim",
+    "keys": [
+      "space"
+    ],
+    "description": "spark burst",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_anim_full",
+    "kind": "program",
+    "scope": "demo anim",
+    "keys": [
+      "1"
+    ],
+    "description": "full",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_anim_reduced",
+    "kind": "program",
+    "scope": "demo anim",
+    "keys": [
+      "2"
+    ],
+    "description": "reduced",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_anim_off",
+    "kind": "program",
+    "scope": "demo anim",
+    "keys": [
+      "3"
+    ],
+    "description": "off",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_anim_quit",
+    "kind": "program",
+    "scope": "demo anim",
+    "keys": [
+      "q",
+      "esc",
+      "ctrl+c"
+    ],
+    "description": "quit",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_tmux_attach",
+    "kind": "program",
+    "scope": "demo tmux",
+    "keys": [
+      "enter"
+    ],
+    "description": "attach",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_tmux_restart",
+    "kind": "program",
+    "scope": "demo tmux",
+    "keys": [
+      "n"
+    ],
+    "description": "new window",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_tmux_kill",
+    "kind": "program",
+    "scope": "demo tmux",
+    "keys": [
+      "x"
+    ],
+    "description": "kill window",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "demo_tmux_quit",
+    "kind": "program",
+    "scope": "demo tmux",
+    "keys": [
+      "q",
+      "ctrl+c"
+    ],
+    "description": "quit",
+    "fixed": true,
+    "hidden": true
+  },
+  {
+    "id": "tmux_detach_client",
+    "kind": "agent-window",
+    "scope": "tmux",
+    "keys": [
+      "alt+d"
+    ],
+    "description": "detach, back to forge (or close the popup forge opened)",
+    "fixed": true
+  },
+  {
+    "id": "tmux_copy_mode",
+    "kind": "agent-window",
+    "scope": "tmux",
+    "keys": [
+      "alt+["
+    ],
+    "description": "scroll / copy mode (q leaves it; the mouse wheel works too)",
+    "fixed": true
+  },
+  {
+    "id": "tmux_choose_tree",
+    "kind": "agent-window",
+    "scope": "tmux",
+    "keys": [
+      "alt+w"
+    ],
+    "description": "pick any agent window from a tree, zoomed",
+    "fixed": true
+  },
+  {
+    "id": "tmux_display_popup",
+    "kind": "agent-window",
+    "scope": "tmux",
+    "keys": [
+      "alt+c"
+    ],
+    "description": "quick capture a Plane issue in a popup (forge capture; tmux 3.2+)",
+    "fixed": true
+  },
+  {
+    "id": "notify_test",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Notifications: send test notification"
+  },
+  {
+    "id": "adr",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Log a decision (ADR)…"
+  },
+  {
+    "id": "templates_edit",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Edit templates"
+  },
+  {
+    "id": "templates_sync",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Templates: sync forge tools section"
+  },
+  {
+    "id": "doctor",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run doctor"
+  },
+  {
+    "id": "setup",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup"
+  },
+  {
+    "id": "setup_deps",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: Dependencies"
+  },
+  {
+    "id": "setup_github",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: GitHub"
+  },
+  {
+    "id": "setup_plane",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: Plane"
+  },
+  {
+    "id": "setup_projects",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: Projects"
+  },
+  {
+    "id": "setup_tmux",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: tmux"
+  },
+  {
+    "id": "setup_animations",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: Animations"
+  },
+  {
+    "id": "setup_capture",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: Quick capture"
+  },
+  {
+    "id": "setup_smoke",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Run setup: Smoke test"
+  },
+  {
+    "id": "pr_section_my-prs",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "PRs: My PRs"
+  },
+  {
+    "id": "pr_section_review-requested",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "PRs: Review requested"
+  },
+  {
+    "id": "pr_section_involved",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "PRs: Involved"
+  },
+  {
+    "id": "pr_detail_overview",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "PRs: show overview"
+  },
+  {
+    "id": "pr_detail_checks",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "PRs: show checks"
+  },
+  {
+    "id": "pr_detail_activity",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "PRs: show activity"
+  },
+  {
+    "id": "plane_link_project",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Plane: link project…"
+  },
+  {
+    "id": "tmux_restart",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "tmux: restart forge server…"
+  },
+  {
+    "id": "tmux_config",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "tmux: edit forge tmux config"
+  },
+  {
+    "id": "tmux_config_reset",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "tmux: reset forge tmux config…"
+  },
+  {
+    "id": "artifacts_detach",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Artifacts: detach from session (stop syncing the pinned copy)"
+  },
+  {
+    "id": "artifacts_redraw_preview",
+    "kind": "palette",
+    "scope": "palette",
+    "keys": [],
+    "description": "",
+    "palette": "Artifacts: redraw preview"
+  }
+]

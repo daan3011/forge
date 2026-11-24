@@ -260,6 +260,7 @@ func newRootCmd(d deps) *cobra.Command {
 		newTemplatesCmd(d),
 		newDoctorCmd(d),
 		newSetupCmd(d),
+		newKeysCmd(d),
 		newDemoCmd(),
 	)
 	return root
