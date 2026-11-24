@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daan3011/forge/internal/envguard"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
 	"github.com/daan3011/forge/internal/sessions/tmux"
@@ -76,8 +77,13 @@ type Session struct {
 
 // Env is everything the checks look at; every field can be faked.
 type Env struct {
-	GOOS     string
+	GOOS string
+	// Distro is the Linux package manager family (DetectDistro); empty
+	// elsewhere or when unknown.
+	Distro   string
 	LookPath func(string) (string, error)
+	// Getenv reads the environment (the XDG check); nil skips that check.
+	Getenv func(string) string
 	// Output runs a command and returns its combined, trimmed output.
 	Output       func(ctx context.Context, bin string, args ...string) (string, error)
 	Lstat        func(string) (fs.FileInfo, error)
@@ -144,26 +150,78 @@ var (
 	TmuxGood = tmux.Version{Major: 3, Minor: 3}
 )
 
+// Check names, for RunOnly.
+const (
+	NameForge      = "forge"
+	NameConfig     = "config"
+	NameDatabase   = "database"
+	NameGit        = "git"
+	NameGH         = "gh"
+	NameTmux       = "tmux"
+	NameTmuxConf   = "tmux config"
+	NameTmuxServer = "tmux server"
+	NameClaude     = "claude"
+	NameDelta      = "delta"
+	NameChafa      = "chafa"
+	NameRsvg       = "rsvg-convert"
+	NameXDG        = "xdg dirs"
+	NamePlane      = "plane"
+	NameHooks      = "hooks"
+	NameMCP        = "mcp config"
+	NameSkills     = "skills"
+)
+
+type namedCheck struct {
+	name string
+	run  func(context.Context, Env) Check
+}
+
+// checks are every check in report order.
+func checks() []namedCheck {
+	return []namedCheck{
+		{NameForge, checkForge},
+		{NameConfig, checkConfig},
+		{NameDatabase, checkStore},
+		{NameGit, checkGit},
+		{NameGH, checkGH},
+		{NameTmux, checkTmux},
+		{NameTmuxConf, checkTmuxConf},
+		{NameTmuxServer, checkTmuxServer},
+		{NameClaude, checkClaude},
+		{NameDelta, optional(NameDelta, "diffs are coloured by forge instead", "git-delta")},
+		{NameChafa, optional(NameChafa, "image previews fall back to text in terminals without graphics", "chafa")},
+		{NameRsvg, optional(NameRsvg, "SVG artifacts aren't previewed", "librsvg")},
+		{NameXDG, checkXDG},
+		{NamePlane, checkPlane},
+		{NameHooks, checkHooks},
+		{NameMCP, checkMCP},
+		{NameSkills, checkSkills},
+	}
+}
+
 // Run runs every check concurrently and returns them in a fixed order.
-func Run(ctx context.Context, e Env) []Check {
-	checks := []func(context.Context, Env) Check{
-		checkForge, checkConfig, checkStore, checkGit, checkGH, checkTmux, checkTmuxConf, checkTmuxServer,
-		checkClaude, optional("delta", "diffs are coloured by forge instead", "git-delta"),
-		optional("chafa", "image previews fall back to text in terminals without graphics", "chafa"),
-		optional("rsvg-convert", "SVG artifacts aren't previewed", "librsvg"),
-		checkPlane, checkHooks, checkMCP, checkSkills,
+func Run(ctx context.Context, e Env) []Check { return RunOnly(ctx, e) }
+
+// RunOnly runs the checks with these names (all of them when none are
+// given) concurrently, in report order.
+func RunOnly(ctx context.Context, e Env, names ...string) []Check {
+	var todo []namedCheck
+	for _, c := range checks() {
+		if len(names) == 0 || slices.Contains(names, c.name) {
+			todo = append(todo, c)
+		}
 	}
 	timeout := e.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	out := make([]Check, len(checks))
+	out := make([]Check, len(todo))
 	var wg sync.WaitGroup
-	for i, c := range checks {
+	for i, c := range todo {
 		wg.Go(func() {
 			cctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			out[i] = c(cctx, e)
+			out[i] = c.run(cctx, e)
 		})
 	}
 	wg.Wait()
@@ -188,22 +246,72 @@ func FixSessions(cs []Check) []string {
 	return out
 }
 
-// aptNames are Debian/Ubuntu package names that differ from Homebrew's.
-var aptNames = map[string]string{"librsvg": "librsvg2-bin"}
+// aptNames and dnfNames are package names that differ from Homebrew's.
+var (
+	aptNames = map[string]string{"librsvg": "librsvg2-bin"}
+	dnfNames = map[string]string{"librsvg": "librsvg2-tools"}
+)
 
-// install is the package-manager hint for pkg (a Homebrew name) on goos.
-func install(goos, pkg string) string {
+// Linux package manager families, from DetectDistro.
+const (
+	DistroDebian = "debian" // apt
+	DistroFedora = "fedora" // dnf
+)
+
+// DetectDistro reads /etc/os-release contents (ID and ID_LIKE) and returns
+// DistroDebian, DistroFedora or "".
+func DetectDistro(osRelease string) string {
+	var ids []string
+	for line := range strings.SplitSeq(osRelease, "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if ok && (k == "ID" || k == "ID_LIKE") {
+			ids = append(ids, strings.Fields(strings.Trim(v, `"'`))...)
+		}
+	}
+	for _, id := range ids {
+		switch id {
+		case "debian", "ubuntu", "linuxmint", "pop", "raspbian":
+			return DistroDebian
+		case "fedora", "rhel", "centos", "rocky", "almalinux", "amzn":
+			return DistroFedora
+		}
+	}
+	return ""
+}
+
+// InstallHint is the package-manager command for pkg (a Homebrew name) on
+// goos; on Linux distro (from DetectDistro) picks apt or dnf.
+func InstallHint(goos, distro, pkg string) string {
 	if goos == "darwin" {
 		return "brew install " + pkg
 	}
-	if n, ok := aptNames[pkg]; ok {
-		pkg = n
+	switch distro {
+	case DistroDebian:
+		if n, ok := aptNames[pkg]; ok {
+			pkg = n
+		}
+		return "sudo apt install " + pkg
+	case DistroFedora:
+		if n, ok := dnfNames[pkg]; ok {
+			pkg = n
+		}
+		return "sudo dnf install " + pkg
 	}
-	return "install " + pkg + " with your package manager (e.g. sudo apt install " + pkg + ")"
+	apt, dnf := pkg, pkg
+	if n, ok := aptNames[pkg]; ok {
+		apt = n
+	}
+	if n, ok := dnfNames[pkg]; ok {
+		dnf = n
+	}
+	return "install " + pkg + " with your package manager (e.g. sudo apt install " + apt + " or sudo dnf install " + dnf + ")"
 }
 
+// install is InstallHint for the environment's OS.
+func install(e Env, pkg string) string { return InstallHint(e.GOOS, e.Distro, pkg) }
+
 func checkForge(_ context.Context, e Env) Check {
-	c := Check{Name: "forge", Detail: e.Version}
+	c := Check{Name: NameForge, Detail: e.Version}
 	if e.Bin == "" {
 		c.Status, c.Detail = Fail, "can't find forge's own binary"
 		c.Fix = "hooks and the MCP server need it: run forge from a regular install"
@@ -220,7 +328,7 @@ func checkForge(_ context.Context, e Env) Check {
 }
 
 func checkConfig(_ context.Context, e Env) Check {
-	c := Check{Name: "config", Detail: e.ConfigPath}
+	c := Check{Name: NameConfig, Detail: e.ConfigPath}
 	switch {
 	case errors.Is(e.ConfigErr, fs.ErrNotExist):
 		c.Status, c.Detail = Warn, "no config yet at "+e.ConfigPath
@@ -233,7 +341,7 @@ func checkConfig(_ context.Context, e Env) Check {
 }
 
 func checkStore(_ context.Context, e Env) Check {
-	c := Check{Name: "database", Detail: e.StorePath}
+	c := Check{Name: NameDatabase, Detail: e.StorePath}
 	if e.StoreMissing {
 		c.Detail = "not created yet (forge creates it on first run): " + e.StorePath
 	}
@@ -255,10 +363,10 @@ func version(ctx context.Context, e Env, bin string, args ...string) (string, er
 }
 
 func checkGit(ctx context.Context, e Env) Check {
-	c := Check{Name: "git"}
+	c := Check{Name: NameGit}
 	p, err := e.LookPath("git")
 	if err != nil {
-		c.Status, c.Detail, c.Fix = Fail, "not installed", install(e.GOOS, "git")
+		c.Status, c.Detail, c.Fix = Fail, "not installed", install(e, "git")
 		return c
 	}
 	v, err := version(ctx, e, p, "--version")
@@ -271,9 +379,9 @@ func checkGit(ctx context.Context, e Env) Check {
 }
 
 func checkGH(ctx context.Context, e Env) Check {
-	c := Check{Name: "gh"}
+	c := Check{Name: NameGH}
 	if _, err := e.LookPath("gh"); err != nil {
-		c.Status, c.Detail, c.Fix = Fail, "not installed", install(e.GOOS, "gh")
+		c.Status, c.Detail, c.Fix = Fail, "not installed", install(e, "gh")
 		return c
 	}
 	if e.GitHubViewer == nil {
@@ -293,9 +401,9 @@ func checkGH(ctx context.Context, e Env) Check {
 }
 
 func checkTmux(ctx context.Context, e Env) Check {
-	c := Check{Name: "tmux"}
+	c := Check{Name: NameTmux}
 	if _, err := e.LookPath("tmux"); err != nil {
-		c.Status, c.Detail, c.Fix = Fail, "not installed", install(e.GOOS, "tmux")
+		c.Status, c.Detail, c.Fix = Fail, "not installed", install(e, "tmux")
 		return c
 	}
 	v, err := e.TmuxVersion(ctx)
@@ -307,7 +415,7 @@ func checkTmux(ctx context.Context, e Env) Check {
 	switch {
 	case !v.AtLeast(TmuxMin.Major, TmuxMin.Minor):
 		c.Status = Fail
-		c.Fix = fmt.Sprintf("forge needs tmux %s or newer: %s", TmuxMin, install(e.GOOS, "tmux"))
+		c.Fix = fmt.Sprintf("forge needs tmux %s or newer: %s", TmuxMin, install(e, "tmux"))
 	case !v.AtLeast(TmuxGood.Major, TmuxGood.Minor):
 		c.Status = Warn
 		c.Fix = fmt.Sprintf("tmux %s or newer gives image previews inside tmux", TmuxGood)
@@ -316,7 +424,7 @@ func checkTmux(ctx context.Context, e Env) Check {
 }
 
 func checkTmuxConf(_ context.Context, e Env) Check {
-	c := Check{Name: "tmux config", Detail: e.TmuxConf}
+	c := Check{Name: NameTmuxConf, Detail: e.TmuxConf}
 	if e.TmuxConf == "" {
 		c.Status, c.Detail = Skip, "no config directory"
 		return c
@@ -341,7 +449,7 @@ func checkTmuxConf(_ context.Context, e Env) Check {
 // loaded. A server started some other way (by hand, or before forge wrote
 // its config) may run without it, and then forge's keys are missing.
 func checkTmuxServer(ctx context.Context, e Env) Check {
-	c := Check{Name: "tmux server"}
+	c := Check{Name: NameTmuxServer}
 	if e.TmuxServerConfig == nil {
 		c.Status, c.Detail = Skip, "can't ask tmux"
 		return c
@@ -391,7 +499,7 @@ func samePath(e Env, a, b string) bool {
 }
 
 func checkClaude(ctx context.Context, e Env) Check {
-	c := Check{Name: "claude"}
+	c := Check{Name: NameClaude}
 	p, err := e.LookPath(claude.DefaultBin)
 	if err != nil {
 		c.Status, c.Detail = Fail, "not installed"
@@ -487,7 +595,7 @@ func optional(bin, without, pkg string) func(context.Context, Env) Check {
 		p, err := e.LookPath(bin)
 		if err != nil {
 			c.Status, c.Detail = Warn, "not installed (optional): "+without
-			c.Fix = install(e.GOOS, pkg)
+			c.Fix = install(e, pkg)
 			return c
 		}
 		c.Detail = p
@@ -495,8 +603,33 @@ func optional(bin, without, pkg string) func(context.Context, Env) Check {
 	}
 }
 
+// checkXDG warns when an XDG base directory points into a temp folder:
+// forge strips those before starting claude, but everything else run from
+// this shell (claude by hand, its auto-updater) would use them.
+func checkXDG(_ context.Context, e Env) Check {
+	c := Check{Name: NameXDG}
+	if e.Getenv == nil {
+		c.Status, c.Detail = Skip, "can't read the environment"
+		return c
+	}
+	bad := envguard.TempXDG(e.Getenv)
+	if len(bad) == 0 {
+		c.Detail = "no XDG folder in a temp dir"
+		return c
+	}
+	var parts, names []string
+	for _, kv := range bad {
+		parts = append(parts, kv[0]+"="+kv[1])
+		names = append(names, kv[0])
+	}
+	c.Status = Warn
+	c.Detail = "points into a temp dir: " + strings.Join(parts, ", ") + " (forge drops these for claude)"
+	c.Fix = "unset " + strings.Join(names, " ") + "; for a throwaway forge install use FORGE_CONFIG_DIR / FORGE_DATA_DIR instead"
+	return c
+}
+
 func checkPlane(ctx context.Context, e Env) Check {
-	c := Check{Name: "plane"}
+	c := Check{Name: NamePlane}
 	switch {
 	case !e.PlaneConfigured:
 		c.Status, c.Detail = Skip, "not set up (optional): set plane.workspace_slug in the config"
@@ -554,7 +687,7 @@ func sessionCheck(name string, e Env, fix string, bad func(Session) string) Chec
 const fixSessions = "forge doctor --fix (or resume the session)"
 
 func checkHooks(_ context.Context, e Env) Check {
-	return sessionCheck("hooks", e, fixSessions, func(s Session) string {
+	return sessionCheck(NameHooks, e, fixSessions, func(s Session) string {
 		reg, err := hooks.Registered(s.Worktree)
 		if err != nil {
 			return err.Error()
@@ -582,7 +715,7 @@ func checkHooks(_ context.Context, e Env) Check {
 }
 
 func checkMCP(_ context.Context, e Env) Check {
-	return sessionCheck("mcp config", e, fixSessions, func(s Session) string {
+	return sessionCheck(NameMCP, e, fixSessions, func(s Session) string {
 		bin, err := claude.ReadMCPConfigBin(filepath.Join(s.SessionDir, claude.MCPConfigFile))
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -598,9 +731,9 @@ func checkMCP(_ context.Context, e Env) Check {
 
 func checkSkills(_ context.Context, e Env) Check {
 	if !e.SkillsEnabled {
-		return Check{Name: "skills", Status: Skip, Detail: "forge skills are off"}
+		return Check{Name: NameSkills, Status: Skip, Detail: "forge skills are off"}
 	}
-	return sessionCheck("skills", e, fixSessions, func(s Session) string {
+	return sessionCheck(NameSkills, e, fixSessions, func(s Session) string {
 		if _, err := os.Stat(filepath.Join(s.SkillsRoot, slashcmd.ManifestFile)); err != nil {
 			return "not synced"
 		}

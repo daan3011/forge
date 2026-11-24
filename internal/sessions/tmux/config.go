@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"text/template"
 	"time"
 )
@@ -18,6 +19,62 @@ import (
 // its first line as "# forge-tmux-config v<N>". v2 added M-c (quick
 // capture, P3.5), v3 allow-passthrough (image previews, P4.7).
 const ConfigVersion = 3
+
+// DetachKey is the key, in tmux notation, that takes you from an agent
+// window back to forge (detach-client, or closing the popup forge opened).
+// The default config binds it and its status line names it; DetachKeyOf
+// reads what a user's config actually binds.
+const DetachKey = "M-d"
+
+// CaptureKey is the quick capture key (forge capture in a popup), and
+// CaptureSnippet the line that binds it in your own ~/.tmux.conf (forge
+// never edits that file).
+const (
+	CaptureKey     = "M-c"
+	CaptureSnippet = `bind -n ` + CaptureKey + ` display-popup -E -w 76 -h 8 "forge capture"`
+)
+
+// KeyLabel spells a tmux key for people: "M-d" is "Alt+d", "C-M-x"
+// "Ctrl+Alt+x".
+func KeyLabel(k string) string {
+	var mods []string
+	for len(k) > 2 && k[1] == '-' {
+		switch k[0] {
+		case 'M':
+			mods = append(mods, "Alt")
+		case 'C':
+			mods = append(mods, "Ctrl")
+		case 'S':
+			mods = append(mods, "Shift")
+		default:
+			return strings.Join(append(mods, k), "+")
+		}
+		k = k[2:]
+	}
+	return strings.Join(append(mods, k), "+")
+}
+
+var detachBindRe = regexp.MustCompile(`(?m)^\s*bind(?:-key)?\s+(?:-[a-zA-Z]*n[a-zA-Z]*|-T\s+root)\s+(\S+)\s+detach-client\b`)
+
+// DetachKeyOf returns the root-table key bound to detach-client in the
+// config at path (the last such binding wins, as in tmux), or DetachKey
+// when the file is missing or binds none.
+func DetachKeyOf(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return DetachKey
+	}
+	return ParseDetachKey(data)
+}
+
+// ParseDetachKey is DetachKeyOf on a config's contents.
+func ParseDetachKey(data []byte) string {
+	k := DetachKey
+	for _, m := range detachBindRe.FindAllSubmatch(data, -1) {
+		k = strings.Trim(string(m[1]), `"'`)
+	}
+	return k
+}
 
 // ConfigNews is what ConfigVersion added, for the "your config is old"
 // notice.
@@ -49,8 +106,9 @@ func DefaultConfig(c ConfigColors) []byte {
 	var b bytes.Buffer
 	data := struct {
 		ConfigColors
-		Version int
-	}{c, ConfigVersion}
+		Version                        int
+		DetachKey, CaptureKey, Capture string
+	}{c, ConfigVersion, DetachKey, CaptureKey, CaptureSnippet}
 	if err := configTmpl.Execute(&b, data); err != nil {
 		panic(err) // static template; covered by tests
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/daan3011/forge/internal/config"
 	"github.com/daan3011/forge/internal/customcmd"
 	docfs "github.com/daan3011/forge/internal/docs"
+	"github.com/daan3011/forge/internal/envguard"
 	"github.com/daan3011/forge/internal/github"
 	"github.com/daan3011/forge/internal/sessions/claude"
 	"github.com/daan3011/forge/internal/sessions/hooks"
@@ -184,6 +185,9 @@ type Config struct {
 	// Transcripts persists the transcript index between runs (P5.3); nil
 	// keeps it in memory only.
 	Transcripts transcript.Persister
+	// Getenv reads forge's environment for the variables passed on to
+	// agent windows; nil means os.Getenv.
+	Getenv func(string) string
 	// Skills writes forge's skills (slash commands, P6.7) into a session's
 	// SkillsRoot, which claude gets with --add-dir; nil gives none.
 	// *slashcmd.Catalog satisfies it.
@@ -254,6 +258,20 @@ func (s *Service) Project(name string) (config.Project, bool) {
 		}
 	}
 	return config.Project{}, false
+}
+
+// windowEnv is the environment forge adds to an agent's window: the
+// session's name for `forge hook`, and forge's own dir overrides so hooks
+// and the MCP server find the same database. XDG variables are never
+// passed (see envguard).
+func (s *Service) windowEnv(name string) map[string]string {
+	getenv := s.c.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	env := envguard.ForgeEnv(getenv)
+	env[EnvSessionName] = name
+	return env
 }
 
 // SessionDir is where a session's files (the first prompt) live.
@@ -478,8 +496,7 @@ func (s *Service) Start(ctx context.Context, o StartOpts) (res Started, err erro
 	if err != nil {
 		return Started{}, err
 	}
-	target, err := s.c.Tmux.NewWindow(ctx, tsess, o.Name, wt.Path, argv,
-		map[string]string{EnvSessionName: o.Name})
+	target, err := s.c.Tmux.NewWindow(ctx, tsess, o.Name, wt.Path, argv, s.windowEnv(o.Name))
 	if err != nil {
 		return Started{}, err
 	}

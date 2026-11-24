@@ -364,7 +364,7 @@ func Default() *Config {
 			BlockedStates:   []string{"Blocked"},
 		},
 		Sessions: Sessions{
-			WorktreeRoot:       filepath.Join(DataHome(), "forge", "worktrees"),
+			WorktreeRoot:       filepath.Join(DataDir(), "worktrees"),
 			NotifyAfterMinutes: 5,
 			NotifyOnError:      true,
 			NotifyOnFinish:     true,
@@ -402,9 +402,18 @@ func StateHome() string {
 	return filepath.Join(homeDir(), ".local", "state")
 }
 
-// NotesDir is where the daily notes live (P6.2): DataHome()/forge/notes,
-// one YYYY-MM-DD.md per day.
-func NotesDir() string { return filepath.Join(DataHome(), "forge", "notes") }
+// DataDir is forge's data directory (database, live socket, session files,
+// worktrees, notes): $FORGE_DATA_DIR, else DataHome()/forge.
+func DataDir() string {
+	if d := os.Getenv(EnvDataDir); d != "" {
+		return d
+	}
+	return filepath.Join(DataHome(), "forge")
+}
+
+// NotesDir is where the daily notes live (P6.2): DataDir()/notes, one
+// YYYY-MM-DD.md per day.
+func NotesDir() string { return filepath.Join(DataDir(), "notes") }
 
 func homeDir() string {
 	if h, err := os.UserHomeDir(); err == nil {

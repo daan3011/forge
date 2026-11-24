@@ -44,6 +44,9 @@ func Env(dir string) map[string]string {
 		"XDG_DATA_HOME":   filepath.Join(home, ".local", "share"),
 		"XDG_STATE_HOME":  filepath.Join(home, ".local", "state"),
 		"XDG_CACHE_HOME":  filepath.Join(home, ".cache"),
+		// forge's own overrides would win over the XDG folders.
+		"FORGE_CONFIG_DIR": "",
+		"FORGE_DATA_DIR":   "",
 	}
 }
 

@@ -354,6 +354,23 @@ keybinds:
   # clear_input: ["ctrl+u"]
   # next: ["down", "ctrl+n"]   # palette results
   # prev: ["up", "ctrl+p"]
+  # Guided setup (`forge setup`, its own screen)
+  # setup_next: ["enter"]          # accept the step and go on
+  # setup_skip: ["s"]
+  # setup_rerun: ["r"]             # check again / run the step again
+  # setup_up: ["k", "up"]
+  # setup_down: ["j", "down"]
+  # setup_focus: ["tab"]           # between the step list and the step
+  # setup_login: ["l"]             # gh auth login
+  # setup_edit: ["e"]              # edit the Plane settings
+  # setup_test: ["t"]              # tmux popup test / start the smoke test
+  # setup_reset: ["R"]             # rewrite an outdated tmux.conf (backed up)
+  # setup_copy: ["c"]              # copy the Alt+c snippet
+  # setup_attach: ["a"]            # attach to the smoke session (to answer claude)
+  # setup_add_root: ["+"]          # add a project root (folder picker)
+  # setup_remove_root: ["-"]
+  # setup_fix_link: ["f"]          # pick the selected repo's Plane project
+  # setup_quit: ["q", "ctrl+c"]
 
 # Your own shell commands, offered in the palette (ctrl+k) and listed in the
 # help overlay (?). Each one runs on the current selection:

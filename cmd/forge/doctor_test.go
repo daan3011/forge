@@ -55,6 +55,7 @@ func doctorDeps(t *testing.T) (deps, *[]string) {
 			e.GitHubViewer = func(context.Context) (string, error) { return "octo", nil }
 			e.TmuxVersion = func(context.Context) (tmux.Version, error) { return tmux.Version{Major: 3, Minor: 5}, nil }
 			e.PlaneConfigured = false
+			e.Getenv = func(string) string { return "" } // the test HOME is a temp dir
 		},
 		doctorPrepare: func(_ context.Context, x store.Session) error {
 			prepared = append(prepared, x.Name)

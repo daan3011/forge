@@ -231,7 +231,7 @@ func (s *Service) open(ctx context.Context, tsess string, x store.Session, launc
 	if err != nil {
 		return tmux.Target{}, err
 	}
-	return s.c.Tmux.NewWindow(ctx, tsess, x.Name, x.Worktree, argv, map[string]string{EnvSessionName: x.Name})
+	return s.c.Tmux.NewWindow(ctx, tsess, x.Name, x.Worktree, argv, s.windowEnv(x.Name))
 }
 
 // idRefused watches a freshly started claude for up to StartupCheck and

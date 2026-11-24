@@ -50,9 +50,17 @@ xattr -d com.apple.quarantine ~/.local/bin/forge
 ## First run
 
 ```sh
+forge          # first launch: writes ~/.config/forge/config.yaml and walks you
+               # through setup (tools, GitHub, Plane, projects, tmux keys,
+               # animations, and a smoke test of the agent hooks)
+forge setup    # run the guided setup again; `forge setup plane` runs one step
 forge doctor   # checks everything above and prints a fix for each problem
-forge          # writes ~/.config/forge/config.yaml on first run, then opens
 ```
+
+Every setup step can be skipped and run again later. To try forge on a clean
+install without touching your real one, point `FORGE_CONFIG_DIR` and
+`FORGE_DATA_DIR` at empty folders. Don't use the `XDG_*` variables for that:
+they would move claude's files too.
 
 `forge doctor --fix` writes the default config and tmux config, and
 re-registers hooks, MCP config and skills for sessions that need them. It
@@ -94,9 +102,9 @@ forge tmux config                          # edit forge's tmux config
 
 | What | Where |
 | --- | --- |
-| Config | `~/.config/forge/config.yaml` (`$XDG_CONFIG_HOME`) |
+| Config | `~/.config/forge/config.yaml` (`$FORGE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/forge`) |
 | tmux config | `~/.config/forge/tmux.conf` |
-| Database, session files | `~/.local/share/forge/` (`$XDG_DATA_HOME`) |
+| Database, session files | `~/.local/share/forge/` (`$FORGE_DATA_DIR`, else `$XDG_DATA_HOME/forge`) |
 | Logs | `~/.local/state/forge/` |
 
 ## Development

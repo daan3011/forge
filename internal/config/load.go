@@ -19,10 +19,22 @@ var defaultTemplate []byte
 // Template returns the commented default config written on first run.
 func Template() []byte { return append([]byte(nil), defaultTemplate...) }
 
-// Dir returns forge's config directory: $XDG_CONFIG_HOME/forge, or
-// ~/.config/forge. It deliberately ignores os.UserConfigDir, which points at
-// ~/Library/Application Support on macOS.
+// EnvConfigDir and EnvDataDir point forge's own config and data
+// directories somewhere else. They are checked before the XDG variables and
+// only affect forge, so a clean test install never changes where claude (or
+// anything else) keeps its files.
+const (
+	EnvConfigDir = "FORGE_CONFIG_DIR"
+	EnvDataDir   = "FORGE_DATA_DIR"
+)
+
+// Dir returns forge's config directory: $FORGE_CONFIG_DIR, else
+// $XDG_CONFIG_HOME/forge, else ~/.config/forge. It deliberately ignores
+// os.UserConfigDir, which points at ~/Library/Application Support on macOS.
 func Dir() (string, error) {
+	if d := os.Getenv(EnvConfigDir); d != "" {
+		return d, nil
+	}
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()

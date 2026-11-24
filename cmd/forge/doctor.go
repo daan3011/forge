@@ -96,6 +96,8 @@ func (d deps) doctorEnv(ctx context.Context) (doctor.Env, func()) {
 	home, _ := os.UserHomeDir()
 	e := doctor.Env{
 		GOOS:         runtime.GOOS,
+		Distro:       hostDistro(),
+		Getenv:       os.Getenv,
 		LookPath:     exec.LookPath,
 		Output:       commandOutput,
 		Lstat:        os.Lstat,
@@ -251,6 +253,18 @@ func (d deps) fixSessions(ctx context.Context, names []string, w io.Writer) erro
 		fmt.Fprintln(w, "fixed: re-registered hooks, MCP config and skills for", name)
 	}
 	return nil
+}
+
+// hostDistro is the Linux package manager family from /etc/os-release.
+func hostDistro() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	b, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	return doctor.DetectDistro(string(b))
 }
 
 // commandOutput runs bin with args and returns its trimmed output. claude

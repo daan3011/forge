@@ -169,6 +169,7 @@ There are 49 features in seven phases. IDs match the build prompts below. Phase 
 | P6.3 | Custom commands | Config-defined commands (palette + optional per-tab key) on the selection, with `{repo}`, `{pr}`, `{branch}`, `{worktree}`, `{issue}`, `{session}`, `{path}`; modes background (toast + viewable output), exec (suspend the TUI) and tmux-window (forge socket, attach or detached). |
 | P6.4 | Polish & packaging | Error toasts, empty states, `goreleaser`, install script, README with screenshots. |
 | P6.5 | forge MCP server | `forge mcp` (stdio) gives session agents tools for Plane issues (filed as proposals triaged on Home), `.forge/docs`, artifacts, summary/progress and context packs; every write attributed to the session, its branch and PR. |
+| P6.6 | Guided first-run setup | `forge setup [step]`, also run on the first launch: dependencies (doctor checks, brew / apt / dnf hints), GitHub login, Plane (URL, workspace, the *name* of the key variable), project roots and Plane links, forge's tmux.conf plus a key test of the detach key (Option-as-Meta help per terminal), animations with a live preview, the Alt+c snippet, and a smoke test that runs a throwaway Claude Code session until its hooks flip it starting → working → idle. Results go to config.yaml (comments kept) and the database. |
 | P6.7 | forge slash commands | forge-managed Claude Code skills in every session (`/fix-ci`, `/forge-ticket`, `/forge-doc`, `/forge-adr`, `/forge-pin`, `/forge-status`, `/forge-pack`, `/forge-tpl-<template>`), from embedded markdown plus overrides in `~/.config/forge/commands`, passed with `--add-dir`; listed, edited and re-synced from Context → Commands. |
 
 ## tmux setup (from a plain install)
@@ -223,6 +224,25 @@ bind -n M-c display-popup -E -w 76 -h 8 "forge capture"
 ```
 
 `shift+enter` (open the full form) needs `set -s extended-keys on` in that tmux; `alt+enter` does the same without it.
+
+## First-run setup (`forge setup`)
+
+The first launch (config.yaml just created, no `setup_completed` in the database, a terminal on both ends) runs the setup wizard before the TUI. `FORGE_NO_SETUP=1` stops that. An existing install that never ran setup gets a one-time notice instead. `forge setup` runs every step again; `forge setup <step>` (`deps`, `github`, `plane`, `projects`, `tmux`, `animations`, `capture`, `smoke`) runs one and leaves `setup_completed` alone. The palette has "Run setup" and "Run setup: <step>".
+
+The screen is the step list on the left (✓ done, ↷ skipped, ✗ failed) and the current step on the right. `enter` accepts a step, `s` skips it, `r` runs it again, and `tab` moves to the list to open any step. Each step's last result is kept in the `settings` table (migration 0011), so the list remembers between runs. The summary lists every step that was skipped or failed, with the command that fixes it.
+
+1. **Dependencies**: forge doctor's checks for git, gh, tmux (3.2+), claude, delta, chafa and rsvg-convert. Install hints are `brew` on macOS, and `apt` or `dnf` on Linux, picked from `/etc/os-release`.
+2. **GitHub**: `gh auth status` through forge's client. `l` runs `gh auth login` in the terminal, then checks again.
+3. **Plane**: cloud or a self-hosted base URL, the workspace slug, and the *name* of the environment variable holding the API key (default `PLANE_API_KEY`). The key itself is never written anywhere. The step connects and lists the projects. If the variable is empty, it shows the exact line to add to `~/.zshrc` (or `~/.bashrc`, or fish's config).
+4. **Projects**: the project roots (configured, else the defaults) and every repo found, with its Plane link (linked, matched by name, none). `+` adds a root with a folder picker, `-` removes one, and `f` picks a repo's Plane project. `enter` saves the automatic matches as links.
+5. **tmux**: writes forge's tmux.conf if it's missing; if it's outdated, `R` resets it (with a backup). Then a key test: press the detach key, read from the tmux.conf (default `Alt+d`). If it arrives as a character (`∂`), the step explains Option-as-Meta for the detected terminal: iTerm2, Terminal.app, Ghostty, WezTerm or Kitty. `t` opens a throwaway window on its own socket to try the key for real.
+6. **Animations**: full / reduced / off, with a live preview of the splash and the hammer spinner.
+7. **Quick capture**: the Alt+c line for your own `~/.tmux.conf`. `c` copies it; forge never edits that file.
+8. **Smoke test**: a temp git repo, a forge session on its own tmux socket (`forge-smoke-<pid>`), real claude and real hooks with a one-line prompt. It passes when the status goes starting → working → idle within 90s. The step also checks the session's hooks, MCP config (`--mcp-config`) and skills (`--add-dir`). If nothing happens for 10s (or claude waits before working), it shows the pane and `a` attaches so you can answer, usually the folder trust prompt. On a timeout it reports the last event seen. Everything is removed afterwards. It never edits `~/.claude.json` or other Claude config.
+
+Config writes merge into config.yaml as text edits: only the lines of the keys set change. A key that is missing (or only in a comment) is added at the end of its section.
+
+**Trying forge on a clean install**: `FORGE_CONFIG_DIR` and `FORGE_DATA_DIR` move forge's own config and data folders (database, socket, worktrees, notes). Use those, not the `XDG_*` variables, which would also move claude's files. forge never passes an `XDG_*` folder inside a temp dir to claude (agent windows drop them), and `forge doctor` warns about them.
 
 ## How to use the prompts
 
