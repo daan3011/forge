@@ -1,7 +1,8 @@
 # forge keybindings: inventory and redesign (P6.8)
 
-**Status: proposal for review.** No binding has changed yet. P6.9 implements whatever is agreed here
-(the presets, the new defaults and the platform aliases).
+**Status: approved with changes (review of PR #54), final look pending.** No binding has changed
+yet. P6.9 implements what's agreed here (the presets, the new defaults, the platform aliases and a
+Keys view).
 
 forge was built in phases, and keys were often picked because the obvious one was already taken.
 There has been no public release, so no one depends on the current keys. This proposal optimises
@@ -14,16 +15,16 @@ for one thing only: a new user being productive straight away.
 - Part 6 covers **platforms**: Alt / Option, macOS Cmd, agent windows, and a compatibility table.
 - Parts 7–8 cover **discoverability** and the **preset system** for P6.9.
 
-## Decisions for you
+## Decisions
 
-The proposal takes a position on each of these. They are the calls most worth a second look.
+Settled in review. The "Considered" column records what was rejected.
 
-| # | Question | Proposed | Alternative |
+| # | Question | Decided | Considered |
 | --- | --- | --- | --- |
 | D1 | What do `tab` / `shift+tab` do? | Next / previous **tab**, as now (browser and terminal habit, symmetric). Views within a tab move to `v` / `V`. | Claude Code's habit: `shift+tab` cycles the tab's views, and tabs use only `1-9` plus `tab`. That's asymmetric, and on tabs without views `shift+tab` would do nothing. |
 | D2 | How do you get back to forge from an agent window? | `ctrl+q`, with `ctrl+]` as an alias. | `ctrl+]` only, which needs AltGr / Option on German and Nordic layouts. |
-| D3 | Fix with edited prompt (`alt+f` today) | `F` opens a one-step sheet: `enter` sends, `e` edits the prompt first. That adds one key press to every fix. | `F` sends straight away and `ctrl+f` edits first. `ctrl+f` is also "find" in VS Code and browsers. |
-| D4 | Rerun failed jobs (`t` today) | `ctrl+r`: "run it again", a stronger `r`. | `.` (vim's "repeat"), which is harder to discover. |
+| D3 | Fix with edited prompt (`alt+f` today) | `F` opens the **fix sheet**, which shows a preview of the prompt. `F` again or `enter` sends; `e` edits the prompt inline (a text area, where `ctrl+e` opens `$EDITOR` as in other forms); `E` opens `$EDITOR` directly (the e / E rule in part 3); `esc` cancels. A quick fix is `F F`. | `F` sends straight away and `ctrl+f` edits first. `ctrl+f` is also "find" in VS Code and browsers. |
+| D4 | Rerun failed jobs (`t` today) | `ctrl+r`: "run it again", a stronger `r`. | A punctuation key such as vim's `.` "repeat": harder to discover, and `.` is now the next-chunk alias. |
 | D5 | Overload `m` = merge (PRs, Home) and `m` = move / rename (Docs, Artifacts)? | Yes. Both are the obvious mnemonic, they never share a tab, and merge always confirms. | Rename on `R`, which would mean moving refresh-all off `R`. |
 | D6 | Alt+c capture in agent windows | Dropped. `ctrl+q` then `ctrl+n` does the same with nothing new to learn. | Bind it to `ctrl+^` (that's `ctrl+shift+6` on US layouts, which is awkward). |
 | D7 | Two-key chords (`gg`, `dd`, `gt`) | Only in the **vim** preset. The default stays single-key. | No chords at all, so the vim preset only adds `:` and a few aliases. |
@@ -566,10 +567,10 @@ keys), `alt+backspace` (capture, alias of `ctrl+w`), and in agent windows `M-d`,
    | `b` | branch: check out |
    | `f` | the structured filter form (repo, state, stale, pinned, cycle…) |
    | `/` | text filter (search in viewers) |
-   | `@` | toggle "mine only" |
+   | `@` | toggle "mine only" (also a field in the `f` form, so `@` is never the only way) |
    | `#` / `*` | tags / pin |
    | `v` / `V` | next / previous view of this tab |
-   | `[` / `]` | previous / next chunk (detail tab, file, failed job, day) |
+   | `[` `,` / `]` `.` | previous / next chunk (detail tab, file, failed job, day). `,` / `.` are aliases for layouts where brackets need AltGr / Option. |
    | `z` / `Z` | fold one / all |
    | `F` | fix with an agent |
    | `r` / `R` / `ctrl+r` | refresh / refresh all tabs / run again on the server (rerun failed) |
@@ -604,13 +605,13 @@ palette-only command. The full table was checked against the keymap's conflict r
 per scope, and no tab key may shadow a global key): there are **no conflicts**. Huh's form keys and
 the hidden demos don't change, so they're left out.
 
-New global actions: `goto` (`ctrl+p`), `view_next` / `view_prev` (`v` / `V`) and `settings`
-(palette, plus `cmd+,`). Context gets one contextual `context_delete` (`d`) for its views. Behaviour
+New global actions: `goto` (`ctrl+p`), `view_next` / `view_prev` (`v` / `V`), and the palette
+commands `settings` (plus `cmd+,`) and `agent_scroll` ("Scroll agent output"). Context gets one contextual `context_delete` (`d`) for its views. Behaviour
 changes that come with the keys:
 - `esc` clears active filters.
 - `G` follows the transcript.
-- `F` opens the fix sheet.
-- `f` forms gain stale / pinned-only / cycle.
+- `F` opens the fix sheet (D3).
+- `f` forms gain stale / pinned-only / cycle, and "mine only" on Pipelines and Plane.
 - In the decisions view, `n` creates a decision.
 
 #### global
@@ -664,8 +665,8 @@ changes that come with the keys:
 | `pr_prev_section` | `h` `left` | `h` `left` | Keep. |
 | `pr_repo_filter` | `f` | `f` | Keep. |
 | `pr_stale_only` ✱ | `S` | — | A filter: moves into the f filter form (stale only), plus the palette. Frees S. |
-| `pr_detail_next` | `]` | `]` | Keep. |
-| `pr_detail_prev` | `[` | `[` | Keep. |
+| `pr_detail_next` ✱ | `]` | `]` `.` | Add . as a layout-safe alias: , / . are aliases for keyboards where [ ] need AltGr / Option. |
+| `pr_detail_prev` ✱ | `[` | `[` `,` | Add , (see pr_detail_next). |
 | `pr_detail_down` | `J` | `J` | Keep. |
 | `pr_detail_up` | `K` | `K` | Keep. |
 | `pr_open` | `o` | `o` | Keep. |
@@ -678,8 +679,8 @@ changes that come with the keys:
 | `pr_session` | `s` | `s` | Keep. |
 | `pr_diff` ✱ | `v` | `enter` | Reviewing is the primary thing you do with a PR; enter did nothing on the PR list. v becomes views. |
 | `pr_runs` | `p` | `p` | Keep: p = pipeline runs. |
-| `pr_fix` | `F` | `F` | Keep (F = fix with an agent), now opening the send / edit sheet. |
-| `pr_fix_edit` ✱ | `alt+f` | — | Alt is not available on macOS by default. F opens a one-step sheet: enter sends, e edits the prompt first. |
+| `pr_fix` | `F` | `F` | Keep (F = fix with an agent), now opening the fix sheet (D3). |
+| `pr_fix_edit` ✱ | `alt+f` | — | Alt is not available on macOS by default. F opens the fix sheet with a prompt preview: F again or enter sends, e edits inline, E opens $EDITOR (D3). |
 
 #### home
 
@@ -698,7 +699,7 @@ changes that come with the keys:
 | Action | Current | Proposed | Why |
 | --- | --- | --- | --- |
 | `pipeline_filters` | `f` | `f` | Keep. |
-| `pipeline_mine` ✱ | `m` | `@` | @ = me (as in capture's @me); m stays merge. |
+| `pipeline_mine` ✱ | `m` | `@` | @ = me (as in capture's @me); m stays merge. Also a "mine only" toggle in the f form, so @ is never the only way. |
 | `pipeline_clear_filters` ✱ | `x` | — | esc clears active filters (esc backs out one level); palette "clear filters" stays. |
 | `pipeline_detail_down` | `J` | `J` | Keep. |
 | `pipeline_detail_up` | `K` | `K` | Keep. |
@@ -708,14 +709,14 @@ changes that come with the keys:
 | `pipeline_rerun` ✱ | `ctrl+r` | — | Rerunning the whole run is rare and costly; palette only (it confirms). |
 | `pipeline_cancel` ✱ | `X` | `x` | x = stop / cancel / reject everywhere (it confirms). |
 | `pipeline_fix` | `F` | `F` | Keep. |
-| `pipeline_fix_edit` ✱ | `alt+f` | — | As pr_fix_edit: no Alt; F's sheet has "e edit prompt". |
+| `pipeline_fix_edit` ✱ | `alt+f` | — | As pr_fix_edit: no Alt; the F sheet has e / E to edit the prompt. |
 
 #### plane
 
 | Action | Current | Proposed | Why |
 | --- | --- | --- | --- |
 | `plane_filters` | `f` | `f` | Keep. |
-| `plane_mine` ✱ | `m` | `@` | @ = me, as in Pipelines. |
+| `plane_mine` ✱ | `m` | `@` | @ = me, as in Pipelines; also in the f form. |
 | `plane_clear_filters` ✱ | `x` | — | esc clears active filters; palette stays. |
 | `plane_detail_down` | `J` | `J` | Keep. |
 | `plane_detail_up` | `K` | `K` | Keep. |
@@ -824,8 +825,8 @@ changes that come with the keys:
 | `diff_page_down` | `ctrl+d` `pgdown` `space` | `ctrl+d` `pgdown` `space` | Keep. |
 | `diff_top` | `g` `home` | `g` `home` | Keep. |
 | `diff_bottom` | `G` `end` | `G` `end` | Keep. |
-| `diff_next_file` ✱ | `n` | `]` | [ / ] = previous / next chunk everywhere (file, job, detail tab, day). |
-| `diff_prev_file` ✱ | `p` | `[` | As above. |
+| `diff_next_file` ✱ | `n` | `]` `.` | [ / ] = previous / next chunk everywhere (file, job, detail tab, day), with , / . aliases. |
+| `diff_prev_file` ✱ | `p` | `[` `,` | As above. |
 | `diff_approve` | `a` | `a` | Keep. |
 | `diff_request_changes` | `x` | `x` | Keep: x = reject. |
 | `diff_comment` ✱ | `C` | `c` | c = comment everywhere (Plane already used c). |
@@ -846,8 +847,8 @@ changes that come with the keys:
 | `log_search` | `/` | `/` | Keep. |
 | `log_next_match` | `n` | `n` | Keep. |
 | `log_prev_match` | `N` | `N` | Keep. |
-| `log_next_job` | `]` | `]` | Keep. |
-| `log_prev_job` | `[` | `[` | Keep. |
+| `log_next_job` ✱ | `]` | `]` `.` | Add . as a layout-safe alias: , / . are aliases for keyboards where [ ] need AltGr / Option. |
+| `log_prev_job` ✱ | `[` | `[` `,` | Add , (see log_next_job). |
 | `log_rerun_failed` ✱ | `t` `R` | `ctrl+r` | Same key as on the Pipelines tab (was t and R). |
 | `log_rerun` ✱ | `ctrl+r` | — | As pipeline_rerun: palette only. |
 | `log_cancel` ✱ | `X` | `x` | x = stop / cancel. |
@@ -877,8 +878,8 @@ changes that come with the keys:
 | --- | --- | --- | --- |
 | `note_edit` | `e` `enter` | `e` `enter` | Keep. |
 | `note_external` | `E` | `E` | Keep. |
-| `note_prev_day` | `[` | `[` | Keep. |
-| `note_next_day` | `]` | `]` | Keep. |
+| `note_prev_day` ✱ | `[` | `[` `,` | Add , (see note_next_day). |
+| `note_next_day` ✱ | `]` | `]` `.` | Add . as a layout-safe alias: , / . are aliases for keyboards where [ ] need AltGr / Option. |
 | `note_today` | `t` | `t` | Keep (t = today; only inside the note pane). |
 | `note_standup` | `s` | `s` | Keep (only inside the note pane). |
 | `note_copy` | `y` | `y` | Keep. |
@@ -921,7 +922,7 @@ changes that come with the keys:
 | Action | Current | Proposed | Why |
 | --- | --- | --- | --- |
 | `tmux_detach_client` ✱ | `alt+d` | `ctrl+q` `ctrl+]` | ctrl+q ("quit back to forge") works without Option-as-Meta on every layout and Claude Code leaves it free; ctrl+] (telnet / ssh escape habit) as an alias on US layouts. |
-| `tmux_copy_mode` ✱ | `alt+[` | `shift+pageup` | The usual terminal scrollback key, entering tmux scroll mode one page up; the mouse wheel keeps working. No Alt. |
+| `tmux_copy_mode` ✱ | `alt+[` | `shift+pageup` | The usual terminal scrollback key, entering tmux scroll mode one page up. Fallback (ships regardless): the mouse wheel and the palette command "Scroll agent output". P6.9 decides after the terminal checks. No Alt. |
 | `tmux_choose_tree` ✱ | `alt+w` | `ctrl+\` | Free in Claude Code and every terminal (US layout). Most people switch agents from forge (ctrl+q, then ctrl+p) anyway. |
 | `tmux_display_popup` ✱ | `alt+c` | — | Dropped from agent windows: ctrl+q then ctrl+n is two presses with nothing new to learn. The snippet for your own tmux stays, with a key you choose. |
 
@@ -933,6 +934,7 @@ changes that come with the keys:
 | `view_next` ✱ | — | `v` | **New.** Next view of the current tab (Sessions active/archived, Plane list/board, Docs docs/decisions, Context views, log errors/full). Was a, b, d, i, p, c, u, m, e. |
 | `view_prev` ✱ | — | `V` | **New.** Previous view. |
 | `settings` | — | — | **New palette command** "Settings: edit config.yaml" (cmd+, where Cmd is available). |
+| `agent_scroll` | — | — | **New palette command** "Sessions: scroll agent output": attaches the selected session's window in copy mode (the shift+pageup fallback). |
 
 ### 4.1 The default at a glance
 
@@ -942,7 +944,7 @@ tabs       1-9   tab / shift+tab          views  v / V           refresh  r / R
 lists      j k g G ctrl+d ctrl+u   / filter   f filters   @ mine   esc back / clear
 rows       enter do it   o open   y copy   e edit   n new   s send to agent   d delete   x stop
 PRs        enter review   m merge   M auto-merge   b check out   u update   p runs   F fix
-viewers    [ ] chunk   n N match   z Z fold   c comment   a approve   x reject   esc close
+viewers    [ ] or , . chunk   n N match   z Z fold   c comment   a approve   x reject   esc close
 agent      ctrl+q back to forge   shift+pgup scroll   ctrl+\ windows
 ```
 
@@ -1008,8 +1010,8 @@ Plain `tab` and `enter` stay legacy bytes, so nothing breaks if the protocol is 
 | GNOME Terminal (VTE) | no (VTE #2601) | never (VTE #2738) |
 | **any terminal → tmux** | tmux doesn't speak it (it uses modifyOtherKeys) | **no**: tmux has no super modifier and turns it into Meta, so `cmd+k` arrives as `alt+k` |
 
-**Which Cmd combos are free by default.** Most terminals keep `cmd+k` / `cmd+f` / `cmd+,` /
-`cmd+enter` for themselves:
+**Which Cmd combos are free by default.** Most terminals keep `cmd+k` / `cmd+f` / `cmd+,` for
+themselves:
 
 | Combo | Kitty | Ghostty | WezTerm | iTerm2 | Alacritty |
 | --- | --- | --- | --- | --- | --- |
@@ -1040,8 +1042,11 @@ To hand a combo to forge:
 | `cmd+s` | `ctrl+s` note (save and close inside it) | Kitty, Ghostty |
 | `cmd+n` | `ctrl+n` capture | after unbinding new window |
 | `cmd+r` | `r` refresh | Kitty, Ghostty likely |
-| `cmd+w` | `esc` close overlay / back | after unbinding close tab (most people won't) |
-| `cmd+enter` | `enter` (primary) | after unbinding (Kitty: new window, Ghostty: fullscreen) |
+
+**Deliberately not aliased:** `cmd+w` and `cmd+enter`. When an alias isn't active (inside tmux, the
+query unanswered, or the terminal binding still in place) the combo falls through to the terminal,
+and there `cmd+w` closes the tab or window and `cmd+enter` opens a window or goes fullscreen. A
+missed `cmd+p` merely does nothing; a missed `cmd+w` closes forge mid-task.
 
 **When aliases turn on:** all four of these hold.
 1. `keys.platform_aliases` is `auto` (the default) or `on`.
@@ -1072,8 +1077,19 @@ agent view.
 | --- | --- | --- |
 | `ctrl+q` | detach / close the popup, back to forge | Mnemonic ("quit back"), layout-safe, needs no terminal setup. tmux runs raw, so XON flow control doesn't apply. |
 | `ctrl+]` | same (alias) | The telnet / ssh escape habit. Needs AltGr / Option on German and Nordic layouts, hence the alias role. |
-| `shift+pageup` | scroll mode, one page up (`copy-mode -eu`) | The normal terminal scrollback key. `q` / `esc` leave it, and the mouse wheel still works. On a Mac laptop it's `shift+fn+up`. |
+| `shift+pageup` | scroll mode, one page up (`copy-mode -eu`) | The normal terminal scrollback key. `q` / `esc` leave it. On a Mac laptop it's `shift+fn+up`. Kept provisionally; see the fallback below. |
 | `ctrl+\` | window tree (all agents) | US layout. Switching from forge (`ctrl+q`, `ctrl+p`) is the main path. |
+
+**Scroll fallback (specified now, ships regardless).** Many terminals scroll their own buffer on
+`shift+pageup` instead of passing it on, so scrolling never depends on it alone:
+- **Mouse wheel:** forge's tmux.conf already has `mouse on`; wheel-up enters copy mode.
+- **Palette command "Scroll agent output"** (`agent_scroll`, on the Sessions tab and in the palette
+  from anywhere): attaches the selected session's window and runs `copy-mode -e` immediately, so
+  `j` / `k`, `ctrl+u` / `ctrl+d`, `/` search and `q` work as in tmux; leaving copy mode at the
+  bottom returns to the live agent.
+
+P6.9 decides after the terminal checks in 6.4 whether `shift+pageup` stays the key, gets replaced
+(and with what), or is dropped in favour of the fallback alone.
 
 The status line becomes `ctrl+q back · shift+pgup scroll · ctrl+\ windows`. Setup's key test checks
 `ctrl+q` and drops its Option-as-Meta screen. Your own `~/.tmux.conf` snippet for capturing from
@@ -1088,7 +1104,9 @@ don't.
 
 | Binding | iTerm2 | Terminal.app | Ghostty | WezTerm | Kitty | GNOME Term. | Alacritty | in tmux |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| letters, `?`, `/`, `@`, `#`, `*`, `[`, `]`, `<`, `>` | Y | Y | Y | Y | Y | Y | Y | Y |
+| letters, `?`, `/`, `,`, `.`, `<`, `>` (any layout) | Y | Y | Y | Y | Y | Y | Y | Y |
+| `[ ] @ # *` on a US layout | Y | Y | Y | Y | Y | Y | Y | Y |
+| `[ ] @ # *` on non-US layouts (DE / Nordic, macOS and Linux) | Y / N¹ | Y / N¹ | Y / N¹ | Y¹ | Y / N¹ | Y² | Y / N¹ | as outside |
 | `enter`, `esc`, `tab`, `shift+tab`, arrows, `home` / `end`, `pgup` / `pgdown` | Y | Y | Y | Y | Y | Y | Y | Y |
 | `ctrl+k`, `ctrl+p`, `ctrl+n`, `ctrl+s`, `ctrl+r`, `ctrl+d`, `ctrl+u`, `ctrl+o`, `ctrl+w`, `ctrl+a` | Y | Y | Y | Y | Y | Y | Y | Y |
 | `ctrl+c` force quit | Y | Y | Y | Y | Y | Y | Y | Y |
@@ -1104,10 +1122,18 @@ don't.
 | agent `shift+pageup` | C (iTerm2 scrolls its own buffer) | C (same) | Y? | C (same) | C (same) | C (same) | Y? | Y once inside |
 
 Notes:
+- **Non-US layouts** (¹ ²): on German and Nordic layouts `[` `]` and `@` are typed with Option
+  (macOS: `⌥5` `⌥6`, `⌥L` on DE) or AltGr (Linux: `AltGr+8` `AltGr+9`, `AltGr+Q` on DE, `AltGr+2`
+  on Nordic); `#` is a plain key on DE and `*` is `shift++`. ¹ They type fine while Option types
+  characters, which is the macOS default, but become impossible once the user turns on
+  Option-as-Meta for that Option key (WezTerm: right Option still composes). ² GNOME Terminal on
+  Linux leaves AltGr alone, so they always type. Every one has a layout-safe route: `,` / `.` for
+  `[` / `]`, the `f` form for `@` mine only, `#` tags and `*` pin in the palette. The same layout
+  caveat is why agent `ctrl+]` / `ctrl+\` are aliases (rows below).
 - **`shift+pageup`:** most terminals scroll their own scrollback on it, but in the alternate screen
-  (tmux) many pass it through. Each terminal needs a quick check with `cat -v`. If too many swallow
-  it, the fallback is the mouse wheel plus a palette command "Scroll agent output", which attaches
-  in copy mode.
+  (tmux) many pass it through. Each terminal needs a quick check with `cat -v`. The fallback in 6.3
+  (mouse wheel plus "Scroll agent output") ships either way; P6.9 decides on the key after the
+  checks.
 - **Kitty outside tmux:** Kitty doesn't support modifyOtherKeys, so tmux running in Kitty gets no
   extended keys and `shift+enter` doesn't arrive. `ctrl+o` covers it.
 - **Unverified cells:** the "?" cells and iTerm2's menu shortcuts can be settled by running
@@ -1138,10 +1164,9 @@ What a new user should see without opening any docs:
    - Typing a key (for example `F`) as the query finds what that key does here.
 4. **Go to (`ctrl+p`).** One box for tabs, projects, sessions, PRs, issues and docs, with group
    headings and number hints for tabs.
-5. **Unbound key feedback.** Pressing a letter with no action here shows a quiet toast once per
-   session, for example "`x` does nothing here · ctrl+k to search actions". The same goes for a
-   key that's moved: "`v` is now views; review is `enter`". That's useful after P6.9 changes
-   people's habits, even with no public users yet.
+5. **Unbound key hint.** Pressing a letter with no action here shows a quiet hint once per session,
+   for example "`x` does nothing here · ctrl+k to search actions". No moved-key notices: with no
+   public release there are no old habits to redirect.
 6. **First run.** Setup's last screen and the first Home view show the glance card from 4.1. Agent
    windows show `ctrl+q back` in the tmux status line from the first attach.
 7. **The empty states** of each tab name their primary key, for example "No sessions · n to start
@@ -1196,7 +1221,45 @@ preset vim"). Chords (D7):
 (default / preset name / keybinds / alias) and `--preset <name>` to preview a preset without
 switching to it.
 
-**Migrations.** None in the database. The config template (`internal/config/default.yaml`) gains
+### 8.1 Keys view (P6.9)
+
+A settings screen for keys, so nobody has to hand-edit YAML to rebind. It's a full-screen overlay
+opened from the palette ("Settings: keys"), or from the help overlay (`?`) with `e` "edit keys".
+It writes the same config as above (`keys.preset`, `keybinds:` and `~/.config/forge/keys/`), so
+YAML and the view stay interchangeable.
+
+- **Presets list (left).** Built-ins (`default`, `vim`) plus every file in `~/.config/forge/keys/`,
+  showing which one is active and what each `extends`.
+- **Preview (right).** The selected preset as a diff against the active one, listing only the
+  actions whose keys differ, grouped by scope, plus the glance card (4.1) rendered for it.
+- **Live switch.** `enter` on a preset applies it immediately (the keymap is rebuilt in place, help
+  and palette hints update) and writes `keys.preset`.
+- **Rebind by pressing a key.** Pick an action (type to filter, `/`) and press `enter`, then
+  press the new key. Pressing it again adds it as an extra key instead of replacing. Conflicts
+  are checked live with the same `conflicts()` rules (same scope, tab vs global, chord prefixes)
+  and show the clashing action, with three choices:
+  - **swap**: the other action gets the old key
+  - **unbind the other**: it becomes palette-only
+  - **cancel**
+  
+  `backspace` removes a key, and `r` resets the action to the preset's keys. Fixed keys (Huh form
+  keys, the hidden demos) are listed read-only. Keys forge can't receive here (super outside the
+  alias conditions, Alt where Option types characters) are accepted with a warning.
+- **Where changes go.** By default to `keybinds:` in config.yaml, on top of the active preset.
+  **Save as preset** writes `~/.config/forge/keys/<name>.yaml` with `extends: <active preset>` and
+  only the deltas, then switches to it and clears the moved overrides from `keybinds:`.
+- **Agent-window keys** (the `tmux` scope) can be rebound here too. Saving re-renders tmux.conf and
+  bumps its version, so the existing "your tmux.conf is old" notice offers the reload.
+- **Export cheat sheet.** Writes markdown from the same renderer as `forge keys --dump` (resolved
+  keymap, with the source column) or the one-page glance card, to a file or the clipboard.
+  `forge keys --dump --preset <name>` does the same from the CLI.
+
+Every one of these is also a palette command ("Keys: switch preset…", "Keys: rebind…", "Keys: save as
+preset…", "Keys: export cheat sheet"), so the rule that every action is a palette command holds.
+
+### 8.2 Migrations
+
+None in the database. The config template (`internal/config/default.yaml`) gains
 the `keys:` section, and its `# <action>: [...]` comment list is regenerated from the registry, so
 `TestDefaultConfigListsActions` keeps it complete.
 
